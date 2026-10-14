@@ -269,7 +269,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - P2-B: Internal Auth API Client (GetUserStatus & AuthLogout)
   - P2-C: Re-Auth Trigger & RAM Session Reload
 
-- [ ] P2-A: Language Server Process Discovery (Port & CSRF Token Extraction)
+- [x] P2-A: Language Server Process Discovery (Port & CSRF Token Extraction)
   - Goal: Automatically detect the running `language_server.exe` process, parse `--csrf_token` from its command line, and detect its listening loopback port.
   - Scope Boundary:
     - Editable: `core/api_connector.py` (new file).
