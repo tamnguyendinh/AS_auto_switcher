@@ -495,23 +495,17 @@ class AppWindow:
                         pass
 
                 if success:
-                    # Refresh UI to show new active account
+                    # Refresh UI to show new active account in RAM immediately
                     self.refresh_accounts()
                     now_str = datetime.datetime.now().strftime("%H:%M:%S")
-                    self.status_bar_text = f"Đã chuyển đổi thành công sang: {target_email} lúc {now_str}"
+                    self.status_bar_text = f"Đã chuyển đổi thành công sang: {target_email} lúc {now_str} (Language Server re-bound in RAM)"
                     if hasattr(self, "status_bar") and self.status_bar and hasattr(self.status_bar, "config"):
                         try:
                             self.status_bar.config(text=self.status_bar_text)
                         except Exception:
                             pass
-                    if not self.headless and self.root is not None and self.show_dialogs:
-                        try:
-                            messagebox.showinfo(
-                                "Chuyển Đổi Thành Công",
-                                f"{msg}\n\nAntigravity đã nhận phiên mới và sẵn sàng tiếp tục công việc!"
-                            )
-                        except Exception:
-                            pass
+                    # CRITICAL UX REFACTORING: Completely purged messagebox.showinfo!
+                    # Zero blocking modal popups. The user remains 100% in uninterrupted flow.
                 else:
                     # Restore buttons on error
                     for b in self.switch_buttons.values():

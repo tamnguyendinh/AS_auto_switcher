@@ -41,10 +41,16 @@ keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_v
 keybd_event.restype = None
 
 VK_CONTROL = 0x11
+VK_RETURN = 0x0D
+VK_L = 0x4C
+VK_V = 0x56
 VK_R = 0x52
 KEYEVENTF_KEYUP = 0x0002
 
 
+import os
+import json
+import tempfile
 import subprocess
 import csv
 import io
@@ -204,3 +210,241 @@ def reload_antigravity_session(
             window_ok = False
 
     return bool(reauth_ok or window_ok)
+
+
+# Backward compatibility alias
+reload_session = reload_antigravity_session
+
+
+def get_app_storage_path() -> str:
+    """Returns the absolute path to Antigravity's app_storage.json."""
+    app_data = os.environ.get("APPDATA", "")
+    return os.path.join(app_data, "Antigravity", "app_storage.json")
+
+
+def pre_patch_tos_acceptance(
+    target_email: str,
+    storage_path: Optional[str] = None,
+) -> bool:
+    """
+    Layer 1 Defense: Pre-patches app_storage.json to mark GCP ToS as accepted
+    for target_email, preventing the modal dialog from appearing.
+    Uses atomic replace to prevent corrupting storage during concurrent IDE access.
+    """
+    if not target_email or not isinstance(target_email, str):
+        return False
+
+    if storage_path is not None and not str(storage_path).strip():
+        return False
+
+    path = storage_path or get_app_storage_path()
+    if not path:
+        return False
+
+    # If default path is used and does not exist on disk, return False safely
+    if storage_path is None and not os.path.exists(path):
+        return False
+
+    try:
+        data = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+
+        data["jetski.onboarding.lastLoginUsername"] = target_email
+        data["jetski.onboarding.lastLoginIsGcpTos"] = "true"  # Must be string literal "true" per schema
+
+        dir_name = os.path.dirname(path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+
+        with tempfile.NamedTemporaryFile("w", dir=dir_name if dir_name else None, delete=False, encoding="utf-8") as tf:
+            json.dump(data, tf, indent=2, ensure_ascii=False)
+            temp_path = tf.name
+
+        os.replace(temp_path, path)
+        return True
+    except Exception as exc:
+        logger.debug("pre_patch_tos_acceptance error: %s", exc)
+        return False
+
+
+def recycle_language_server(
+    wait_seconds: float = 2.5,
+    process_killer: Optional[Callable[..., Any]] = None,
+    timeout: float = 5.0,
+) -> bool:
+    """
+    Terminates language_server.exe cleanly.
+    Antigravity's internal monitorLsCrashInternal automatically spawns a fresh
+    instance within 2000ms, which calls CredReadW and loads the new token into RAM.
+    """
+    try:
+        if process_killer is not None:
+            res = process_killer()
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+            return bool(res) if res is not None else True
+
+        creationflags = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            creationflags = subprocess.CREATE_NO_WINDOW
+
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "language_server.exe"],
+            capture_output=True,
+            timeout=timeout,
+            creationflags=creationflags,
+            check=False,
+        )
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        return True
+    except Exception as exc:
+        logger.debug("recycle_language_server error: %s", exc)
+        return False
+
+
+def is_tos_modal_present(
+    modal_finder: Optional[Callable[[], bool]] = None,
+) -> bool:
+    """
+    Checks if an Antigravity Terms of Service or Google Cloud Code modal dialog is visible.
+    """
+    if modal_finder is not None:
+        try:
+            return bool(modal_finder())
+        except Exception:
+            return False
+
+    try:
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return False
+        buf = ctypes.create_unicode_buffer(512)
+        GetWindowTextW(hwnd, buf, 512)
+        title = buf.value.lower()
+        if any(w in title for w in ["terms of service", "google cloud code", "điều khoản", "terms"]):
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def dismiss_tos_modal_hardware_fallback(
+    key_sender: Optional[Callable[[], None]] = None,
+) -> None:
+    """
+    Layer 2 Defense: Synthesizes Enter (VK_RETURN) key event if an unmanaged ToS dialog holds focus.
+    """
+    if key_sender is not None:
+        key_sender()
+        return
+
+    try:
+        keybd_event(VK_RETURN, 0, 0, None)
+        time.sleep(0.05)
+        keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, None)
+    except Exception as exc:
+        logger.debug("dismiss_tos_modal_hardware_fallback error: %s", exc)
+
+
+def _set_clipboard_text(text: str) -> bool:
+    """Sets text into Windows clipboard using Win32 API, with Tkinter fallback."""
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        if user32.OpenClipboard(None):
+            try:
+                user32.EmptyClipboard()
+                encoded = (text + "\0").encode("utf-16le")
+                # GMEM_MOVEABLE = 0x0002
+                h_mem = kernel32.GlobalAlloc(0x0002, len(encoded))
+                if h_mem:
+                    p_mem = kernel32.GlobalLock(h_mem)
+                    if p_mem:
+                        ctypes.memmove(p_mem, encoded, len(encoded))
+                        kernel32.GlobalUnlock(h_mem)
+                        # CF_UNICODETEXT = 13
+                        user32.SetClipboardData(13, h_mem)
+                return True
+            finally:
+                user32.CloseClipboard()
+    except Exception:
+        pass
+
+    try:
+        import tkinter as tk
+        r = tk.Tk()
+        r.withdraw()
+        r.clipboard_clear()
+        r.clipboard_append(text)
+        r.update()
+        r.destroy()
+        return True
+    except Exception:
+        return False
+
+
+def inject_continuation_prompt(
+    prompt_text: str = "continue",
+    window_finder: Optional[Callable[[], List[wintypes.HWND]]] = None,
+    foreground_setter: Optional[Callable[[wintypes.HWND], bool]] = None,
+    key_sender: Optional[Callable[..., Any]] = None,
+) -> bool:
+    """
+    Preserves in-flight workflow by focusing the active chat tab (Ctrl+L)
+    and injecting continuation prompt + Enter.
+    """
+    if key_sender is not None:
+        try:
+            return bool(key_sender(prompt_text))
+        except Exception:
+            return False
+
+    finder = window_finder or find_antigravity_windows
+    try:
+        hwnds = finder()
+    except Exception:
+        hwnds = []
+
+    if not hwnds:
+        return False
+
+    setter = foreground_setter or SetForegroundWindow
+    target_hwnd = hwnds[0]
+    try:
+        setter(target_hwnd)
+        time.sleep(0.1)
+
+        # 1. Synthesize Ctrl+L to focus chat input
+        keybd_event(VK_CONTROL, 0, 0, None)
+        keybd_event(VK_L, 0, 0, None)
+        time.sleep(0.05)
+        keybd_event(VK_L, 0, KEYEVENTF_KEYUP, None)
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, None)
+
+        time.sleep(0.15)
+
+        # 2. Inject text using clipboard paste (Ctrl+V) for instant high-speed Unicode injection
+        _set_clipboard_text(prompt_text)
+
+        keybd_event(VK_CONTROL, 0, 0, None)
+        keybd_event(VK_V, 0, 0, None)
+        time.sleep(0.05)
+        keybd_event(VK_V, 0, KEYEVENTF_KEYUP, None)
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, None)
+
+        time.sleep(0.1)
+
+        # 3. Press Enter to submit prompt
+        keybd_event(VK_RETURN, 0, 0, None)
+        time.sleep(0.05)
+        keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, None)
+        return True
+    except Exception as exc:
+        logger.debug("inject_continuation_prompt error: %s", exc)
+        return False
+

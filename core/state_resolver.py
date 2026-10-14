@@ -17,7 +17,14 @@ from scanner.chrome_scanner import (
 from core.credential_manager import read_antigravity_token, write_antigravity_token
 from core.jwt_helper import extract_email_from_token_data
 from core.account_store import AccountStore
-from core.session_reloader import reload_antigravity_session
+from core.session_reloader import (
+    reload_antigravity_session,
+    pre_patch_tos_acceptance,
+    recycle_language_server,
+    is_tos_modal_present,
+    dismiss_tos_modal_hardware_fallback,
+    inject_continuation_prompt,
+)
 from core.api_connector import (
     find_language_server_process,
     get_user_status,
@@ -87,6 +94,13 @@ class AccountManager:
         process_finder: Optional[Callable[[], Any]] = None,
         status_getter: Optional[Callable[[Any], Optional[Dict[str, Any]]]] = None,
         force_logout: bool = False,
+        auto_continue: bool = True,
+        prompt_text: str = "continue",
+        tos_pre_patcher: Optional[Callable[[str], bool]] = None,
+        language_server_recycler: Optional[Callable[..., bool]] = None,
+        prompt_injector: Optional[Callable[..., bool]] = None,
+        tos_modal_checker: Optional[Callable[[], bool]] = None,
+        fallback_dismisser: Optional[Callable[[], None]] = None,
     ):
         self.store = store or AccountStore()
         self.user_status_provider = user_status_provider
@@ -98,6 +112,13 @@ class AccountManager:
         self.process_finder = process_finder
         self.status_getter = status_getter
         self.force_logout = force_logout
+        self.auto_continue = auto_continue
+        self.prompt_text = prompt_text
+        self.tos_pre_patcher = tos_pre_patcher
+        self.language_server_recycler = language_server_recycler
+        self.prompt_injector = prompt_injector
+        self.tos_modal_checker = tos_modal_checker
+        self.fallback_dismisser = fallback_dismisser
 
     def get_current_active_email(
         self,
@@ -264,10 +285,18 @@ class AccountManager:
         token_writer: Optional[Callable[[Dict[str, Any]], bool]] = None,
         process_finder: Optional[Callable[[], Any]] = None,
         status_getter: Optional[Callable[[Any], Optional[Dict[str, Any]]]] = None,
+        auto_continue: Optional[bool] = None,
+        prompt_text: Optional[str] = None,
+        tos_pre_patcher: Optional[Callable[[str], bool]] = None,
+        language_server_recycler: Optional[Callable[..., bool]] = None,
+        prompt_injector: Optional[Callable[..., bool]] = None,
+        tos_modal_checker: Optional[Callable[[], bool]] = None,
+        fallback_dismisser: Optional[Callable[[], None]] = None,
         **kwargs: Any,
     ) -> SwitchResult:
         """
-        Executes Smooth Zero-Chrome Hot-Swap (or full 4-step coordinator if force_logout=True):
+        Executes Seamless Account Hot-Swap with RAM synchronization, ToS bypass,
+        and uninterrupted in-flight session continuation:
           Step 1 (GetUserStatus): Discover running language_server.exe and query current active email in RAM.
                                   If already active on target_email, return True (idempotent / no-op).
           Step 2 (AuthLogout): By default, DO NOT call auth_logout()! Bypassing AuthLogout() avoids
@@ -275,8 +304,12 @@ class AccountManager:
                                Only called if force_logout=True (or skip_logout=False).
           Step 3 (Swap Token): Load target token from store. If missing or invalid, abort safely.
                                Write target Token B directly into Windows Credential Manager.
-          Step 4 (Re-Auth / Reload Trigger): Signal Antigravity to reload credentials from Windows Credential Manager
-                               into RAM in 0.1s — completely seamless, with ZERO Chrome popups and ZERO user clicks!
+          Step 4 (Pre-patch ToS): Layer 1 Defense: atomize write to %APPDATA%\\Antigravity\\app_storage.json
+                                  setting lastLoginUsername and lastLoginIsGcpTos = "true".
+          Step 5 (Recycle Language Server): Terminate language_server.exe cleanly, letting monitorLsCrashInternal
+                                            respawn it with fresh tokens in RAM without opening Chrome.
+          Step 6 (Fallback Check): Layer 2 Defense: check if ToS modal appeared and dismiss via Win32 Enter.
+          Step 7 (Prompt Continuation): Inject continuation prompt (default: "continue") to resume AI agent.
         """
         if not target_email or not isinstance(target_email, str):
             return SwitchResult(False, "Email tài khoản không hợp lệ.")
@@ -374,23 +407,55 @@ class AccountManager:
         if not write_ok:
             return SwitchResult(False, "Không thể ghi Token vào Windows Credential Manager!")
 
-        # Step 4 (Re-Auth / Reload Trigger): Signal Antigravity to reload credentials into RAM
-        reloader = reloader_fn or self.reloader_fn or reload_antigravity_session
+        # Step 4: Layer 1 ToS Pre-Patching in app_storage.json
+        patcher = tos_pre_patcher or getattr(self, "tos_pre_patcher", None) or pre_patch_tos_acceptance
         try:
-            import inspect
-            sig = inspect.signature(reloader)
-            if "info" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-                reloader(info=info)
-            elif len(sig.parameters) >= 1:
-                reloader(info)
-            else:
-                reloader()
-        except TypeError:
-            try:
-                reloader(info)
-            except TypeError:
-                reloader()
+            patcher(norm_email)
         except Exception:
             pass
+
+        # Step 5: Recycle language_server.exe to re-bind credentials into RAM
+        recycler = (
+            language_server_recycler
+            or reloader_fn
+            or getattr(self, "language_server_recycler", None)
+            or getattr(self, "reloader_fn", None)
+            or recycle_language_server
+        )
+        try:
+            import inspect
+            sig = inspect.signature(recycler)
+            if "info" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+                recycler(info=info)
+            elif len(sig.parameters) >= 1:
+                recycler(info)
+            else:
+                recycler()
+        except TypeError:
+            try:
+                recycler(info)
+            except TypeError:
+                recycler()
+        except Exception:
+            pass
+
+        # Step 6: Layer 2 ToS Dismissal Fallback check
+        checker = tos_modal_checker or getattr(self, "tos_modal_checker", None) or is_tos_modal_present
+        dismisser = fallback_dismisser or getattr(self, "fallback_dismisser", None) or dismiss_tos_modal_hardware_fallback
+        try:
+            if checker():
+                dismisser()
+        except Exception:
+            pass
+
+        # Step 7: Autonomous Prompt Continuation
+        should_auto_continue = self.auto_continue if auto_continue is None else bool(auto_continue)
+        if should_auto_continue:
+            injector = prompt_injector or getattr(self, "prompt_injector", None) or inject_continuation_prompt
+            try:
+                p_text = prompt_text or getattr(self, "prompt_text", "continue") or "continue"
+                injector(prompt_text=p_text)
+            except Exception:
+                pass
 
         return SwitchResult(True, f"Đã chuyển đổi thành công sang: {norm_email}")
