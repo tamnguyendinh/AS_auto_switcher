@@ -791,7 +791,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Refresh row `ui/app_window.py`.
   - Commit Boundary: Commit milestone `feat(P4-B): connect hot-swap trigger with progress feedback`.
 
-- [ ] P4-C: Session Persistence & Manual Chrome Sync Controls
+- [x] P4-C: Session Persistence & Manual Chrome Sync Controls
   - Goal: Verify and harden the `[💾 Lưu phiên hiện tại]` button and `[🔄 Làm mới Chrome]` button, and ensure the status bar reports accurate counts and timestamps.
   - Scope Boundary:
     - Editable: `ui/app_window.py`.

@@ -87,7 +87,7 @@ Out of scope:
 | `core/api_connector.py` | Process discovery, PID, port, `--csrf_token` extraction, and internal API clients (`GetUserStatus`, `AuthLogout`, `trigger_reauth`) implemented. | Discovers `language_server.exe` PID, port, `--csrf_token`; calls `GetUserStatus()`, `AuthLogout()`, and `trigger_reauth()`. | `correct` | 3 related files | `E2-P2A-DISC1`, `E2-P2B-API1`, `E2-P2B-API2`, `E2-P2C-REAUTH1` | Preserve in Phase P3 / wire into state resolver |
 | `scanner/chrome_scanner.py` | Multi-profile extraction and strict `anvien` blacklist filtering hardened. | Robust extraction of signed-in Chrome emails excluding blacklisted terms. | `correct` | 2 related files | `E0-P0A-SRC5`, `E0-P0A-SEC1`, `E3-P3A-SCAN1` | Preserve in P3-B, wire into state resolver |
 | `core/state_resolver.py` | Live RAM identity binding, auto-capture, and state resolution (ACTIVE, READY, UNAUTH) implemented. | Resolves accounts using RAM status from `GetUserStatus()`; coordinates full 4-step hot-swap loop. | `correct` | 4 related files | `E0-P0A-SRC4`, `E3-P3B-STATE1` | Preserve in P3-C / wire 4-step switching loop coordinator |
-| `ui/app_window.py` | Tkinter UI with account list, status dots, and action buttons; lacks live RAM email sync and API feedback. | Displays live RAM account status, real-time 4-step switching progress, error feedback, and manual sync. | `partial` | 2 related files | `E0-P0A-SRC6` | Update in P4-A, P4-B, P4-C |
+| `ui/app_window.py` | Live RAM identity display, 1-click hot-swap with visual feedback, session persistence, and manual sync controls implemented. | Displays live RAM account status, real-time 4-step switching progress, error feedback, and manual sync. | `correct` | 2 related files | `E0-P0A-SRC6`, `E4-P4A-UI1`, `E4-P4B-ACT1`, `E4-P4C-SYNC1` | Preserve in Phase P5 / verify in test suite |
 | `tests/test_all.py` | 6 unit tests passing for store, jwt, blacklist, and live credential read. | Comprehensive test suite covering API connector, port discovery, 4-step switching loop, and edge cases. | `partial` | 6 related files | `E0-P0A-SRC7`, `E0-P0A-TEST1` | Expand in P5-A, P5-B |
 
 ## Status Refresh Log
@@ -105,6 +105,7 @@ Out of scope:
 | R8 | 2026-10-14 | commit cf952ea (Slice P3-C) | `core/state_resolver.py`, `tests/test_all.py` | P3-C complete: 4-step closed-loop hot-swap coordinator implemented and verified | `E3-P3C-SW1` | Proceed to Phase P4 (User Interface Upgrades) |
 | R9 | 2026-10-14 | commit ddd180e (Slice P4-A) | `ui/app_window.py`, `tests/test_all.py` | P4-A complete: UI wired to live RAM state and hot-swap coordinator with visual badging and status bar feedback | `E4-P4A-UI1` | Proceed to Slice P4-B (1-Click Hot-Swap Trigger & Status Feedback) |
 | R10 | 2026-10-14 | commit 3460f02 (Slice P4-B) | `ui/app_window.py`, `tests/test_all.py` | P4-B complete: 1-click hot-swap trigger connected with visual progress feedback, error handling, and post-swap state refresh | `E4-P4B-ACT1` | Proceed to Slice P4-C (Session Persistence & Manual Chrome Sync Controls) |
+| R11 | 2026-10-14 | commit 14b567b (Slice P4-C) | `ui/app_window.py`, `tests/test_all.py` | P4-C complete: session persistence and manual Chrome sync controls implemented and verified | `E4-P4C-SYNC1` | Proceed to Phase P5 (Verification & Regression QA) |
 
 ## Phase Touch Map
 
