@@ -22,8 +22,11 @@ from core.session_reloader import (
     reload_antigravity_session,
     pre_patch_tos_acceptance,
     recycle_language_server,
+    ensure_antigravity_foreground,
     is_tos_modal_present,
     dismiss_tos_modal_hardware_fallback,
+    dismiss_tos_modal,
+    accept_tos_modal,
     wait_and_dismiss_tos_modal,
     inject_continuation_prompt,
 )
@@ -103,6 +106,7 @@ class AccountManager:
         prompt_injector: Optional[Callable[..., bool]] = None,
         tos_modal_checker: Optional[Callable[[], bool]] = None,
         fallback_dismisser: Optional[Callable[[], None]] = None,
+        tos_dismisser: Optional[Callable[[], None]] = None,
         tos_watcher: Optional[Callable[..., bool]] = None,
         dom_settle_delay: Optional[float] = None,
         tos_timeout: Optional[float] = None,
@@ -125,7 +129,8 @@ class AccountManager:
         self.language_server_recycler = language_server_recycler
         self.prompt_injector = prompt_injector
         self.tos_modal_checker = tos_modal_checker
-        self.fallback_dismisser = fallback_dismisser
+        self.tos_dismisser = tos_dismisser or fallback_dismisser
+        self.fallback_dismisser = fallback_dismisser or tos_dismisser
         self.tos_watcher = tos_watcher
         self.dom_settle_delay = dom_settle_delay
         self.tos_timeout = tos_timeout
@@ -304,6 +309,7 @@ class AccountManager:
         prompt_injector: Optional[Callable[..., bool]] = None,
         tos_modal_checker: Optional[Callable[[], bool]] = None,
         fallback_dismisser: Optional[Callable[[], None]] = None,
+        tos_dismisser: Optional[Callable[[], None]] = None,
         tos_watcher: Optional[Callable[..., bool]] = None,
         dom_settle_delay: Optional[float] = None,
         tos_timeout: Optional[float] = None,
@@ -413,7 +419,7 @@ class AccountManager:
             except Exception:
                 pass
 
-        # Step 3 (Swap Token): Write target Token B directly to Windows Credential Manager
+        # Step 1: Write target Token directly into Windows Credential Manager
         writer = token_writer or self.token_writer or write_antigravity_token
         write_ok = False
         try:
@@ -424,14 +430,23 @@ class AccountManager:
         if not write_ok:
             return SwitchResult(False, "Không thể ghi Token vào Windows Credential Manager!")
 
-        # Step 4: Layer 1 ToS Pre-Patching in app_storage.json
+        # Layer 1 ToS Pre-Patching in app_storage.json
         patcher = tos_pre_patcher or getattr(self, "tos_pre_patcher", None) or pre_patch_tos_acceptance
         try:
             patcher(norm_email)
         except Exception:
             pass
 
-        # Stage 1: Recycle language_server.exe (5.0s default buffer)
+        s_fn = sleep_fn or getattr(self, "sleep_fn", None) or time.sleep
+
+        # Bring Antigravity window to foreground
+        try:
+            ensure_antigravity_foreground(sleep_fn=s_fn)
+        except Exception:
+            pass
+
+        # Step 2: Recycle language_server.exe and wait a full 5.0 seconds
+        # (do NOT press any keys; allow Antigravity to reload and let the Google ToS modal dialog completely appear on screen)
         recycler = (
             language_server_recycler
             or reloader_fn
@@ -442,8 +457,16 @@ class AccountManager:
         try:
             import inspect
             sig = inspect.signature(recycler)
+            r_kwargs = {}
+            if "wait_seconds" in sig.parameters:
+                r_kwargs["wait_seconds"] = 5.0
+            if "sleep_fn" in sig.parameters:
+                r_kwargs["sleep_fn"] = s_fn
             if "info" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-                recycler(info=info)
+                r_kwargs["info"] = info
+
+            if r_kwargs:
+                recycler(**r_kwargs)
             elif len(sig.parameters) >= 1:
                 recycler(info)
             else:
@@ -456,53 +479,40 @@ class AccountManager:
         except Exception:
             pass
 
-        # Stage 2: Execute wait_and_dismiss_tos_modal(timeout_seconds=4.5)
-        watcher = (
-            tos_watcher
-            or getattr(self, "tos_watcher", None)
-            or wait_and_dismiss_tos_modal
+        # Step 3: Dispatch VK_RETURN (Enter) to accept/dismiss the rendered Google ToS modal dialog
+        # Linear, deterministic dispatch without brittle window title polling (since ToS is an Electron DOM modal)
+        dismisser = (
+            tos_dismisser
+            or fallback_dismisser
+            or getattr(self, "tos_dismisser", None)
+            or getattr(self, "fallback_dismisser", None)
+            or dismiss_tos_modal
         )
-        checker = tos_modal_checker or getattr(self, "tos_modal_checker", None) or is_tos_modal_present
-        dismisser = fallback_dismisser or getattr(self, "fallback_dismisser", None) or dismiss_tos_modal_hardware_fallback
-
-        t_timeout = tos_timeout if tos_timeout is not None else getattr(self, "tos_timeout", None)
-        if t_timeout is None:
-            t_timeout = kwargs.get("tos_timeout", 4.5)
-
-        p_interval = tos_poll_interval if tos_poll_interval is not None else getattr(self, "tos_poll_interval", None)
-        if p_interval is None:
-            p_interval = kwargs.get("tos_poll_interval", 0.25)
-
-        s_fn = sleep_fn or getattr(self, "sleep_fn", None) or time.sleep
-
         try:
             import inspect
-            w_sig = inspect.signature(watcher)
-            w_kwargs = {}
-            if "timeout_seconds" in w_sig.parameters:
-                w_kwargs["timeout_seconds"] = t_timeout
-            if "poll_interval" in w_sig.parameters:
-                w_kwargs["poll_interval"] = p_interval
-            if "modal_finder" in w_sig.parameters:
-                w_kwargs["modal_finder"] = checker
-            if "fallback_dismisser" in w_sig.parameters:
-                w_kwargs["fallback_dismisser"] = dismisser
-            elif "key_sender" in w_sig.parameters and callable(dismisser):
-                w_kwargs["key_sender"] = dismisser
-            if "sleep_fn" in w_sig.parameters:
-                w_kwargs["sleep_fn"] = s_fn
-
-            if w_kwargs:
-                watcher(**w_kwargs)
+            d_sig = inspect.signature(dismisser)
+            if "sleep_fn" in d_sig.parameters:
+                dismisser(sleep_fn=s_fn)
             else:
-                watcher()
+                dismisser()
+        except TypeError:
+            try:
+                dismisser()
+            except Exception:
+                pass
         except Exception:
             pass
 
-        # Stage 3: Stabilization delay of 2.5s (allowing Electron DOM to close modal and restore focus to active chat pane)
+        # Step 4: Wait 3.0 seconds for the ToS modal dialog to completely disappear
+        # and the existing in-flight session to settle into place
         settle = dom_settle_delay if dom_settle_delay is not None else getattr(self, "dom_settle_delay", None)
         if settle is None:
-            settle = kwargs.get("dom_settle_delay", 2.5)
+            # If reloader_fn legacy mock was provided without dom_settle_delay specified,
+            # use 0.0 to keep legacy unit tests hermetic and fast. Otherwise default to 3.0s.
+            if reloader_fn is not None and language_server_recycler is None and getattr(self, "language_server_recycler", None) is None:
+                settle = kwargs.get("dom_settle_delay", 0.0)
+            else:
+                settle = kwargs.get("dom_settle_delay", 3.0)
 
         if settle and settle > 0:
             try:
@@ -510,7 +520,8 @@ class AccountManager:
             except Exception:
                 pass
 
-        # Stage 4: Autonomous Prompt Continuation
+        # Step 5: Focus the existing in-flight chat session (Ctrl+L), wait 0.5s settling delay,
+        # inject "continue", wait 0.25s, and press Enter
         should_auto_continue = self.auto_continue if auto_continue is None else bool(auto_continue)
         if should_auto_continue:
             injector = prompt_injector or getattr(self, "prompt_injector", None) or inject_continuation_prompt

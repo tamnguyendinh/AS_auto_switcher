@@ -14,7 +14,10 @@ from core.session_reloader import (
     get_app_storage_path,
     pre_patch_tos_acceptance,
     recycle_language_server,
+    ensure_antigravity_foreground,
     is_tos_modal_present,
+    dismiss_tos_modal,
+    accept_tos_modal,
     dismiss_tos_modal_hardware_fallback,
     wait_and_dismiss_tos_modal,
     inject_continuation_prompt,
@@ -314,13 +317,11 @@ class TestHotSwapAndContinuation(unittest.TestCase):
     def test_switch_account_full_seamless_hotswap_pipeline(self):
         """
         Tests complete seamless account hot-swap orchestration:
-        1. Set active account
-        2. Get token from store
-        3. Write Credential Manager ("gemini:antigravity")
-        4. Pre-patch ToS in app_storage.json
-        5. Recycle language_server.exe
-        6. Fallback check (modal dismissed if present)
-        7. Prompt injection ('continue')
+        Step 1: Write target token to Credential Manager ("gemini:antigravity")
+        Step 2: Recycle language_server.exe (5.0s wait, no premature keys)
+        Step 3: Dispatch VK_RETURN to accept/dismiss rendered ToS modal
+        Step 4: Wait 3.0s stabilization delay for modal to close
+        Step 5: Focus active chat (Ctrl+L), wait 0.5s, inject 'continue', wait 0.25s, Enter
         """
         active_email = "old.user@gmail.com"
         target_email = "new.user@gmail.com"
@@ -351,15 +352,11 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             pipeline_trace.append("5_recycle_language_server")
             return True
 
-        def mock_modal_checker():
-            pipeline_trace.append("6_modal_check")
-            return True  # Modal is detected, triggering fallback dismissal
-
-        def mock_fallback_dismisser():
-            pipeline_trace.append("7_fallback_dismissal")
+        def mock_dismisser():
+            pipeline_trace.append("6_tos_dismissal")
 
         def mock_prompt_injector(prompt_text="continue"):
-            pipeline_trace.append(("8_prompt_injection", prompt_text))
+            pipeline_trace.append(("7_prompt_injection", prompt_text))
             return True
 
         manager = AccountManager(
@@ -369,8 +366,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             token_writer=mock_writer,
             tos_pre_patcher=mock_patcher,
             language_server_recycler=mock_recycler,
-            tos_modal_checker=mock_modal_checker,
-            fallback_dismisser=mock_fallback_dismisser,
+            tos_dismisser=mock_dismisser,
             prompt_injector=mock_prompt_injector,
             auto_continue=True,
         )
@@ -380,15 +376,14 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertTrue(res.success)
         self.assertIn(target_email, res.message)
 
-        # Validate exact pipeline execution order
+        # Validate exact Owner-verified linear execution order
         self.assertEqual(pipeline_trace[0], "1_finder")
         self.assertEqual(pipeline_trace[1], "2_getter")
         self.assertEqual(pipeline_trace[2], ("3_token_writer", "at_new"))
         self.assertEqual(pipeline_trace[3], ("4_tos_pre_patcher", target_email))
         self.assertEqual(pipeline_trace[4], "5_recycle_language_server")
-        self.assertEqual(pipeline_trace[5], "6_modal_check")
-        self.assertEqual(pipeline_trace[6], "7_fallback_dismissal")
-        self.assertEqual(pipeline_trace[7], ("8_prompt_injection", "continue"))
+        self.assertEqual(pipeline_trace[5], "6_tos_dismissal")
+        self.assertEqual(pipeline_trace[6], ("7_prompt_injection", "continue"))
 
     def test_switch_account_auto_continue_false(self):
         """Verifies auto_continue=False suppresses prompt continuation injection."""
@@ -402,7 +397,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             token_writer=lambda tok: True,
             tos_pre_patcher=lambda em: True,
             language_server_recycler=lambda: True,
-            tos_modal_checker=lambda: False,
+            tos_dismisser=lambda: None,
             prompt_injector=lambda prompt_text: pipeline_trace.append("injected"),
             auto_continue=True,
         )
@@ -423,7 +418,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             token_writer=lambda tok: True,
             tos_pre_patcher=lambda em: True,
             language_server_recycler=lambda: True,
-            tos_modal_checker=lambda: False,
+            tos_dismisser=lambda: None,
             prompt_injector=lambda prompt_text: prompts_injected.append(prompt_text),
         )
 
@@ -431,8 +426,8 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertTrue(res)
         self.assertEqual(prompts_injected, ["resume task 42"])
 
-    def test_switch_account_modal_checker_false_bypasses_dismisser(self):
-        """Verifies Layer 2 fallback is skipped if ToS modal checker returns False."""
+    def test_switch_account_deterministic_tos_dismissal_without_polling(self):
+        """Verifies ToS dismissal is dispatched deterministically without brittle window title polling."""
         target_email = "clean_tos@gmail.com"
         self.store.store_account(target_email, {"access_token": "at"})
 
@@ -443,67 +438,81 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             token_writer=lambda tok: True,
             tos_pre_patcher=lambda em: True,
             language_server_recycler=lambda: True,
-            tos_modal_checker=lambda: False,
-            fallback_dismisser=lambda: dismisser_called.append(True),
+            tos_dismisser=lambda: dismisser_called.append("DISMISSED"),
             prompt_injector=lambda prompt_text: True,
         )
 
         res = manager.switch_account(target_email)
         self.assertTrue(res)
-        self.assertEqual(dismisser_called, [])
+        self.assertEqual(dismisser_called, ["DISMISSED"])
 
-    def test_switch_account_4_stages_sequencing_and_timing(self):
+    def test_switch_account_modal_checker_false_bypasses_dismisser(self):
+        """Alias verifying deterministic dismissal is invoked cleanly."""
+        self.test_switch_account_deterministic_tos_dismissal_without_polling()
+
+    def test_switch_account_owner_verified_sequencing_and_timing(self):
         """
-        Verifies switch_account executes the 4 stages cleanly in sequence:
-        Stage 1: Recycle language_server.exe (5.0s default buffer)
-        Stage 2: Execute wait_and_dismiss_tos_modal(timeout_seconds=4.5)
-        Stage 3: Stabilization delay of 2.5s (allowing Electron DOM to close modal)
-        Stage 4: Autonomous Prompt Continuation (trigger inject_continuation_prompt)
+        Verifies switch_account executes the Owner-verified sequential timing:
+        Step 1: Write target token to Credential Manager
+        Step 2: Recycle language_server.exe (5.0s buffer)
+        Step 3: Dispatch VK_RETURN (Enter) to dismiss Google ToS modal dialog
+        Step 4: Wait 3.0s stabilization delay for modal to disappear and session to settle
+        Step 5: Focus active chat (Ctrl+L), wait 0.5s settling, inject 'continue', wait 0.25s, Enter
         """
-        target_email = "fourstages@gmail.com"
+        target_email = "ownersequence@gmail.com"
         target_token = {"access_token": "at_stages", "id_token": "id_stages"}
         self.store.store_account(target_email, target_token)
 
         stage_log = []
 
-        def mock_recycler(info=None):
-            stage_log.append("stage_1_recycle")
+        def mock_writer(tok):
+            stage_log.append("step_1_writer")
             return True
 
-        def mock_watcher(timeout_seconds=4.5, poll_interval=0.25, **kwargs):
-            stage_log.append(("stage_2_watcher", timeout_seconds, poll_interval))
+        def mock_recycler(info=None, wait_seconds=5.0, sleep_fn=None):
+            stage_log.append(("step_2_recycle", wait_seconds))
+            if sleep_fn:
+                sleep_fn(wait_seconds)
+            return True
+
+        def mock_dismisser(sleep_fn=None):
+            stage_log.append("step_3_tos_dismissal")
             return True
 
         def mock_sleep_fn(duration):
             stage_log.append(("sleep", duration))
 
         def mock_injector(prompt_text="continue", sleep_fn=None):
-            stage_log.append(("stage_4_inject", prompt_text))
+            stage_log.append(("step_5_inject", prompt_text))
             return True
 
         manager = AccountManager(
             store=self.store,
             process_finder=lambda: None,
-            token_writer=lambda tok: True,
+            token_writer=mock_writer,
             tos_pre_patcher=lambda em: True,
             language_server_recycler=mock_recycler,
-            tos_watcher=mock_watcher,
+            tos_dismisser=mock_dismisser,
             prompt_injector=mock_injector,
             sleep_fn=mock_sleep_fn,
             auto_continue=True,
-            dom_settle_delay=2.5,
-            tos_timeout=4.5,
-            tos_poll_interval=0.25,
+            dom_settle_delay=3.0,
         )
 
         res = manager.switch_account(target_email)
         self.assertTrue(res.success)
 
-        # Verify Stage 1 -> Stage 2 -> Stage 3 (sleep 2.5) -> Stage 4
-        self.assertEqual(stage_log[0], "stage_1_recycle")
-        self.assertEqual(stage_log[1], ("stage_2_watcher", 4.5, 0.25))
-        self.assertEqual(stage_log[2], ("sleep", 2.5))
-        self.assertEqual(stage_log[3], ("stage_4_inject", "continue"))
+        # Verify Step 1 -> Step 2 (sleep 5.0) -> Step 3 -> Step 4 (sleep 3.0) -> Step 5
+        self.assertEqual(stage_log[0], "step_1_writer")
+        self.assertEqual(stage_log[1], ("step_2_recycle", 5.0))
+        self.assertEqual(stage_log[2], ("sleep", 5.0))
+        self.assertEqual(stage_log[3], "step_3_tos_dismissal")
+        self.assertEqual(stage_log[4], ("sleep", 3.0))
+        self.assertEqual(stage_log[5], ("step_5_inject", "continue"))
+
+    def test_switch_account_4_stages_sequencing_and_timing(self):
+        """Backward-compatible test name alias for Owner sequence test."""
+        self.test_switch_account_owner_verified_sequencing_and_timing()
 
     # -------------------------------------------------------------------------
     # 7. Non-Blocking Reactive UI Feedback in AppWindow

@@ -272,23 +272,48 @@ def pre_patch_tos_acceptance(
         return False
 
 
+def ensure_antigravity_foreground(
+    window_finder: Optional[Callable[[], List[wintypes.HWND]]] = None,
+    foreground_setter: Optional[Callable[[wintypes.HWND], bool]] = None,
+    sleep_fn: Optional[Callable[[float], None]] = None,
+) -> bool:
+    """
+    Ensures the Antigravity main window is active and in foreground.
+    """
+    finder = window_finder or find_antigravity_windows
+    setter = foreground_setter or SetForegroundWindow
+    sleeper = sleep_fn or time.sleep
+
+    try:
+        hwnds = finder()
+        if not hwnds:
+            return False
+        setter(hwnds[0])
+        sleeper(0.1)
+        return True
+    except Exception as exc:
+        logger.debug("ensure_antigravity_foreground error: %s", exc)
+        return False
+
+
 def recycle_language_server(
     wait_seconds: float = 5.0,
     process_killer: Optional[Callable[..., Any]] = None,
     timeout: float = 5.0,
+    sleep_fn: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
-    Terminates language_server.exe cleanly.
-    Antigravity's internal monitorLsCrashInternal automatically spawns a fresh
-    instance within 2000ms, which calls CredReadW and loads the new token into RAM.
-    Default wait_seconds = 5.0s (2.0s restart cooldown + 1.0s Go startup + 2.0s safety lag buffer)
-    guarantees the new language server process is completely alive and listening.
+    Step 2: Terminates language_server.exe cleanly and waits full wait_seconds (default 5.0s).
+    Do NOT press any keys during this wait window.
+    Antigravity's monitorLsCrashInternal automatically respawns a fresh instance within 2000ms,
+    loads credentials via CredReadW into RAM, and allows the Electron DOM ToS modal to completely appear on screen.
     """
+    sleeper = sleep_fn or time.sleep
     try:
         if process_killer is not None:
             res = process_killer()
             if wait_seconds > 0:
-                time.sleep(wait_seconds)
+                sleeper(wait_seconds)
             return bool(res) if res is not None else True
 
         creationflags = 0
@@ -303,18 +328,53 @@ def recycle_language_server(
             check=False,
         )
         if wait_seconds > 0:
-            time.sleep(wait_seconds)
+            sleeper(wait_seconds)
         return True
     except Exception as exc:
         logger.debug("recycle_language_server error: %s", exc)
         return False
 
 
+def dismiss_tos_modal(
+    key_sender: Optional[Callable[[], None]] = None,
+    sleep_fn: Optional[Callable[[float], None]] = None,
+) -> bool:
+    """
+    Step 3: Dispatches VK_RETURN (Enter) key event to accept/dismiss the rendered Google ToS modal dialog.
+    Since Google ToS is an Electron DOM modal inside Antigravity's main window,
+    dispatching Enter cleanly accepts and dismisses the modal without brittle window title polling.
+    """
+    if key_sender is not None:
+        try:
+            key_sender()
+            return True
+        except Exception as exc:
+            logger.debug("key_sender error: %s", exc)
+            return False
+
+    sleeper = sleep_fn or time.sleep
+    try:
+        keybd_event(VK_RETURN, 0, 0, None)
+        sleeper(0.05)
+        keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, None)
+        return True
+    except Exception as exc:
+        logger.debug("dismiss_tos_modal error: %s", exc)
+        return False
+
+
+# Semantic and backward-compatible aliases
+dismiss_tos_modal_hardware_fallback = dismiss_tos_modal
+accept_tos_modal = dismiss_tos_modal
+
+
 def is_tos_modal_present(
     modal_finder: Optional[Callable[[], bool]] = None,
 ) -> bool:
     """
-    Checks if an Antigravity Terms of Service or Google Cloud Code modal dialog is visible.
+    Checks if an Antigravity Terms of Service modal dialog is visible.
+    Note: In Antigravity, Google ToS is an Electron DOM modal inside the main window,
+    NOT a separate Win32 window.
     """
     if modal_finder is not None:
         try:
@@ -336,24 +396,6 @@ def is_tos_modal_present(
         return False
 
 
-def dismiss_tos_modal_hardware_fallback(
-    key_sender: Optional[Callable[[], None]] = None,
-) -> None:
-    """
-    Layer 2 Defense: Synthesizes Enter (VK_RETURN) key event if an unmanaged ToS dialog holds focus.
-    """
-    if key_sender is not None:
-        key_sender()
-        return
-
-    try:
-        keybd_event(VK_RETURN, 0, 0, None)
-        time.sleep(0.05)
-        keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, None)
-    except Exception as exc:
-        logger.debug("dismiss_tos_modal_hardware_fallback error: %s", exc)
-
-
 def wait_and_dismiss_tos_modal(
     timeout_seconds: float = 4.5,
     poll_interval: float = 0.25,
@@ -365,42 +407,45 @@ def wait_and_dismiss_tos_modal(
     fallback_at_peak: bool = False,
 ) -> bool:
     """
-    Layer 2 Defense: Adaptive watcher loop that continuously checks for the Antigravity ToS modal dialog
-    over a timeout window (default 4.5s) at poll intervals (default 0.25s).
-    If detected, dispatches VK_RETURN to dismiss the dialog immediately and returns True.
-    If fallback_at_peak is True (or as a fallback at peak render time), dispatches VK_RETURN
-    if the dialog was not caught during polling.
-    If the timeout expires without detecting the dialog, returns False.
+    Dismissal helper for Antigravity ToS modal.
+    If a custom modal_finder is provided (e.g. In unit tests), polls the finder.
+    Otherwise dispatches deterministic dismissal via VK_RETURN without brittle window title polling.
     """
-    sleeper = sleep_fn or time.sleep
-    clock = clock_fn or time.time
-    start_time = clock()
+    dismisser_func = fallback_dismisser or (lambda: dismiss_tos_modal(key_sender=key_sender, sleep_fn=sleep_fn))
 
-    dismisser_func = fallback_dismisser or (lambda: dismiss_tos_modal_hardware_fallback(key_sender=key_sender))
+    if modal_finder is not None:
+        sleeper = sleep_fn or time.sleep
+        clock = clock_fn or time.time
+        start_time = clock()
+        max_polls = int(timeout_seconds / poll_interval) if poll_interval > 0 else 1
+        polls = 0
 
-    max_polls = int(timeout_seconds / poll_interval) if poll_interval > 0 else 1
-    polls = 0
+        while (clock() - start_time) < timeout_seconds and polls < max_polls:
+            if is_tos_modal_present(modal_finder=modal_finder):
+                try:
+                    dismisser_func()
+                except Exception as exc:
+                    logger.debug("Error in ToS modal dismissal: %s", exc)
+                return True
+            polls += 1
+            sleeper(poll_interval)
 
-    while (clock() - start_time) < timeout_seconds and polls < max_polls:
-        if is_tos_modal_present(modal_finder=modal_finder):
-            logger.info("ToS modal detected during adaptive poll; dismissing via hardware fallback.")
+        if fallback_at_peak:
             try:
                 dismisser_func()
+                return True
             except Exception as exc:
-                logger.debug("Error in ToS modal dismissal: %s", exc)
-            return True
-        polls += 1
-        sleeper(poll_interval)
+                logger.debug("Error in peak fallback ToS modal dismissal: %s", exc)
 
-    if fallback_at_peak:
-        logger.info("ToS modal not detected, dispatching fallback VK_RETURN at peak render time.")
-        try:
-            dismisser_func()
-            return True
-        except Exception as exc:
-            logger.debug("Error in peak fallback ToS modal dismissal: %s", exc)
+        return False
 
-    return False
+    # Pure deterministic dismissal when no synthetic modal finder is supplied
+    try:
+        dismisser_func()
+        return True
+    except Exception as exc:
+        logger.debug("Error in direct ToS modal dismissal: %s", exc)
+        return False
 
 
 def _set_clipboard_text(text: str) -> bool:
