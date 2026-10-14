@@ -398,7 +398,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Refresh row `core/api_connector.py`.
   - Commit Boundary: Commit milestone `feat(P2-B): implement GetUserStatus and AuthLogout API clients`.
 
-- [ ] P2-C: Re-Auth Trigger & RAM Session Reload
+- [x] P2-C: Re-Auth Trigger & RAM Session Reload
   - Goal: Implement Step 4: trigger Re-Auth / session reload to prompt Antigravity to read Token B from Windows Credential Manager into RAM ("Auth succeeded: Tài khoản B").
   - Scope Boundary:
     - Editable: `core/api_connector.py`, `core/session_reloader.py`.
