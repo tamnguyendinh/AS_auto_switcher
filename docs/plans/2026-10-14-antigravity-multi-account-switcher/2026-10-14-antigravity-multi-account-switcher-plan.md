@@ -594,7 +594,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Refresh row `core/state_resolver.py`.
   - Commit Boundary: Commit milestone `feat(P3-B): bind state resolution to live RAM identity`.
 
-- [ ] P3-C: 4-Step Closed-Loop Hot-Swap Coordinator
+- [x] P3-C: 4-Step Closed-Loop Hot-Swap Coordinator
   - Goal: Implement the complete 4-step closed-loop hot-swap execution in `AccountManager.switch_account`:
     1. Verify current RAM email via `GetUserStatus()`;
     2. Issue `AuthLogout()` to language server API;

@@ -102,6 +102,7 @@ Out of scope:
 | R5 | 2026-10-14 | commit c8d3423 (Slice P2-C) | `core/api_connector.py`, `core/session_reloader.py`, `tests/test_all.py` | P2-C complete: Re-Auth trigger and RAM session reloader implemented and verified | `E2-P2C-REAUTH1` | Proceed to Phase P3 (Account Discovery & State Management) |
 | R6 | 2026-10-14 | commit 38d5e0d (Slice P3-A) | `scanner/chrome_scanner.py`, `tests/test_all.py` | P3-A complete: Chrome profile extraction and strict `anvien` blacklist filtering hardened and verified | `E3-P3A-SCAN1` | Proceed to Slice P3-B (Multi-Account State Machine Resolution) |
 | R7 | 2026-10-14 | commit 53a456b (Slice P3-B) | `core/state_resolver.py`, `tests/test_all.py` | P3-B complete: live RAM identity binding, state machine resolution (ACTIVE, READY, UNAUTH), and auto-capture implemented and verified | `E3-P3B-STATE1` | Proceed to Slice P3-C (4-Step Closed-Loop Hot-Swap Coordinator) |
+| R8 | 2026-10-14 | commit cf952ea (Slice P3-C) | `core/state_resolver.py`, `tests/test_all.py` | P3-C complete: 4-step closed-loop hot-swap coordinator implemented and verified | `E3-P3C-SW1` | Proceed to Phase P4 (User Interface Upgrades) |
 
 ## Phase Touch Map
 
