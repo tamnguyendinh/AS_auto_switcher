@@ -472,7 +472,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - P3-B: Multi-Account State Machine Resolution (ACTIVE, READY, UNAUTH)
   - P3-C: 4-Step Closed-Loop Hot-Swap Coordinator
 
-- [ ] P3-A: Chrome Profile Extraction & Blacklist Sanitization
+- [x] P3-A: Chrome Profile Extraction & Blacklist Sanitization
   - Goal: Ensure robust extraction of signed-in Chrome accounts across all user profiles while strictly blocking blacklisted terms (`anvien`).
   - Scope Boundary:
     - Editable: `scanner/chrome_scanner.py`.
