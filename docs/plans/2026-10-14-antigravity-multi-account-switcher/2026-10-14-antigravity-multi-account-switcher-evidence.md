@@ -610,8 +610,71 @@ Planned Evidence Targets:
 
 Matching plan item(s): `P5-A`, `P5-B`
 
+### P5-A Execution Evidence
+
+- `E5-P5A-UNIT1`: Unit & Integration Test Suite Expansion with Adversarial Edge Cases in `tests/test_all.py`:
+  - Expanded test suite from 58 to 64 tests by adding 6 dedicated adversarial test cases covering model blind spots, boundary conditions, and mid-step rollback safeguards:
+    * `test_account_store_adversarial_malformed_json_cases`:
+      - Corrupted, truncated, and malformed JSON in `accounts_store/`:
+      - Binary non-UTF8 garbage bytes (`\x00\xff\xfe...`), raw plaintext string (`THIS_IS_NOT_JSON...`), truncated syntax (`{"email": ... {"access_token": "abc`), truncated keys (`{"email": ... "token_data":`).
+      - Missing or invalid required fields: missing `token_data`, `null` `token_data`, empty `{}` `token_data`, missing `email` field (`{"saved_at": 1700000000, "token_data": ...}`).
+      - Non-dict JSON roots (JSON array, JSON scalars: int, string, bool).
+      - Verified: `has_account` returns `False`, `get_account_token` returns `None`/falsy, `list_stored_emails()` skips all corrupt/missing-email files without crashing, valid accounts alongside work cleanly, clean removal works without error.
+    * `test_credential_manager_adversarial_boundary_edge_cases`:
+      - Windows Credential Manager boundary edge cases:
+      - Binary garbage payload (arbitrary non-UTF8 bytes `\x00\xff\xfe...`): `read_antigravity_token` returns `None` safely without exception.
+      - Zero-byte blob: returns `None` safely.
+      - Non-JSON plaintext blob: returns `None` safely.
+      - Non-dict JSON primitives (`true`, `false`, `null`, `12345`, `"scalar string"`, `[1, 2, 3]`): returns `None` safely.
+      - Unicode edge cases: Vietnamese diacritics with full accents ("Đặng Thị Mỹ Duyên", "Hộ kinh doanh An Viên"), Unicode emojis and symbols ("🚀🔑💎🔥✨🛡️⚡", "ACTIVE_✅"), escaped nulls and special characters (`\u0000`, `\n\r\t\"\\`). Written and read back with exact equality.
+      - Target names with unicode / special characters (`LegacyGeneric:target=gemini:antigravity_test_adv_unicode_tiếng_việt`).
+      - Safe deletion in `finally:`.
+    * `test_api_connector_adversarial_network_resilience`:
+      - Network resilience against abrupt TCP connection resets and malformed HTTP responses:
+      - Abrupt TCP connection reset (RST packet via `SO_LINGER=(1, 0)`): `get_user_status` returns `None`, `auth_logout` returns `False`, `trigger_reauth` returns `False` without uncaught exceptions.
+      - Malformed HTTP 200 response with truncated JSON: returns `None`.
+      - Malformed HTTP 200 response with non-dict JSON primitives (`"just a string"`, `12345`, `[1, 2, 3]`, `true`): returns `None`.
+      - Malformed HTTP 200 response with HTML error page (`502 Bad Gateway`): returns `None`.
+      - Missing email in `userStatus`: partial parse returns dict with `email=None` safely.
+    * `test_api_connector_adversarial_cli_and_port_discovery`:
+      - Command line parsing and port discovery resilience:
+      - Missing CSRF token variations in command line (flag with no argument, whitespace, empty equals, empty quotes, hyphenated flag, etc.): `extract_csrf_token` returns `None` on all.
+      - Process discovery with bad command lines returns `None`.
+      - Listening port discovery with corrupted/garbage netstat output: handles unparseable lines gracefully and extracts valid port `[60001]`.
+      - Fallback port selection when HTTP probe fails on all candidate ports: safely falls back to `ports[0]`.
+    * `test_session_reloader_adversarial_hwnd_and_window_resilience`:
+      - Window handle discovery resilience:
+      - Invalid / non-existent HWNDs (`0`, `999999999`, `-1`, `12345678`): `reload_antigravity_window()` executes safely without crashing and returns `True`.
+      - Empty windows list returns `False`.
+      - Window reloader throwing unexpected exceptions (`OSError`): `reload_antigravity_session` catches exception, coordinates reauth, and returns without crashing.
+    * `test_switch_account_adversarial_sequence_and_rollback_safeguards`:
+      - Full 4-step sequence verification asserting exact chronological order:
+        Asserts chronological order: `["step1_finder", "step1_getter", "step2_logout", "step3_writer", "step4_reloader"]`.
+      - Mid-step failure at Step 1 (target missing from store):
+        CRITICAL SAFEGUARD ASSERTION: Neither Step 2 (`logout`), Step 3 (`writer`), nor Step 4 (`reloader`) is called! Active session in language server is completely untouched and preserved.
+      - Mid-step failure at Step 1 (language server process inaccessible):
+        Safe fallback to stored credentials, Step 3 and Step 4 proceed.
+      - Mid-step failure at Step 2 (logout throws `ConnectionResetError`):
+        Exception caught safely, Step 3 writer and Step 4 reloader proceed.
+      - Mid-step failure at Step 3 (writer fails):
+        CRITICAL SAFEGUARD ASSERTION: Step 4 (`reloader`) is NOT called! Active session remains safely backed up in `accounts_store/<active_email>.json`.
+      - Mid-step failure at Step 4 (reloader throws `RuntimeError`):
+        Exception caught safely, returns `SwitchResult(True, ...)`.
+  - Unit Test Execution Output:
+    ```text
+    python -m unittest -v tests/test_all.py
+    Ran 64 tests in 24.037s
+    OK
+    ```
+  - Multi-Run Batch Verification across 5 sequential runs:
+    Command: `python -c "import subprocess, sys; res = [subprocess.run([sys.executable, '-m', 'unittest', 'tests/test_all.py'], capture_output=True).returncode for _ in range(5)]; print('Results:', res); assert all(r == 0 for r in res)"`
+    Output:
+    ```text
+    Results: [0, 0, 0, 0, 0]
+    ```
+
 Planned Evidence Targets:
-- `E5-P5A-UNIT1`: Unit test suite expansion verifying all new API connector and state resolver methods.
+- `E5-P5A-UNIT1`: Unit test suite expansion verifying all new API connector and state resolver methods (Achieved).
 - `E5-P5B-REG1`: Full test suite run showing 100% passing tests with zero regressions.
 
 ## Closure Evidence

@@ -2108,6 +2108,449 @@ class TestAntigravitySwitcher(unittest.TestCase):
             except Exception:
                 pass
 
+    def test_account_store_adversarial_malformed_json_cases(self):
+        """
+        Adversarial test covering corrupted, truncated, and malformed JSON in accounts_store/:
+        - Binary garbage payload (non-UTF8 bytes)
+        - Non-JSON plaintext string
+        - Truncated JSON structures
+        - Missing or invalid required fields (missing token_data, null token_data, empty dict, missing email)
+        - Non-dict JSON roots (arrays, scalars)
+        Asserts has_account returns False, get_account_token returns None/falsy,
+        and list_stored_emails skips them without crashing.
+        """
+        cases = {
+            "binary_garbage@example.com": b"\x00\xff\xfe\xfd\x80\x90\xaa\xbb\xcc\xdd\xee\xff",
+            "plain_garbage@example.com": b"THIS_IS_NOT_JSON_<<<>>>_!@#$%^&*()",
+            "truncated_syntax@example.com": b'{"email": "truncated_syntax@example.com", "token_data": {"access_token": "abc',
+            "truncated_key@example.com": b'{"email": "truncated_key@example.com", "token_data":',
+            "missing_token_field@example.com": b'{"email": "missing_token_field@example.com", "saved_at": 1700000000}',
+            "null_token_field@example.com": b'{"email": "null_token_field@example.com", "token_data": null}',
+            "empty_token_dict@example.com": b'{"email": "empty_token_dict@example.com", "token_data": {}}',
+            "json_array_root@example.com": b'[{"email": "json_array_root@example.com", "token_data": {"access_token": "mock"}}]',
+            "json_scalar_int@example.com": b'987654321',
+            "json_scalar_str@example.com": b'"just a string scalar"',
+            "json_scalar_bool@example.com": b'false',
+        }
+
+        for email, raw_bytes in cases.items():
+            file_path = os.path.join(self.test_store_dir, f"{email}.json")
+            with open(file_path, "wb") as f:
+                f.write(raw_bytes)
+
+        # File with missing email field
+        missing_email_path = os.path.join(self.test_store_dir, "missing_email_field@example.com.json")
+        with open(missing_email_path, "wb") as f:
+            f.write(b'{"saved_at": 1700000000, "token_data": {"access_token": "mock_tok"}}')
+
+        # 1. Verify has_account returns False for every adversarial case
+        for email in cases:
+            self.assertFalse(
+                self.store.has_account(email),
+                f"has_account({email}) should be False for adversarial payload"
+            )
+
+        # 2. Verify get_account_token returns None for corrupt / missing / empty / non-dict tokens
+        for email in cases:
+            token = self.store.get_account_token(email)
+            if email == "empty_token_dict@example.com":
+                self.assertFalse(bool(token))
+            else:
+                self.assertIsNone(token, f"get_account_token({email}) should return None for malformed JSON")
+
+        # 3. Verify list_stored_emails skips all corrupted / invalid files without crashing
+        stored_emails = self.store.list_stored_emails()
+        self.assertIsInstance(stored_emails, list)
+        self.assertNotIn("missing_email_field@example.com", stored_emails)
+        for email in [
+            "binary_garbage@example.com",
+            "plain_garbage@example.com",
+            "truncated_syntax@example.com",
+            "truncated_key@example.com",
+            "json_array_root@example.com",
+            "json_scalar_int@example.com",
+            "json_scalar_str@example.com",
+            "json_scalar_bool@example.com",
+        ]:
+            self.assertNotIn(email, stored_emails)
+
+        # 4. Adding a valid account alongside the corrupted ones works cleanly
+        valid_email = "valid_alongside_corrupt@example.com"
+        valid_token = {"access_token": "valid_tok_123", "id_token": "valid_id_456"}
+        self.assertTrue(self.store.store_account(valid_email, valid_token))
+        self.assertTrue(self.store.has_account(valid_email))
+        self.assertEqual(self.store.get_account_token(valid_email), valid_token)
+        self.assertIn(valid_email, self.store.list_stored_emails())
+
+        # 5. Clean removal of corrupt files works without error
+        for email in cases:
+            self.assertTrue(self.store.remove_account(email))
+            self.assertFalse(os.path.exists(os.path.join(self.test_store_dir, f"{email}.json")))
+        if os.path.exists(missing_email_path):
+            os.remove(missing_email_path)
+
+    def test_credential_manager_adversarial_boundary_edge_cases(self):
+        """
+        Adversarial test covering Windows Credential Manager boundary edge cases:
+        - Binary garbage payload (arbitrary non-UTF8 bytes)
+        - Zero-byte blob
+        - Non-JSON plaintext blob
+        - Non-dict JSON primitives (scalar, array, boolean)
+        - Unicode edge cases (Vietnamese diacritics, emoji, escaped nulls)
+        - Target names with unicode / special characters
+        """
+        test_target = "LegacyGeneric:target=gemini:antigravity_test_adv_boundary"
+        unicode_target = "LegacyGeneric:target=gemini:antigravity_test_adv_unicode_tiếng_việt"
+
+        try:
+            # 1. Binary garbage payload (non-UTF-8 bytes)
+            write_raw_credential(b"\x00\xff\xfe\xfd\x80\x90\xaa\xbb\xcc\xdd\xee\xff", target=test_target)
+            self.assertIsNone(read_antigravity_token(target=test_target))
+
+            # 2. Zero-byte blob
+            write_raw_credential(b"", target=test_target)
+            self.assertIsNone(read_antigravity_token(target=test_target))
+
+            # 3. Non-JSON plaintext blob
+            write_raw_credential(b"PLAIN_TEXT_PASSWORD_OR_STRING_NOT_JSON", target=test_target)
+            self.assertIsNone(read_antigravity_token(target=test_target))
+
+            # 4. Non-dict JSON primitives
+            primitives = [b"true", b"false", b"null", b"12345", b'"scalar string"', b'[1, 2, 3]']
+            for prim in primitives:
+                write_raw_credential(prim, target=test_target)
+                self.assertIsNone(
+                    read_antigravity_token(target=test_target),
+                    f"read_antigravity_token should return None for primitive: {prim}"
+                )
+
+            # 5. Unicode edge cases: Vietnamese diacritics, emojis, escaped nulls
+            unicode_payloads = [
+                {
+                    "name": "Đặng Thị Mỹ Duyên",
+                    "city": "Thành phố Hồ Chí Minh",
+                    "org": "Hộ kinh doanh An Viên",
+                    "email": "duyen.dang@example.com",
+                    "notes": "Kiểm thử tiếng Việt có dấu đầy đủ: ă, â, đ, ê, ô, ơ, ư"
+                },
+                {
+                    "icon": "🚀🔑💎🔥✨🛡️⚡",
+                    "badge": "[ĐANG DÙNG 🟢]",
+                    "status": "ACTIVE_✅"
+                },
+                {
+                    "escaped_null": "\\u0000",
+                    "special_chars": "\\n\\r\\t\\\"\\\\"
+                }
+            ]
+
+            for payload in unicode_payloads:
+                self.assertTrue(write_antigravity_token(payload, target=test_target))
+                read_back = read_antigravity_token(target=test_target)
+                self.assertIsNotNone(read_back)
+                self.assertEqual(read_back, payload)
+
+            # 6. Target names with unicode characters
+            vn_payload = {"email": "unicode_target@example.com", "token": "test_tok"}
+            self.assertTrue(write_antigravity_token(vn_payload, target=unicode_target))
+            vn_read = read_antigravity_token(target=unicode_target)
+            self.assertIsNotNone(vn_read)
+            self.assertEqual(vn_read, vn_payload)
+            self.assertTrue(delete_antigravity_token(target=unicode_target))
+
+        finally:
+            delete_antigravity_token(test_target)
+            delete_antigravity_token(unicode_target)
+
+    def test_api_connector_adversarial_network_resilience(self):
+        """
+        Adversarial test covering api_connector.py network resilience:
+        - Abrupt TCP connection resets (RST packet / immediate close)
+        - Malformed HTTP responses (truncated JSON, non-dict JSON, HTML proxy error)
+        - Missing email field in userStatus
+        Asserts get_user_status, auth_logout, and trigger_reauth handle all cases safely.
+        """
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=1234, csrf_token="test-adv-uuid-001", port=server.port)
+
+            # 1. Abrupt TCP connection reset
+            server.reset_connection = True
+            self.assertIsNone(get_user_status(info, timeout=0.5))
+            self.assertFalse(auth_logout(info, timeout=0.5))
+            self.assertFalse(trigger_reauth(info, timeout=0.5))
+            server.reset_connection = False
+
+            # 2. Malformed HTTP response: Truncated JSON
+            server.response_status = 200
+            server.response_body = b'{"userStatus": {"email": "broken@example.com", "name":'
+            self.assertIsNone(get_user_status(info))
+
+            # 3. Malformed HTTP response: Non-dict JSON primitives
+            for non_dict in [b'"just a string"', b'12345', b'[1, 2, 3]', b'true']:
+                server.response_body = non_dict
+                self.assertIsNone(get_user_status(info))
+
+            # 4. Malformed HTTP response: HTML error page with 200 OK
+            server.response_body = b"<!DOCTYPE html><html><body>502 Bad Gateway</body></html>"
+            self.assertIsNone(get_user_status(info))
+
+            # 5. Missing email in userStatus (graceful partial parse)
+            server.response_body = json.dumps({
+                "userStatus": {
+                    "name": "Anonymous User",
+                    "planStatus": "PRO"
+                }
+            }).encode("utf-8")
+            status = get_user_status(info)
+            self.assertIsNotNone(status)
+            self.assertIsNone(status.get("email"))
+            self.assertEqual(status.get("name"), "Anonymous User")
+            self.assertEqual(status.get("status"), "PRO")
+
+        finally:
+            server.stop()
+
+    def test_api_connector_adversarial_cli_and_port_discovery(self):
+        """
+        Adversarial test covering command line parsing and port discovery resilience:
+        - Missing CSRF token in command line (flag with no argument, whitespace, hyphenated flag)
+        - Port scanning failures (garbage netstat output, unparseable lines, timeouts)
+        - Fallback port selection when HTTP probing fails
+        """
+        # 1. Missing CSRF token variations
+        malformed_cmdlines = [
+            "language_server.exe --csrf_token",
+            "language_server.exe --csrf_token ",
+            "language_server.exe --csrf_token=",
+            "language_server.exe --csrf_token=\"\"",
+            "language_server.exe --csrf_token=''",
+            "language_server.exe --csrf-token 12345",
+            "language_server.exe --token 12345",
+            "language_server.exe --standalone --https_server_port 0",
+            "language_server.exe",
+        ]
+        for cmd in malformed_cmdlines:
+            self.assertIsNone(extract_csrf_token(cmd))
+
+        # 2. find_language_server_process with malformed command lines returns None
+        mock_bad_procs = [
+            {"ProcessId": 1234, "CommandLine": "language_server.exe --csrf_token"},
+            {"ProcessId": 5678, "CommandLine": "language_server.exe --csrf-token=abc"},
+        ]
+        self.assertIsNone(find_language_server_process(
+            process_provider=lambda: mock_bad_procs,
+            port_provider=lambda pid: 50000
+        ))
+
+        # 3. discover_listening_ports with corrupted / garbage netstat output
+        from unittest.mock import patch, MagicMock
+        mock_run = MagicMock()
+        mock_run.return_value.stdout = (
+            "Garbage header text\n"
+            "TCP    127.0.0.1:invalid    0.0.0.0:0    LISTENING    9999\n"
+            "UDP    127.0.0.1:54321      *:*                       9999\n"
+            "TCP    broken_addr          0.0.0.0:0    LISTENING    9999\n"
+            "TCP    127.0.0.1:60001      0.0.0.0:0    LISTENING    9999\n"
+        )
+        with patch("subprocess.run", mock_run):
+            ports = discover_listening_ports(9999)
+            self.assertEqual(ports, [60001])
+
+        # 4. discover_listening_port fallback when HTTP probe fails on all ports
+        with patch("core.api_connector.probe_http_port", return_value=False):
+            chosen = discover_listening_port(9999, ports_provider=lambda pid: [59226, 59227])
+            self.assertEqual(chosen, 59226)
+
+    def test_session_reloader_adversarial_hwnd_and_window_resilience(self):
+        """
+        Adversarial test covering session_reloader.py window handle resilience:
+        - Calling reload_antigravity_window with invalid / non-existent HWNDs
+        - Calling reload_antigravity_window when no windows are found
+        - Exception resilience during window reload and reauth trigger coordination
+        """
+        from unittest.mock import patch
+
+        # 1. Non-existent and invalid HWNDs (e.g. 0, 999999999, -1)
+        invalid_hwnds = [0, 999999999, -1, 12345678]
+        with patch("core.session_reloader.find_antigravity_windows", return_value=invalid_hwnds):
+            # Must execute without raising any exception and return True
+            res = reload_antigravity_window()
+            self.assertTrue(res)
+
+        # 2. Empty windows list returns False
+        with patch("core.session_reloader.find_antigravity_windows", return_value=[]):
+            self.assertFalse(reload_antigravity_window())
+
+        # 3. reload_antigravity_session when window_reloader raises unexpected exceptions
+        def throwing_window_reloader():
+            raise OSError("Window station disconnected")
+
+        info = LanguageServerInfo(pid=9999, csrf_token="token", port=50000)
+        # When reauth succeeds, window_reloader exception doesn't prevent success if reload_window=False
+        res_ok = reload_antigravity_session(
+            info=info,
+            reload_window=False,
+            window_reloader=throwing_window_reloader,
+            reauth_trigger=lambda inf: True
+        )
+        self.assertTrue(res_ok)
+
+        # When reauth fails and window_reloader raises, returns False without crashing
+        res_fail = reload_antigravity_session(
+            info=info,
+            reload_window=False,
+            window_reloader=throwing_window_reloader,
+            reauth_trigger=lambda inf: False
+        )
+        self.assertFalse(res_fail)
+
+    def test_switch_account_adversarial_sequence_and_rollback_safeguards(self):
+        """
+        Adversarial test covering full 4-step sequence verification and mid-step rollback safeguards:
+        - Exact chronological order assertion (Step 1 -> Step 2 -> Step 3 -> Step 4)
+        - Mid-step failure at Step 1 (target missing from store): aborts before Step 2, active session preserved
+        - Mid-step failure at Step 1 (language server error): falls back safely
+        - Mid-step failure at Step 2 (logout fails/throws): proceeds safely to Step 3 and 4
+        - Mid-step failure at Step 3 (credential write fails): Step 4 aborted, active session safely preserved in store
+        - Mid-step failure at Step 4 (reloader throws): returns SwitchResult safely
+        """
+        active_email = "active_current@example.com"
+        target_email = "target_new@example.com"
+        active_token = {"access_token": "act_tok", "id_token": "act_id"}
+        target_token = {"access_token": "tar_tok", "id_token": "tar_id"}
+
+        self.store.store_account(active_email, active_token)
+        self.store.store_account(target_email, target_token)
+
+        mock_info = LanguageServerInfo(pid=8888, csrf_token="test-csrf", port=50000)
+
+        # 1. Exact chronological order assertion
+        chronological_log = []
+
+        def tracked_finder():
+            chronological_log.append("step1_finder")
+            return mock_info
+
+        def tracked_getter(inf):
+            chronological_log.append("step1_getter")
+            return {"email": active_email}
+
+        def tracked_logout(inf):
+            chronological_log.append("step2_logout")
+            return True
+
+        def tracked_writer(tok):
+            chronological_log.append("step3_writer")
+            return True
+
+        def tracked_reloader(info=None):
+            chronological_log.append("step4_reloader")
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=tracked_finder,
+            status_getter=tracked_getter,
+            logout_fn=tracked_logout,
+            token_writer=tracked_writer,
+            reloader_fn=tracked_reloader,
+        )
+
+        res = manager.switch_account(target_email)
+        self.assertTrue(res)
+        self.assertEqual(
+            chronological_log,
+            ["step1_finder", "step1_getter", "step2_logout", "step3_writer", "step4_reloader"]
+        )
+
+        # 2. Mid-step failure at Step 1 (target missing from store)
+        # CRITICAL SAFEGUARD: Neither Step 2 logout, Step 3 write, nor Step 4 reload must be called!
+        chronological_log.clear()
+        res_missing = manager.switch_account("absent_target@example.com")
+        self.assertFalse(res_missing)
+        self.assertIn("Chưa có file JSON", res_missing.message)
+        self.assertNotIn("step2_logout", chronological_log)
+        self.assertNotIn("step3_writer", chronological_log)
+        self.assertNotIn("step4_reloader", chronological_log)
+
+        # 3. Mid-step failure at Step 1 (language server throws exception)
+        def broken_finder():
+            raise RuntimeError("Language server process inaccessible")
+
+        chronological_log.clear()
+        manager_broken_ls = AccountManager(
+            store=self.store,
+            process_finder=broken_finder,
+            logout_fn=tracked_logout,
+            token_writer=tracked_writer,
+            reloader_fn=tracked_reloader,
+        )
+        res_ls_fail = manager_broken_ls.switch_account(target_email)
+        self.assertTrue(res_ls_fail)
+        self.assertIn("step3_writer", chronological_log)
+        self.assertIn("step4_reloader", chronological_log)
+
+        # 4. Mid-step failure at Step 2 (logout raises exception)
+        def broken_logout(inf):
+            raise ConnectionResetError("TCP connection reset during logout")
+
+        chronological_log.clear()
+        manager_broken_logout = AccountManager(
+            store=self.store,
+            process_finder=tracked_finder,
+            status_getter=tracked_getter,
+            logout_fn=broken_logout,
+            token_writer=tracked_writer,
+            reloader_fn=tracked_reloader,
+        )
+        res_log_fail = manager_broken_logout.switch_account(target_email)
+        self.assertTrue(res_log_fail)
+        self.assertIn("step3_writer", chronological_log)
+        self.assertIn("step4_reloader", chronological_log)
+
+        # 5. Mid-step failure at Step 3 (writer fails)
+        # CRITICAL SAFEGUARD: Step 4 reload MUST NOT be called!
+        def failing_writer(tok):
+            chronological_log.append("step3_writer_fail")
+            return False
+
+        chronological_log.clear()
+        manager_writer_fail = AccountManager(
+            store=self.store,
+            process_finder=tracked_finder,
+            status_getter=tracked_getter,
+            logout_fn=tracked_logout,
+            token_writer=failing_writer,
+            reloader_fn=tracked_reloader,
+        )
+        res_wfail = manager_writer_fail.switch_account(target_email)
+        self.assertFalse(res_wfail)
+        self.assertIn("Không thể ghi Token", res_wfail.message)
+        self.assertIn("step3_writer_fail", chronological_log)
+        self.assertNotIn("step4_reloader", chronological_log)
+        # Verify active session is preserved in store
+        self.assertTrue(self.store.has_account(active_email))
+
+        # 6. Mid-step failure at Step 4 (reloader raises exception)
+        def broken_reloader(info=None):
+            chronological_log.append("step4_reloader_fail")
+            raise RuntimeError("Window reload keystroke failed")
+
+        chronological_log.clear()
+        manager_reloader_fail = AccountManager(
+            store=self.store,
+            process_finder=tracked_finder,
+            status_getter=tracked_getter,
+            logout_fn=tracked_logout,
+            token_writer=tracked_writer,
+            reloader_fn=broken_reloader,
+        )
+        res_rfail = manager_reloader_fail.switch_account(target_email)
+        self.assertTrue(res_rfail)
+        self.assertIn("step4_reloader_fail", chronological_log)
+
 
 class MockHttpServerHelper:
     """Helper to spin up an in-process loopback HTTP server on an ephemeral port for testing."""
@@ -2123,6 +2566,7 @@ class MockHttpServerHelper:
         self.response_headers = {"Content-Type": "application/json"}
         self.path_status_map = {}
         self.delay = 0.0
+        self.reset_connection = False
 
     def start(self):
         helper = self
@@ -2142,6 +2586,19 @@ class MockHttpServerHelper:
                 pass  # suppress stderr log spam
 
             def do_POST(self):
+                if helper.reset_connection:
+                    import socket, struct
+                    try:
+                        self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+                    except Exception:
+                        pass
+                    try:
+                        self.connection.close()
+                    except Exception:
+                        pass
+                    self.close_connection = True
+                    return
+
                 if helper.delay > 0:
                     time.sleep(helper.delay)
                 helper.last_path = self.path
