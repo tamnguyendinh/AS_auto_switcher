@@ -26,6 +26,13 @@ from core.api_connector import (
     find_language_server_process,
     get_user_status,
     auth_logout,
+    trigger_reauth,
+    DEFAULT_REAUTH_ENDPOINTS,
+)
+from core.session_reloader import (
+    find_antigravity_windows,
+    reload_antigravity_window,
+    reload_antigravity_session,
 )
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -565,6 +572,193 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertFalse(auth_logout(LanguageServerInfo(pid=123, csrf_token="token", port=-1)))
         self.assertFalse(auth_logout(LanguageServerInfo(pid=123, csrf_token="", port=8080)))
 
+        # trigger_reauth invalid arguments
+        self.assertFalse(trigger_reauth(None))
+        self.assertFalse(trigger_reauth("not-an-info-object"))  # type: ignore
+        self.assertFalse(trigger_reauth(LanguageServerInfo(pid=0, csrf_token="", port=0)))
+        self.assertFalse(trigger_reauth(LanguageServerInfo(pid=123, csrf_token="token", port=-1)))
+        self.assertFalse(trigger_reauth(LanguageServerInfo(pid=123, csrf_token="", port=8080)))
+
+    def test_trigger_reauth_mock_success(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=1234, csrf_token="test-reauth-uuid-555", port=server.port)
+
+            # 200 OK default endpoint
+            server.response_status = 200
+            server.response_body = b"{}"
+            self.assertTrue(trigger_reauth(info))
+            self.assertEqual(server.last_headers.get("x-csrf-token"), info.csrf_token)
+            self.assertEqual(server.last_headers.get("x-codeium-csrf-token"), info.csrf_token)
+            self.assertEqual(server.last_path, DEFAULT_REAUTH_ENDPOINTS[0])
+
+            # 204 No Content
+            server.response_status = 204
+            server.response_body = b""
+            self.assertTrue(trigger_reauth(info))
+
+            # Custom endpoint override
+            custom_ep = "/custom/reload/endpoint"
+            server.response_status = 200
+            server.response_body = b"{}"
+            self.assertTrue(trigger_reauth(info, endpoint=custom_ep))
+            self.assertEqual(server.last_path, custom_ep)
+
+            # Fallback path progression: first candidate 404, second 200
+            server.response_status = 404
+            server.path_status_map = {
+                DEFAULT_REAUTH_ENDPOINTS[1]: 200,
+            }
+            self.assertTrue(trigger_reauth(info))
+            self.assertEqual(server.last_path, DEFAULT_REAUTH_ENDPOINTS[1])
+            server.path_status_map = {}
+            server.response_status = 200
+        finally:
+            server.stop()
+
+    def test_trigger_reauth_mock_errors_and_timeout(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=1234, csrf_token="test-reauth-uuid-666", port=server.port)
+
+            # 500 Internal Server Error
+            server.response_status = 500
+            server.response_body = b"{\"error\": \"internal error\"}"
+            self.assertFalse(trigger_reauth(info))
+
+            # 401 Unauthorized
+            server.response_status = 401
+            self.assertFalse(trigger_reauth(info))
+
+            # 404 on all candidate paths
+            server.response_status = 404
+            self.assertFalse(trigger_reauth(info))
+
+            # Network timeout
+            server.delay = 0.25
+            self.assertFalse(trigger_reauth(info, timeout=0.03))
+            server.delay = 0.0
+
+            # Unreachable closed port
+            closed_info = LanguageServerInfo(pid=1234, csrf_token="test-token", port=65534)
+            self.assertFalse(trigger_reauth(closed_info, timeout=0.1))
+        finally:
+            server.stop()
+
+    def test_reload_antigravity_session_coordinated_flow(self):
+        info = LanguageServerInfo(pid=1234, csrf_token="mock-token", port=59999)
+
+        call_trace = []
+
+        def mock_reauth_ok(inf):
+            call_trace.append(("reauth", inf.pid))
+            return True
+
+        def mock_reauth_fail(inf):
+            call_trace.append(("reauth_fail", inf.pid))
+            return False
+
+        def mock_window_ok():
+            call_trace.append(("window_ok",))
+            return True
+
+        def mock_window_fail():
+            call_trace.append(("window_fail",))
+            return False
+
+        # Case 1: Reauth ok and reload_window=True -> both called, returns True
+        call_trace.clear()
+        res = reload_antigravity_session(
+            info=info,
+            reload_window=True,
+            window_reloader=mock_window_ok,
+            reauth_trigger=mock_reauth_ok,
+        )
+        self.assertTrue(res)
+        self.assertEqual(call_trace, [("reauth", 1234), ("window_ok",)])
+
+        # Case 2: Reauth ok and reload_window=False -> only reauth called, window reload skipped, returns True
+        call_trace.clear()
+        res = reload_antigravity_session(
+            info=info,
+            reload_window=False,
+            window_reloader=mock_window_ok,
+            reauth_trigger=mock_reauth_ok,
+        )
+        self.assertTrue(res)
+        self.assertEqual(call_trace, [("reauth", 1234)])
+
+        # Case 3: Reauth fails and reload_window=False -> window reload invoked as fallback, returns True
+        call_trace.clear()
+        res = reload_antigravity_session(
+            info=info,
+            reload_window=False,
+            window_reloader=mock_window_ok,
+            reauth_trigger=mock_reauth_fail,
+        )
+        self.assertTrue(res)
+        self.assertEqual(call_trace, [("reauth_fail", 1234), ("window_ok",)])
+
+        # Case 4: Both reauth and window reload fail -> returns False
+        call_trace.clear()
+        res = reload_antigravity_session(
+            info=info,
+            reload_window=False,
+            window_reloader=mock_window_fail,
+            reauth_trigger=mock_reauth_fail,
+        )
+        self.assertFalse(res)
+        self.assertEqual(call_trace, [("reauth_fail", 1234), ("window_fail",)])
+
+        # Case 5: No info (info=None), reload_window=True -> window reload invoked, returns True
+        call_trace.clear()
+        res = reload_antigravity_session(
+            info=None,
+            reload_window=True,
+            window_reloader=mock_window_ok,
+            reauth_trigger=mock_reauth_ok,
+        )
+        self.assertTrue(res)
+        self.assertEqual(call_trace, [("window_ok",)])
+
+        # Case 6: No info (info=None), reload_window=False -> window fallback invoked
+        call_trace.clear()
+        res = reload_antigravity_session(
+            info=None,
+            reload_window=False,
+            window_reloader=mock_window_fail,
+            reauth_trigger=mock_reauth_ok,
+        )
+        self.assertFalse(res)
+        self.assertEqual(call_trace, [("window_fail",)])
+
+        # Case 7: Exception in reauth_trigger or window_reloader handled gracefully
+        def mock_reauth_throw(inf):
+            raise RuntimeError("unexpected socket explosion")
+
+        def mock_window_throw():
+            raise RuntimeError("win32 error")
+
+        res = reload_antigravity_session(
+            info=info,
+            reload_window=False,
+            window_reloader=mock_window_throw,
+            reauth_trigger=mock_reauth_throw,
+        )
+        self.assertFalse(res)
+
+    def test_live_session_reloader_safety(self):
+        # find_antigravity_windows should execute and return list without raising
+        windows = find_antigravity_windows()
+        self.assertIsInstance(windows, list)
+
+        # reload_antigravity_session with info=None and reload_window=False should execute safely
+        # and not raise any exception regardless of whether windows exist
+        res = reload_antigravity_session(info=None, reload_window=False)
+        self.assertIsInstance(res, bool)
+
     def test_live_get_user_status(self):
         info = find_language_server_process()
         if info is not None:
@@ -587,6 +781,7 @@ class MockHttpServerHelper:
         self.response_status = 200
         self.response_body = b"{}"
         self.response_headers = {"Content-Type": "application/json"}
+        self.path_status_map = {}
         self.delay = 0.0
 
     def start(self):
@@ -601,10 +796,14 @@ class MockHttpServerHelper:
                     time.sleep(helper.delay)
                 helper.last_path = self.path
                 helper.last_headers = {k.lower(): v for k, v in self.headers.items()}
-                self.send_response(helper.response_status)
+                status = helper.path_status_map.get(self.path, helper.response_status)
+                self.send_response(status)
                 for k, v in helper.response_headers.items():
                     self.send_header(k, v)
+                self.send_header("Content-Length", str(len(helper.response_body)))
+                self.send_header("Connection", "close")
                 self.end_headers()
+                self.close_connection = True
                 try:
                     self.wfile.write(helper.response_body)
                 except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
@@ -618,6 +817,7 @@ class MockHttpServerHelper:
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.daemon = True
         self.thread.start()
+        time.sleep(0.05)
 
     def stop(self):
         if self.server:

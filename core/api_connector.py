@@ -365,3 +365,63 @@ def auth_logout(
 
     return False
 
+
+DEFAULT_REAUTH_ENDPOINTS = [
+    "/exa.language_server_pb.LanguageServerService/ReAuth",
+    "/exa.language_server_pb.LanguageServerService/Reload",
+    "/ReAuth",
+    "/reauth",
+    "/reload",
+]
+
+
+def trigger_reauth(
+    info: Optional[LanguageServerInfo],
+    timeout: float = 2.0,
+    endpoint: Optional[str] = None,
+) -> bool:
+    """
+    Trigger Re-Auth or session reload in Antigravity Language Server RAM.
+    Connects to loopback base URL (http://127.0.0.1:<port>) and passes CSRF token headers.
+    Tries candidate re-auth/reload endpoints.
+    Returns True on HTTP 200/204 response, False on failure/error/timeout.
+    """
+    if not info or not isinstance(info, LanguageServerInfo):
+        return False
+    if info.port <= 0 or not info.csrf_token:
+        return False
+
+    endpoints = [endpoint] if endpoint else DEFAULT_REAUTH_ENDPOINTS
+    headers = {
+        "Content-Type": "application/json",
+        "X-Csrf-Token": info.csrf_token,
+        "x-codeium-csrf-token": info.csrf_token,
+    }
+
+    for ep in endpoints:
+        url = f"{info.base_url}{ep}"
+        req = urllib.request.Request(
+            url,
+            data=b"{}",
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status in (200, 204):
+                    return True
+        except urllib.error.HTTPError as err:
+            logger.debug("trigger_reauth HTTP error on %s: %s", ep, err.code)
+            try:
+                err.close()
+            except Exception:
+                pass
+            if err.code in (404, 405):
+                continue
+            return False
+        except Exception as exc:
+            logger.debug("trigger_reauth request failed on %s: %s", ep, exc)
+            continue
+
+    return False
+

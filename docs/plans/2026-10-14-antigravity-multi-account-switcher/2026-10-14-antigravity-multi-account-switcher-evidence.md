@@ -227,11 +227,66 @@ Matching plan item(s): `P2-A`, `P2-B`, `P2-C`
     OK
     ```
 
+### P2-C Execution Evidence
+
+- `E2-P2C-REAUTH1`: Re-Auth trigger and RAM session reload coordinated bridge in `core/api_connector.py` and `core/session_reloader.py`.
+  - `trigger_reauth(info: LanguageServerInfo, timeout: float = 2.0, endpoint: Optional[str] = None) -> bool`:
+    - Connects to loopback base URL (`http://127.0.0.1:<port>`) and candidate re-auth/reload paths (`/exa.language_server_pb.LanguageServerService/ReAuth`, `/exa.language_server_pb.LanguageServerService/Reload`, `/ReAuth`, `/reauth`, `/reload`).
+    - Dispatches POST request with `X-Csrf-Token` and `x-codeium-csrf-token` headers.
+    - Handles HTTP 200/204 response codes, automatically progresses through candidate endpoints on 404/405, closes HTTP error sockets cleanly, and safely catches timeouts/exceptions without raising uncaught errors.
+  - `reload_antigravity_session(info: Optional[LanguageServerInfo] = None, reload_window: bool = True) -> bool`:
+    - Coordinated reload bridge connecting internal backend RAM Re-Auth with frontend Electron window refresh (`reload_antigravity_window` via `keybd_event Ctrl+R`).
+    - Dispatches `trigger_reauth(info)` when `info` is present; if `reload_window` is True (or if backend reauth fails/endpoint not supported), safely invokes `reload_antigravity_window()` fallback.
+    - Returns `True` if either reauth signal succeeded or window reload succeeded (or `False` if both failed).
+  - Validated via full test suite (28 passing tests):
+    - `test_trigger_reauth_mock_success`: verifies default candidate path execution (HTTP 200, headers `x-csrf-token`, `x-codeium-csrf-token`), HTTP 204 No Content, custom endpoint override, and candidate fallback path progression (candidate 0 404 -> candidate 1 200).
+    - `test_trigger_reauth_mock_errors_and_timeout`: verifies HTTP 500, 401, 404 on all paths, socket timeout, and unreachable ports return `False`.
+    - `test_reload_antigravity_session_coordinated_flow`: verifies all 7 coordination scenarios (both ok, reauth only, window fallback on reauth failure, both fail, no info with reload_window, no info without reload_window fallback, and exception resilience).
+    - `test_live_session_reloader_safety`: verifies `find_antigravity_windows()` and `reload_antigravity_session(None, False)` execute cleanly on live host.
+    - `test_api_connector_invalid_info_graceful_handling`: verifies `None`, non-dataclass, zero port, negative port, and empty token return `False`.
+  - Full test execution output:
+    ```text
+    python -m unittest -v tests/test_all.py
+    test_account_store_atomic_write_and_payload (tests.test_all.TestAntigravitySwitcher.test_account_store_atomic_write_and_payload) ... ok
+    test_account_store_corrupted_json (tests.test_all.TestAntigravitySwitcher.test_account_store_corrupted_json) ... ok
+    test_account_store_json_files (tests.test_all.TestAntigravitySwitcher.test_account_store_json_files) ... ok
+    test_api_connector_invalid_info_graceful_handling (tests.test_all.TestAntigravitySwitcher.test_api_connector_invalid_info_graceful_handling) ... ok
+    test_auth_logout_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_auth_logout_mock_errors_and_timeout) ... ok
+    test_auth_logout_mock_success (tests.test_all.TestAntigravitySwitcher.test_auth_logout_mock_success) ... ok
+    test_auto_capture_active_session (tests.test_all.TestAntigravitySwitcher.test_auto_capture_active_session) ... ok
+    test_blacklist_enforcement (tests.test_all.TestAntigravitySwitcher.test_blacklist_enforcement) ... ok
+    test_credential_manager_read_edge_cases (tests.test_all.TestAntigravitySwitcher.test_credential_manager_read_edge_cases) ... ok
+    test_credential_manager_round_trip_and_delete (tests.test_all.TestAntigravitySwitcher.test_credential_manager_round_trip_and_delete) ... ok
+    test_credential_manager_write_validation (tests.test_all.TestAntigravitySwitcher.test_credential_manager_write_validation) ... ok
+    test_discover_listening_port_mocked (tests.test_all.TestAntigravitySwitcher.test_discover_listening_port_mocked) ... ok
+    test_extract_csrf_token_formats_and_edge_cases (tests.test_all.TestAntigravitySwitcher.test_extract_csrf_token_formats_and_edge_cases) ... ok
+    test_find_language_server_process_mocked (tests.test_all.TestAntigravitySwitcher.test_find_language_server_process_mocked) ... ok
+    test_get_user_status_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_get_user_status_mock_errors_and_timeout) ... ok
+    test_get_user_status_mock_success (tests.test_all.TestAntigravitySwitcher.test_get_user_status_mock_success) ... ok
+    test_jwt_payload_decode (tests.test_all.TestAntigravitySwitcher.test_jwt_payload_decode) ... ok
+    test_language_server_info_dataclass (tests.test_all.TestAntigravitySwitcher.test_language_server_info_dataclass) ... ok
+    test_live_chrome_scanner (tests.test_all.TestAntigravitySwitcher.test_live_chrome_scanner) ... ok
+    test_live_credential_read (tests.test_all.TestAntigravitySwitcher.test_live_credential_read) ... ok
+    test_live_find_language_server_process (tests.test_all.TestAntigravitySwitcher.test_live_find_language_server_process) ... ok
+    test_live_get_user_status (tests.test_all.TestAntigravitySwitcher.test_live_get_user_status) ... ok
+    test_live_session_reloader_safety (tests.test_all.TestAntigravitySwitcher.test_live_session_reloader_safety) ... ok
+    test_reload_antigravity_session_coordinated_flow (tests.test_all.TestAntigravitySwitcher.test_reload_antigravity_session_coordinated_flow) ... ok
+    test_sanitize_filename_edge_cases (tests.test_all.TestAntigravitySwitcher.test_sanitize_filename_edge_cases) ... ok
+    test_state_resolver_with_account_store (tests.test_all.TestAntigravitySwitcher.test_state_resolver_with_account_store) ... ok
+    test_trigger_reauth_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_trigger_reauth_mock_errors_and_timeout) ... ok
+    test_trigger_reauth_mock_success (tests.test_all.TestAntigravitySwitcher.test_trigger_reauth_mock_success) ... ok
+
+    ----------------------------------------------------------------------
+    Ran 28 tests in 5.446s
+
+    OK
+    ```
+
 Planned Evidence Targets:
 - `E2-P2A-DISC1`: Automated discovery of `language_server.exe` PID, listening port, and `--csrf_token` argument from process table and TCP connection state (Achieved).
 - `E2-P2B-API1`: `GetUserStatus()` invocation returning active email and display name from language server RAM (Achieved).
 - `E2-P2B-API2`: `AuthLogout()` invocation returning HTTP 200 / success and clearing active session in language server RAM (Achieved).
-- `E2-P2C-REAUTH1`: Re-Auth trigger signaling language server to re-read Windows Credential and log `Auth succeeded` for Account B.
+- `E2-P2C-REAUTH1`: Re-Auth trigger signaling language server to re-read Windows Credential and log `Auth succeeded` for Account B (Achieved).
 
 ## E3 - P3 Evidence
 

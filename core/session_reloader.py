@@ -6,6 +6,11 @@ Sends reload signal to Antigravity window or prompts refresh.
 import ctypes
 from ctypes import wintypes
 import time
+import logging
+from typing import Optional, List, Callable
+from core.api_connector import LanguageServerInfo, trigger_reauth
+
+logger = logging.getLogger(__name__)
 
 user32 = ctypes.WinDLL("user32.dll", use_last_error=True)
 
@@ -80,3 +85,37 @@ def reload_antigravity_window() -> bool:
         time.sleep(0.1)
 
     return True
+
+
+def reload_antigravity_session(
+    info: Optional[LanguageServerInfo] = None,
+    reload_window: bool = True,
+    window_reloader: Optional[Callable[[], bool]] = None,
+    reauth_trigger: Optional[Callable[[LanguageServerInfo], bool]] = None,
+) -> bool:
+    """
+    Coordinated reload bridge for Antigravity.
+    1. If `info` is provided, attempts internal Re-Auth signal via `trigger_reauth`.
+    2. If `reload_window` is True (or if `trigger_reauth` fails/endpoint not present), invokes window reload (Ctrl+R).
+    Returns True if either reauth signal succeeded or window reload succeeded (or False if both failed).
+    """
+    reauth_func = reauth_trigger or trigger_reauth
+    win_func = window_reloader or reload_antigravity_window
+
+    reauth_ok = False
+    if info is not None:
+        try:
+            reauth_ok = reauth_func(info)
+        except Exception as exc:
+            logger.debug("trigger_reauth failed: %s", exc)
+            reauth_ok = False
+
+    window_ok = False
+    if reload_window or not reauth_ok:
+        try:
+            window_ok = win_func()
+        except Exception as exc:
+            logger.debug("window reload failed: %s", exc)
+            window_ok = False
+
+    return bool(reauth_ok or window_ok)
