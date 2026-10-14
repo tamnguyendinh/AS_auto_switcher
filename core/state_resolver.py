@@ -112,6 +112,7 @@ class AccountManager:
         tos_timeout: Optional[float] = None,
         tos_poll_interval: Optional[float] = None,
         sleep_fn: Optional[Callable[[float], None]] = None,
+        dismiss_tos: bool = False,
     ):
         self.store = store or AccountStore()
         self.user_status_provider = user_status_provider
@@ -136,6 +137,7 @@ class AccountManager:
         self.tos_timeout = tos_timeout
         self.tos_poll_interval = tos_poll_interval
         self.sleep_fn = sleep_fn
+        self.dismiss_tos = dismiss_tos
 
     def get_current_active_email(
         self,
@@ -315,6 +317,7 @@ class AccountManager:
         tos_timeout: Optional[float] = None,
         tos_poll_interval: Optional[float] = None,
         sleep_fn: Optional[Callable[[float], None]] = None,
+        dismiss_tos: Optional[bool] = None,
         **kwargs: Any,
     ) -> SwitchResult:
         """
@@ -327,11 +330,13 @@ class AccountManager:
                                Only called if force_logout=True (or skip_logout=False).
           Step 3 (Swap Token): Load target token from store. If missing or invalid, abort safely.
                                Write target Token B directly into Windows Credential Manager.
-          Step 4 (Pre-patch ToS): Layer 1 Defense: atomize write to %APPDATA%\\Antigravity\\app_storage.json
-                                  setting lastLoginUsername and lastLoginIsGcpTos = "true".
+          Step 4 (Pre-patch ToS): Pre-patches %APPDATA%\\Antigravity\\app_storage.json
+                                  setting lastLoginUsername and lastLoginIsGcpTos = "false" (eliminating ToS modal completely).
           Step 5 (Recycle Language Server): Terminate language_server.exe cleanly, letting monitorLsCrashInternal
                                             respawn it with fresh tokens in RAM without opening Chrome.
-          Step 6 (Fallback Check): Layer 2 Defense: check if ToS modal appeared and dismiss via Win32 Enter.
+          Step 6 (Optional Fallback): Dismiss ToS modal dialog via Enter key press ONLY if explicitly requested.
+                                      Pre-patching eliminates ToS modal completely, so Enter dispatch is bypassed by default
+                                      to prevent accidentally clicking 'Resuming Previous Conversation'.
           Step 7 (Prompt Continuation): Inject continuation prompt (default: "continue") to resume AI agent.
         """
         if not target_email or not isinstance(target_email, str):
@@ -479,29 +484,36 @@ class AccountManager:
         except Exception:
             pass
 
-        # Step 3: Dispatch VK_RETURN (Enter) to accept/dismiss the rendered Google ToS modal dialog
-        # Linear, deterministic dispatch without brittle window title polling (since ToS is an Electron DOM modal)
-        dismisser = (
-            tos_dismisser
-            or fallback_dismisser
-            or getattr(self, "tos_dismisser", None)
-            or getattr(self, "fallback_dismisser", None)
-            or dismiss_tos_modal
+        # Step 6 (Optional Fallback): Dismiss ToS modal dialog via Enter key press ONLY if explicitly requested.
+        # Since pre-patching lastLoginIsGcpTos="false" eliminates the ToS modal completely (proven in live runtime testing by Owner),
+        # dispatching Enter is bypassed by default to prevent accidental clicks (e.g. clicking 'Resuming Previous Conversation' button).
+        should_dismiss_tos = (
+            dismiss_tos
+            if dismiss_tos is not None
+            else kwargs.get("dismiss_tos", getattr(self, "dismiss_tos", False))
         )
-        try:
-            import inspect
-            d_sig = inspect.signature(dismisser)
-            if "sleep_fn" in d_sig.parameters:
-                dismisser(sleep_fn=s_fn)
-            else:
-                dismisser()
-        except TypeError:
+        if should_dismiss_tos:
+            dismisser = (
+                tos_dismisser
+                or fallback_dismisser
+                or getattr(self, "tos_dismisser", None)
+                or getattr(self, "fallback_dismisser", None)
+                or dismiss_tos_modal
+            )
             try:
-                dismisser()
+                import inspect
+                d_sig = inspect.signature(dismisser)
+                if "sleep_fn" in d_sig.parameters:
+                    dismisser(sleep_fn=s_fn)
+                else:
+                    dismisser()
+            except TypeError:
+                try:
+                    dismisser()
+                except Exception:
+                    pass
             except Exception:
                 pass
-        except Exception:
-            pass
 
         # Step 4: Wait 3.0 seconds for the ToS modal dialog to completely disappear
         # and the existing in-flight session to settle into place

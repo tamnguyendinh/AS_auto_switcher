@@ -229,6 +229,8 @@ def pre_patch_tos_acceptance(
     """
     Layer 1 Defense: Pre-patches app_storage.json to mark GCP ToS as accepted
     for target_email, preventing the modal dialog from appearing.
+    Sets jetski.onboarding.lastLoginUsername to target_email and
+    jetski.onboarding.lastLoginIsGcpTos to literal string "false".
     Uses atomic replace to prevent corrupting storage during concurrent IDE access.
     """
     if not target_email or not isinstance(target_email, str):
@@ -255,7 +257,7 @@ def pre_patch_tos_acceptance(
                 data = {}
 
         data["jetski.onboarding.lastLoginUsername"] = target_email
-        data["jetski.onboarding.lastLoginIsGcpTos"] = "true"  # Must be string literal "true" per schema
+        data["jetski.onboarding.lastLoginIsGcpTos"] = "false"  # Must be string literal "false" per schema
 
         dir_name = os.path.dirname(path)
         if dir_name:

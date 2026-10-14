@@ -58,13 +58,13 @@ class TestHotSwapAndContinuation(unittest.TestCase):
     # 2. Layer 1 ToS Pre-Patching (pre_patch_tos_acceptance)
     # -------------------------------------------------------------------------
     def test_pre_patch_tos_acceptance_creates_and_updates_storage(self):
-        """Verifies pre_patch_tos_acceptance atomically updates app_storage.json with string literal 'true'."""
+        """Verifies pre_patch_tos_acceptance atomically updates app_storage.json with string literal 'false'."""
         target_email = "target.developer@gmail.com"
 
-        # Initially write existing JSON with false ToS
+        # Initially write existing JSON with other value
         initial_data = {
             "jetski.onboarding.lastLoginUsername": "old.developer@gmail.com",
-            "jetski.onboarding.lastLoginIsGcpTos": "false",
+            "jetski.onboarding.lastLoginIsGcpTos": "unaccepted",
             "other_setting": 123
         }
         with open(self.storage_file, "w", encoding="utf-8") as f:
@@ -77,8 +77,8 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             updated = json.load(f)
 
         self.assertEqual(updated["jetski.onboarding.lastLoginUsername"], target_email)
-        # CRITICAL INVARIANT: must be string literal "true", NOT boolean True
-        self.assertEqual(updated["jetski.onboarding.lastLoginIsGcpTos"], "true")
+        # CRITICAL INVARIANT: must be string literal "false", NOT boolean False or "true"
+        self.assertEqual(updated["jetski.onboarding.lastLoginIsGcpTos"], "false")
         self.assertIsInstance(updated["jetski.onboarding.lastLoginIsGcpTos"], str)
         self.assertEqual(updated["other_setting"], 123)
 
@@ -95,7 +95,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             data = json.load(f)
 
         self.assertEqual(data["jetski.onboarding.lastLoginUsername"], target_email)
-        self.assertEqual(data["jetski.onboarding.lastLoginIsGcpTos"], "true")
+        self.assertEqual(data["jetski.onboarding.lastLoginIsGcpTos"], "false")
 
     def test_pre_patch_tos_acceptance_invalid_inputs(self):
         """Verifies invalid email inputs return False safely."""
@@ -317,11 +317,13 @@ class TestHotSwapAndContinuation(unittest.TestCase):
     def test_switch_account_full_seamless_hotswap_pipeline(self):
         """
         Tests complete seamless account hot-swap orchestration:
-        Step 1: Write target token to Credential Manager ("gemini:antigravity")
-        Step 2: Recycle language_server.exe (5.0s wait, no premature keys)
-        Step 3: Dispatch VK_RETURN to accept/dismiss rendered ToS modal
-        Step 4: Wait 3.0s stabilization delay for modal to close
-        Step 5: Focus active chat (Ctrl+L), wait 0.5s, inject 'continue', wait 0.25s, Enter
+        Step 1: Discover language server and check current active email
+        Step 2: Write target token to Credential Manager ("gemini:antigravity")
+        Step 3: Pre-patch ToS in app_storage.json (lastLoginIsGcpTos = "false")
+        Step 4: Recycle language_server.exe (5.0s wait, no premature keys)
+        Step 5: Bypass ToS dismissal Enter key press by default (preventing click on 'Resuming Previous Conversation')
+        Step 6: Wait 3.0s stabilization delay for session to settle
+        Step 7: Focus active chat (Ctrl+L), wait 0.5s, inject 'continue', wait 0.25s, Enter
         """
         active_email = "old.user@gmail.com"
         target_email = "new.user@gmail.com"
@@ -376,14 +378,22 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertTrue(res.success)
         self.assertIn(target_email, res.message)
 
-        # Validate exact Owner-verified linear execution order
+        # Validate exact Owner-verified linear execution order: ToS dismissal bypassed by default!
         self.assertEqual(pipeline_trace[0], "1_finder")
         self.assertEqual(pipeline_trace[1], "2_getter")
         self.assertEqual(pipeline_trace[2], ("3_token_writer", "at_new"))
         self.assertEqual(pipeline_trace[3], ("4_tos_pre_patcher", target_email))
         self.assertEqual(pipeline_trace[4], "5_recycle_language_server")
-        self.assertEqual(pipeline_trace[5], "6_tos_dismissal")
-        self.assertEqual(pipeline_trace[6], ("7_prompt_injection", "continue"))
+        self.assertEqual(pipeline_trace[5], ("7_prompt_injection", "continue"))
+        self.assertNotIn("6_tos_dismissal", pipeline_trace)
+
+        # Also verify that when dismiss_tos=True is explicitly requested, dismisser IS called
+        pipeline_trace.clear()
+        target_email2 = "another.user@gmail.com"
+        self.store.store_account(target_email2, {"access_token": "at2"})
+        res2 = manager.switch_account(target_email2, dismiss_tos=True)
+        self.assertTrue(res2.success)
+        self.assertIn("6_tos_dismissal", pipeline_trace)
 
     def test_switch_account_auto_continue_false(self):
         """Verifies auto_continue=False suppresses prompt continuation injection."""
@@ -427,7 +437,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertEqual(prompts_injected, ["resume task 42"])
 
     def test_switch_account_deterministic_tos_dismissal_without_polling(self):
-        """Verifies ToS dismissal is dispatched deterministically without brittle window title polling."""
+        """Verifies ToS dismissal is bypassed by default and invoked cleanly when dismiss_tos=True."""
         target_email = "clean_tos@gmail.com"
         self.store.store_account(target_email, {"access_token": "at"})
 
@@ -442,22 +452,29 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             prompt_injector=lambda prompt_text: True,
         )
 
+        # In standard switch: ToS modal is eliminated by pre-patching, so dismisser is NOT called
         res = manager.switch_account(target_email)
         self.assertTrue(res)
+        self.assertEqual(dismisser_called, [])
+
+        # In fallback mode (dismiss_tos=True): dismisser is called
+        res_fallback = manager.switch_account(target_email, dismiss_tos=True)
+        self.assertTrue(res_fallback)
         self.assertEqual(dismisser_called, ["DISMISSED"])
 
     def test_switch_account_modal_checker_false_bypasses_dismisser(self):
-        """Alias verifying deterministic dismissal is invoked cleanly."""
+        """Alias verifying deterministic dismissal is bypassed in standard flow."""
         self.test_switch_account_deterministic_tos_dismissal_without_polling()
 
     def test_switch_account_owner_verified_sequencing_and_timing(self):
         """
         Verifies switch_account executes the Owner-verified sequential timing:
         Step 1: Write target token to Credential Manager
-        Step 2: Recycle language_server.exe (5.0s buffer)
-        Step 3: Dispatch VK_RETURN (Enter) to dismiss Google ToS modal dialog
-        Step 4: Wait 3.0s stabilization delay for modal to disappear and session to settle
-        Step 5: Focus active chat (Ctrl+L), wait 0.5s settling, inject 'continue', wait 0.25s, Enter
+        Step 2: Pre-patch ToS in app_storage.json (lastLoginIsGcpTos = "false")
+        Step 3: Recycle language_server.exe (5.0s buffer)
+        Step 4: Bypass premature ToS modal dismissal Enter key press
+        Step 5: Wait 3.0s stabilization delay for session to settle
+        Step 6: Focus active chat (Ctrl+L), wait 0.5s settling, inject 'continue', wait 0.25s, Enter
         """
         target_email = "ownersequence@gmail.com"
         target_token = {"access_token": "at_stages", "id_token": "id_stages"}
@@ -502,13 +519,14 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         res = manager.switch_account(target_email)
         self.assertTrue(res.success)
 
-        # Verify Step 1 -> Step 2 (sleep 5.0) -> Step 3 -> Step 4 (sleep 3.0) -> Step 5
+        # Verify Step 1 -> Step 2 (sleep 5.0) -> Step 4 (sleep 3.0) -> Step 5
+        # Step 3 ToS dismissal Enter key press is bypassed by default!
         self.assertEqual(stage_log[0], "step_1_writer")
         self.assertEqual(stage_log[1], ("step_2_recycle", 5.0))
         self.assertEqual(stage_log[2], ("sleep", 5.0))
-        self.assertEqual(stage_log[3], "step_3_tos_dismissal")
-        self.assertEqual(stage_log[4], ("sleep", 3.0))
-        self.assertEqual(stage_log[5], ("step_5_inject", "continue"))
+        self.assertEqual(stage_log[3], ("sleep", 3.0))
+        self.assertEqual(stage_log[4], ("step_5_inject", "continue"))
+        self.assertNotIn("step_3_tos_dismissal", stage_log)
 
     def test_switch_account_4_stages_sequencing_and_timing(self):
         """Backward-compatible test name alias for Owner sequence test."""

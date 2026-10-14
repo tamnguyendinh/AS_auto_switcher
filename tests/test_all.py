@@ -38,6 +38,7 @@ from core.session_reloader import (
     find_antigravity_windows,
     reload_antigravity_window,
     reload_antigravity_session,
+    pre_patch_tos_acceptance,
 )
 from ui.app_window import AppWindow, SwitcherApp
 import threading
@@ -2594,6 +2595,17 @@ class TestAntigravitySwitcher(unittest.TestCase):
             reauth_trigger=lambda inf: False
         )
         self.assertFalse(res_fail)
+
+    def test_pre_patch_tos_acceptance_sets_false_literal(self):
+        """Verifies pre_patch_tos_acceptance atomically writes lastLoginIsGcpTos as string literal 'false'."""
+        storage_file = os.path.join(self.test_store_dir, "test_app_storage.json")
+        res = pre_patch_tos_acceptance("pilot.user@gmail.com", storage_path=storage_file)
+        self.assertTrue(res)
+        with open(storage_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(data.get("jetski.onboarding.lastLoginUsername"), "pilot.user@gmail.com")
+        self.assertEqual(data.get("jetski.onboarding.lastLoginIsGcpTos"), "false")
+        self.assertIsInstance(data.get("jetski.onboarding.lastLoginIsGcpTos"), str)
 
     def test_switch_account_adversarial_sequence_and_rollback_safeguards(self):
         """
