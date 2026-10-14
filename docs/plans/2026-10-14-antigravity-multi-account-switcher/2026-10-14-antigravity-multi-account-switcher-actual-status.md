@@ -108,6 +108,7 @@ Out of scope:
 | R11 | 2026-10-14 | commit 14b567b (Slice P4-C) | `ui/app_window.py`, `tests/test_all.py` | P4-C complete: session persistence and manual Chrome sync controls implemented and verified | `E4-P4C-SYNC1` | Proceed to Phase P5 (Verification & Regression QA) |
 | R12 | 2026-10-14 | commit 4673f40 (Slice P5-A) | `tests/test_all.py` | P5-A complete: expanded comprehensive unit and integration test suite (API connector, 4-step switching flow, store, credential manager) verified | `E5-P5A-UNIT1` | Proceed to Slice P5-B (End-to-End Switching Cycle & Robustness Verification) |
 | R13 | 2026-10-14 | Slice P5-B | `core/session_reloader.py`, `core/state_resolver.py`, `tests/test_all.py` | P5-B complete: PID-based window discovery and smooth zero-chrome hot-swap implemented; 68/68 tests passing across 5 consecutive runs | `E5-P5B-REG1` | Proceed to Supervisor loop (Pn-A) |
+| R14 | 2026-10-14 | commit a34a6f8 (Slice Pn-A) | `docs/plans/` | Supervisor verification loop PASS on commit a34a6f8 | `E-PNA-VERIFY1` | Proceed to Slice Pn-B (Remove dead work created during this plan) |
 
 ## Phase Touch Map
 

@@ -986,7 +986,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Transition `core/session_reloader.py`, `core/state_resolver.py`, and `tests/test_all.py` to `correct`.
   - Commit Boundary: Commit milestone `test(P5-B): verify complete switching regression suite with PID window discovery and smooth hot-swap`.
 
-- [ ] Pn-A: Call supervisor for the implemented-plan acceptance loop.
+- [x] Pn-A: Call supervisor for the implemented-plan acceptance loop.
   - Goal: Verify completed plan work against the accepted plan, actual-status decisions, evidence, benchmark, changed files, and validation results before closure.
   - Work Steps:
     1. Call the supervisor skill/agent to review the completed plan work.
