@@ -7,7 +7,7 @@ import os
 import json
 import re
 from dataclasses import dataclass
-from typing import List, Set, Optional, Dict, Any
+from typing import List, Set, Optional, Dict
 
 
 # Regular expression matching valid email address format

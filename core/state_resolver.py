@@ -11,14 +11,13 @@ Resolves each account into:
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Set, Callable, Union, Dict, Any
 from scanner.chrome_scanner import (
-    get_chrome_signed_in_accounts,
     get_chrome_account_details,
     ChromeAccountInfo,
 )
 from core.credential_manager import read_antigravity_token, write_antigravity_token
 from core.jwt_helper import extract_email_from_token_data
 from core.account_store import AccountStore
-from core.session_reloader import reload_antigravity_window, reload_antigravity_session
+from core.session_reloader import reload_antigravity_session
 from core.api_connector import (
     find_language_server_process,
     get_user_status,

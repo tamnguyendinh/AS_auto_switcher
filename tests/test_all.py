@@ -984,8 +984,6 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertEqual(find_antigravity_pids(command_runner=throwing_runner), [])
 
     def test_find_antigravity_windows_pid_matching_and_title_fallback(self):
-        import ctypes
-        from ctypes import wintypes
         from unittest.mock import patch
 
         # Mock windows data: (hwnd, pid, title, visible)
