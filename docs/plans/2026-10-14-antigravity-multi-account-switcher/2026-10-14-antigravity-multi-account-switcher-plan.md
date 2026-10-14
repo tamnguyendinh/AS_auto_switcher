@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-14`
-- Status: `draft`
+- Status: `completed`
 - Plan: `docs/plans/2026-10-14-antigravity-multi-account-switcher/2026-10-14-antigravity-multi-account-switcher-plan.md`
 - Evidence: `docs/plans/2026-10-14-antigravity-multi-account-switcher/2026-10-14-antigravity-multi-account-switcher-evidence.md`
 - Benchmark: `docs/plans/2026-10-14-antigravity-multi-account-switcher/2026-10-14-antigravity-multi-account-switcher-benchmark.md`
@@ -1006,7 +1006,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Implementation Gate: Only remove artifacts created by this plan unless broader cleanup is explicitly approved.
   - Acceptance: Final `git status` contains no dead plan-created artifacts, and supervisor passes cleanup.
 
-- [ ] Pn-C: Close the plan.
+- [x] Pn-C: Close the plan.
   - Goal: Finish validation, evidence, benchmark, final commit, and final status.
   - Work Steps:
     1. Run required final validation for the accepted scope.

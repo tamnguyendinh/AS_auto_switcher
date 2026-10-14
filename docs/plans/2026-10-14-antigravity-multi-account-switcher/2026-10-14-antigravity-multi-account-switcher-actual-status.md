@@ -2,7 +2,7 @@
 
 Title: Antigravity Multi-Account Switcher Actual Status
 Date: 2026-10-14
-Status: P0 Complete
+Status: completed
 Companion plan: `docs/plans/2026-10-14-antigravity-multi-account-switcher/2026-10-14-antigravity-multi-account-switcher-plan.md`
 Companion rules: `docs/plans/2026-10-14-antigravity-multi-account-switcher/2026-10-14-antigravity-multi-account-switcher-plan.md#rules`
 Companion evidence: `docs/plans/2026-10-14-antigravity-multi-account-switcher/2026-10-14-antigravity-multi-account-switcher-evidence.md`
@@ -110,6 +110,7 @@ Out of scope:
 | R13 | 2026-10-14 | Slice P5-B | `core/session_reloader.py`, `core/state_resolver.py`, `tests/test_all.py` | P5-B complete: PID-based window discovery and smooth zero-chrome hot-swap implemented; 68/68 tests passing across 5 consecutive runs | `E5-P5B-REG1` | Proceed to Supervisor loop (Pn-A) |
 | R14 | 2026-10-14 | commit a34a6f8 (Slice Pn-A) | `docs/plans/` | Supervisor verification loop PASS on commit a34a6f8 | `E-PNA-VERIFY1` | Proceed to Slice Pn-B (Remove dead work created during this plan) |
 | R15 | 2026-10-14 | commit 9c9d862 (Slice Pn-B) | `core/`, `scanner/`, `tests/` | Dead code purge verified by Supervisor PASS on commit 9c9d862 | `E-PNB-CLEAN1` | Proceed to Slice Pn-C (Close the plan) |
+| R16 | 2026-10-15 | Slice Pn-C | `docs/plans/`, `reports/planner/` | Official plan closure and ledgers synchronization; all 5 phases, Pn-A, Pn-B passed, test suite 68/68 passed | `E-PNC-CLOSE1` | Plan completed and ready for Owner live testing |
 
 ## Phase Touch Map
 

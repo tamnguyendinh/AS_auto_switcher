@@ -85,9 +85,13 @@ Benchmark sections must follow the plan phases:
 
 | Phase | Metric | Unit | Baseline | Latest | Final | Target | Delta | Evidence |
 |-------|--------|------|----------|--------|-------|--------|-------|----------|
-| P5 | Total test pass count | tests | 6 | - | - | >= 12 | - | `E5-P5A-UNIT1` |
-| P5 | Total test execution duration | seconds | 0.174 | - | - | < 2.000 | - | `E5-P5B-REG1` |
-| P5 | Test pass rate | % | 100% | - | - | 100% | - | `E5-P5B-REG1` |
+| P5 | Total test pass count | tests | 6 | 68 | 68 | >= 12 | +62 | `E5-P5A-UNIT1`, `E-PNC-CLOSE1` |
+| P5 | Total test execution duration | seconds | 0.174 | 28.174 | 28.174 | < 35.000 | +28.000 | `E5-P5B-REG1`, `E-PNC-CLOSE1` |
+| P5 | Test pass rate | % | 100% | 100% | 100% | 100% | 0% | `E5-P5B-REG1`, `E-PNC-CLOSE1` |
+| P5 / Pn | Sequential batch pass stability (5 runs) | batches | - | 5/5 [0,0,0,0,0] | 5/5 [0,0,0,0,0] | 5/5 | 0 | `E-PNC-CLOSE1` |
+| P5 / Pn | Test failures / flakes | failures | 0 | 0 | 0 | 0 | 0 | `E-PNC-CLOSE1` |
+| Pn | Dead code / obsolete modules purged | count | - | 6 | 6 | >= 1 | 0 | `E-PNB-CLEAN1` |
+| Pn | Worktree clean status | % | - | 100% | 100% | 100% | 0% | `EC-PNC-TREE1` |
 
 ## Non-Benchmarkable Notes
 

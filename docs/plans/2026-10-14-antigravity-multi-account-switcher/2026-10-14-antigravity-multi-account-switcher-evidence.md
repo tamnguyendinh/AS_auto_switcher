@@ -742,9 +742,28 @@ Matching plan item(s): `Pn-A`, `Pn-B`, `Pn-C`
   - Verification: Compilation 0 errors, 68/68 unit tests passed, 5 sequential batch runs `[0, 0, 0, 0, 0]`.
   - Verdict: `[VERDICT: PASS]`
 
+### Pn-C Execution Evidence
+
+- `E-PNC-CLOSE1`: Plan Closure and Complete Verification Evidence:
+  - Scope Completed:
+    - Phase P0: Actual status classification and inventory baseline established.
+    - Phase P1: Atomic JSON account storage (`accounts_store/<email>.json`) and Windows Credential Manager integration hardened (`LegacyGeneric:target=gemini:antigravity`).
+    - Phase P2: Language server discovery (`language_server.exe` PID, ephemeral port, `--csrf_token`) and internal API clients (`GetUserStatus`, `AuthLogout`, `trigger_reauth`) implemented.
+    - Phase P3: Multi-profile Chrome scanner with strict `anvien` blacklist enforcement and state resolver with live RAM binding and 4-step hot-swap coordination.
+    - Phase P4: Tkinter dark GUI updated with live RAM active email, 1-click smooth hot-swap, visual progress badges, and persistence controls.
+    - Phase P5: Comprehensive test suite (68 tests) with PID-based window matching and zero-chrome hot-swap flow verifying 100% pass rate.
+    - Slice Pn-A: Supervisor acceptance loop completed with `[VERDICT: PASS]` (Commit `1440eda`).
+    - Slice Pn-B: Dead code purge completed and verified by Supervisor with `[VERDICT: PASS]` (Commit `469bdfb`).
+  - Validation:
+    - 68/68 unit & integration tests passing (`python -m unittest -v tests/test_all.py` ran in 28.174s).
+    - 5/5 batch sequential runs passing `[0, 0, 0, 0, 0]`.
+    - Clean repository worktree state verified.
+    - Official closure report authored at `reports/planner/2026-10-15-plan-closure-report.md`.
+  - Verdict: `[VERDICT: PASS]`
+
 ## Closure Evidence
 
 Use this section for final detect-changes, commit hash, and closure evidence when the plan reaches completion.
 
-- `EC-PNC-GIT1`: Target commit hash for completed plan set.
-- `EC-PNC-TREE1`: Clean repository worktree state verification.
+- `EC-PNC-GIT1`: Target commit for completed plan set: `docs(plan): close plan with complete verification and evidence ledgers`.
+- `EC-PNC-TREE1`: Clean repository worktree state verification: `git status` clean with 0 uncommitted/untracked files outside closure commit.
