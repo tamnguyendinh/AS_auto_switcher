@@ -121,9 +121,24 @@ Matching plan item(s): `P1-A`, `P1-B`
   test_sanitize_filename_edge_cases (tests.test_all.TestAntigravitySwitcher.test_sanitize_filename_edge_cases) ... ok
   ```
 
-Planned Downstream Evidence Targets:
-- `E1-P1B-CRED1`: Round-trip write and read to Windows Credential Manager target `LegacyGeneric:target=gemini:antigravity`.
-- `E1-P1B-AUTO1`: Active session capture into store upon tool startup.
+### P1-B Execution Evidence
+
+- `E1-P1B-CRED1`: Robust Windows Credential Manager integration via `Advapi32.dll` (`CredReadW`, `CredWriteW`, `CredDeleteW`, `CredFree`) targeting `LegacyGeneric:target=gemini:antigravity`:
+  - `read_antigravity_token`: Returns `None` gracefully without crashing when target does not exist, when raw content is corrupted or non-UTF8, when JSON is not a dictionary (e.g. array or primitive), or when blob is empty.
+  - `write_antigravity_token`: Enforces strict payload validation before serialization; rejects non-dict inputs (`None`, strings, lists, integers), rejects empty dictionaries `{}`, and rejects non-serializable objects to prevent credential corruption.
+  - `delete_antigravity_token`: Provides safe wrapper over `CredDeleteW` that returns boolean success and handles non-existent targets gracefully.
+  - Verified via round-trip and edge-case unit tests in `tests/test_all.py`:
+  ```text
+  test_credential_manager_read_edge_cases (tests.test_all.TestAntigravitySwitcher.test_credential_manager_read_edge_cases) ... ok
+  test_credential_manager_round_trip_and_delete (tests.test_all.TestAntigravitySwitcher.test_credential_manager_round_trip_and_delete) ... ok
+  test_credential_manager_write_validation (tests.test_all.TestAntigravitySwitcher.test_credential_manager_write_validation) ... ok
+  test_live_credential_read (tests.test_all.TestAntigravitySwitcher.test_live_credential_read) ... ok
+  ```
+- `E1-P1B-AUTO1`: Active session capture into `AccountStore` via `AccountManager.auto_capture_active_session()` and `AccountManager.resolve_accounts()`. Reads active credential from Windows Credential Manager, extracts email from `id_token` JWT payload, and persists complete token structure into `accounts_store/<email>.json`. Verified in `tests/test_all.py`:
+  ```text
+  test_auto_capture_active_session (tests.test_all.TestAntigravitySwitcher.test_auto_capture_active_session) ... ok
+  test_state_resolver_with_account_store (tests.test_all.TestAntigravitySwitcher.test_state_resolver_with_account_store) ... ok
+  ```
 
 ## E2 - P2 Evidence
 

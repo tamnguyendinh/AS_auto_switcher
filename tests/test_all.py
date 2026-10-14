@@ -11,7 +11,12 @@ import time
 from core.jwt_helper import decode_jwt_payload, extract_email_from_token_data
 from core.account_store import AccountStore, sanitize_filename
 from scanner.chrome_scanner import is_blacklisted, get_chrome_signed_in_accounts
-from core.credential_manager import read_antigravity_token
+from core.credential_manager import (
+    read_antigravity_token,
+    write_antigravity_token,
+    delete_antigravity_token,
+    write_raw_credential,
+)
 from core.state_resolver import AccountManager
 
 
@@ -157,9 +162,85 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertTrue(self.store.remove_account(corrupt_email))
         self.assertFalse(os.path.exists(corrupt_path))
 
+    def test_credential_manager_read_edge_cases(self):
+        # 1. Non-existent target returns None gracefully
+        self.assertIsNone(read_antigravity_token("NonExistent_Target_P1B_999"))
+
+        # 2. Corrupt JSON raw bytes returns None gracefully
+        corrupt_target = "LegacyGeneric:target=gemini:antigravity_test_corrupt"
+        try:
+            write_raw_credential(b"{ invalid json content ...", target=corrupt_target)
+            self.assertIsNone(read_antigravity_token(corrupt_target))
+        finally:
+            delete_antigravity_token(corrupt_target)
+
+        # 3. Non-dict JSON (e.g. array or primitive) returns None
+        array_target = "LegacyGeneric:target=gemini:antigravity_test_nondict"
+        try:
+            write_raw_credential(b'["item1", "item2"]', target=array_target)
+            self.assertIsNone(read_antigravity_token(array_target))
+        finally:
+            delete_antigravity_token(array_target)
+
+        # 4. Empty string / empty bytes returns None
+        empty_target = "LegacyGeneric:target=gemini:antigravity_test_empty"
+        try:
+            write_raw_credential(b"", target=empty_target)
+            self.assertIsNone(read_antigravity_token(empty_target))
+        finally:
+            delete_antigravity_token(empty_target)
+
+    def test_credential_manager_write_validation(self):
+        test_target = "LegacyGeneric:target=gemini:antigravity_test_validation"
+        try:
+            # Non-dict inputs must be rejected
+            self.assertFalse(write_antigravity_token(None, target=test_target)) # type: ignore
+            self.assertFalse(write_antigravity_token("raw string", target=test_target)) # type: ignore
+            self.assertFalse(write_antigravity_token([1, 2, 3], target=test_target)) # type: ignore
+            self.assertFalse(write_antigravity_token(12345, target=test_target)) # type: ignore
+
+            # Empty dict must be rejected
+            self.assertFalse(write_antigravity_token({}, target=test_target))
+
+            # Non-serializable dict must be rejected
+            self.assertFalse(write_antigravity_token({"bad_data": {1, 2, 3}}, target=test_target))
+        finally:
+            delete_antigravity_token(test_target)
+
+    def test_credential_manager_round_trip_and_delete(self):
+        test_target = "LegacyGeneric:target=gemini:antigravity_test_roundtrip"
+        test_payload = {
+            "access_token": "mock_at_roundtrip",
+            "refresh_token": "mock_rt_roundtrip",
+            "id_token": "mock_id_roundtrip",
+            "email": "roundtrip@example.com",
+            "token_type": "Bearer"
+        }
+
+        try:
+            # 1. Write valid token
+            self.assertTrue(write_antigravity_token(test_payload, target=test_target))
+
+            # 2. Read and verify content
+            retrieved = read_antigravity_token(target=test_target)
+            self.assertIsNotNone(retrieved)
+            self.assertEqual(retrieved, test_payload)
+
+            # 3. Delete credential
+            self.assertTrue(delete_antigravity_token(target=test_target))
+
+            # 4. Verify gone
+            self.assertIsNone(read_antigravity_token(target=test_target))
+
+            # 5. Delete non-existent credential returns False gracefully
+            self.assertFalse(delete_antigravity_token(target=test_target))
+        finally:
+            delete_antigravity_token(test_target)
+
     def test_live_credential_read(self):
         token_data = read_antigravity_token()
         self.assertIsNotNone(token_data)
+        self.assertIsInstance(token_data, dict)
         self.assertIn("id_token", token_data)
 
     def test_live_chrome_scanner(self):
@@ -188,6 +269,16 @@ class TestAntigravitySwitcher(unittest.TestCase):
 
         self.assertTrue(active_found)
 
+    def test_auto_capture_active_session(self):
+        manager = AccountManager(self.store)
+        captured_email = manager.auto_capture_active_session()
+        self.assertIsNotNone(captured_email)
+        self.assertTrue(self.store.has_account(captured_email))
+        stored_token = self.store.get_account_token(captured_email)
+        self.assertIsNotNone(stored_token)
+        self.assertIn("id_token", stored_token)
+
 
 if __name__ == "__main__":
     unittest.main()
+
