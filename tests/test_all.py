@@ -1980,6 +1980,134 @@ class TestAntigravitySwitcher(unittest.TestCase):
             except Exception:
                 pass
 
+    def test_app_window_on_save_current_session_success(self):
+        saved_email = "session_user@example.com"
+        token_payload = {"access_token": "captured_token_xyz"}
+
+        def mock_capture():
+            self.store.store_account(saved_email, token_payload)
+            return saved_email
+
+        mock_manager = AccountManager(
+            store=self.store,
+            user_status_provider=lambda: saved_email,
+            chrome_accounts_provider=lambda: [saved_email]
+        )
+        mock_manager.auto_capture_active_session = mock_capture
+
+        app = AppWindow(manager=mock_manager, headless=True, show_dialogs=False)
+
+        # Execute save session
+        res = app._on_save_current_session()
+        self.assertEqual(res, saved_email)
+        self.assertEqual(app.status_bar_text, f"Đã lưu phiên của {saved_email} vào kho JSON")
+        self.assertTrue(self.store.has_account(saved_email))
+        self.assertEqual(self.store.get_account_token(saved_email), token_payload)
+
+    def test_app_window_on_save_current_session_none_and_exceptions(self):
+        # 1. auto_capture_active_session returns None
+        mock_manager = AccountManager(store=self.store)
+        mock_manager.auto_capture_active_session = lambda: None
+        app = AppWindow(manager=mock_manager, headless=True, show_dialogs=False)
+
+        res = app._on_save_current_session()
+        self.assertIsNone(res)
+        self.assertEqual(app.status_bar_text, "Chưa phát hiện phiên đăng nhập Antigravity nào để lưu")
+
+        # 2. auto_capture_active_session raises an exception
+        def blow_up():
+            raise OSError("Credential read failed")
+
+        mock_manager.auto_capture_active_session = blow_up
+        res_exc = app._on_save_current_session()
+        self.assertIsNone(res_exc)
+        self.assertEqual(app.status_bar_text, "Chưa phát hiện phiên đăng nhập Antigravity nào để lưu")
+
+    def test_app_window_refresh_accounts_metrics_and_status_bar(self):
+        # Prepopulate store with 3 accounts
+        for i in range(1, 4):
+            self.store.store_account(f"user{i}@example.com", {"access_token": f"token_{i}"})
+
+        chrome_accs = [f"chrome_{i}@example.com" for i in range(1, 6)]  # 5 accounts
+
+        mock_manager = AccountManager(
+            store=self.store,
+            credential_reader=lambda: None,
+            user_status_provider=lambda: None,
+            chrome_accounts_provider=lambda: chrome_accs
+        )
+
+        app = AppWindow(manager=mock_manager, headless=True, show_dialogs=False)
+
+        # Initial refresh on __init__ sets format:
+        # "Đồng bộ lúc <HH:MM:SS> • <N> tài khoản trong kho JSON • <M> trên Chrome"
+        expected_pattern = r"^Đồng bộ lúc \d{2}:\d{2}:\d{2} • 3 tài khoản trong kho JSON • 5 trên Chrome$"
+        self.assertRegex(app.status_bar_text, expected_pattern)
+
+        # Dynamically change accounts: add 1 to store (N=4), remove 2 from Chrome (M=3)
+        self.store.store_account("user4@example.com", {"access_token": "token_4"})
+        chrome_accs.pop()
+        chrome_accs.pop()
+
+        app.refresh_accounts()
+        expected_pattern_updated = r"^Đồng bộ lúc \d{2}:\d{2}:\d{2} • 4 tài khoản trong kho JSON • 3 trên Chrome$"
+        self.assertRegex(app.status_bar_text, expected_pattern_updated)
+
+    def test_app_window_save_and_refresh_buttons_wiring_tk(self):
+        import tkinter as tk
+        from unittest.mock import patch
+
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except Exception:
+            self.skipTest("Tkinter display not available on this environment")
+
+        try:
+            captured_email = "gui_save@example.com"
+            self.store.store_account("existing@example.com", {"access_token": "tok"})
+
+            mock_manager = AccountManager(
+                store=self.store,
+                user_status_provider=lambda: captured_email,
+                chrome_accounts_provider=lambda: ["existing@example.com", captured_email]
+            )
+            mock_manager.auto_capture_active_session = lambda: captured_email
+
+            app = AppWindow(root=root, manager=mock_manager, show_dialogs=True)
+
+            self.assertIsNotNone(app.save_btn)
+            self.assertIsNotNone(app.refresh_btn)
+            self.assertIsNotNone(app.status_bar)
+
+            # 1. Click [🔄 Làm mới Chrome] via invoke()
+            app.refresh_btn.invoke()
+            self.assertIn("tài khoản trong kho JSON", app.status_bar.cget("text"))
+            self.assertIn("trên Chrome", app.status_bar.cget("text"))
+
+            # 2. Click [💾 Lưu phiên hiện tại] via invoke() with dialog mocked
+            with patch("ui.app_window.messagebox.showinfo") as mock_info:
+                app.save_btn.invoke()
+                mock_info.assert_called_once()
+                self.assertEqual(app.status_bar.cget("text"), f"Đã lưu phiên của {captured_email} vào kho JSON")
+                self.assertEqual(app.status_bar_text, f"Đã lưu phiên của {captured_email} vào kho JSON")
+
+            # 3. Click [💾 Lưu phiên hiện tại] when no session detected
+            mock_manager.auto_capture_active_session = lambda: None
+            with patch("ui.app_window.messagebox.showwarning") as mock_warn:
+                app.save_btn.invoke()
+                mock_warn.assert_called_once()
+                self.assertEqual(app.status_bar.cget("text"), "Chưa phát hiện phiên đăng nhập Antigravity nào để lưu")
+                self.assertEqual(app.status_bar_text, "Chưa phát hiện phiên đăng nhập Antigravity nào để lưu")
+
+        finally:
+            try:
+                if 'app' in locals() and hasattr(app, "always_on_top_var"):
+                    app.always_on_top_var = None
+                root.destroy()
+            except Exception:
+                pass
+
 
 class MockHttpServerHelper:
     """Helper to spin up an in-process loopback HTTP server on an ephemeral port for testing."""

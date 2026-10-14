@@ -572,10 +572,39 @@ Matching plan item(s): `P4-A`, `P4-B`, `P4-C`
     Batch Results: [0, 0, 0, 0, 0]
     ```
 
+### P4-C Execution Evidence
+
+- `E4-P4C-SYNC1`: Session Persistence & Manual Chrome Sync Controls in `ui/app_window.py`:
+  - Session Capture Handler (`_on_save_current_session`):
+    * Invokes `self.manager.auto_capture_active_session()` to capture and persist current active credential into `accounts_store/<email>.json`.
+    * On successful capture (`email` returned): calls `self.refresh_accounts()`, updates status bar text to `Đã lưu phiên của <email> vào kho JSON`, updates status bar widget, and shows `messagebox.showinfo` ("Đã Lưu Phiên") with token persistence notice (when not headless and dialogs enabled).
+    * On missing session (`None` returned or exception caught): updates status bar text to `Chưa phát hiện phiên đăng nhập Antigravity nào để lưu`, updates status bar widget, and displays `messagebox.showwarning` ("Không Tìm Thấy Phiên") (when not headless and dialogs enabled).
+    * Safely catches any runtime exceptions during credential reading/capture, preventing unhandled GUI crashes.
+    * Returns the captured email string or `None`.
+  - Manual Refresh & Synchronization Controls (`refresh_accounts`):
+    * Queries `AccountStore.list_accounts()` or `AccountStore.list_stored_emails()` for stored JSON account count $N$ and Chrome accounts count $M$.
+    * Formats status bar with exact timestamp and metrics: `Đồng bộ lúc <HH:MM:SS> • <N> tài khoản trong kho JSON • <M> trên Chrome`.
+    * Button `[🔄 Làm mới Chrome]` wired to `refresh_accounts` via `command=self.refresh_accounts`.
+    * Button `[💾 Lưu phiên hiện tại]` wired to `_on_save_current_session` via `command=self._on_save_current_session`.
+  - Automated Unit Test Suite Validation in `tests/test_all.py` (58 passing tests):
+    * `test_app_window_on_save_current_session_success`: verifies session capture stores account into `AccountStore`, updates status bar to `Đã lưu phiên của <email> vào kho JSON`, and returns the captured email.
+    * `test_app_window_on_save_current_session_none_and_exceptions`: verifies graceful handling when no active session exists or when an exception occurs, setting status bar to `Chưa phát hiện phiên đăng nhập Antigravity nào để lưu` and returning `None`.
+    * `test_app_window_refresh_accounts_metrics_and_status_bar`: verifies status bar formatting matches regex `^Đồng bộ lúc \d{2}:\d{2}:\d{2} • <N> tài khoản trong kho JSON • <M> trên Chrome$` and dynamically updates metrics when store or Chrome accounts change.
+    * `test_app_window_save_and_refresh_buttons_wiring_tk`: verifies Tkinter button bindings for `save_btn` and `refresh_btn` via `.invoke()`, with modal suppression and dialog verification.
+  - Test suite execution output:
+    ```text
+    Ran 58 tests in 24.322s
+    OK
+    ```
+  - Batch stability verification across 5 sequential runs:
+    ```text
+    Batch Results: [0, 0, 0, 0, 0]
+    ```
+
 Planned Evidence Targets:
 - `E4-P4A-UI1`: Tkinter GUI rendering accounts with exact color dots and status badges (Achieved).
 - `E4-P4B-ACT1`: Click action on `[⚡ Chuyển sang]` executing hot-swap with modal/status bar feedback (Achieved).
-- `E4-P4C-SYNC1`: Click action on `[🔄 Làm mới Chrome]` refreshing account state and updating sync timestamp.
+- `E4-P4C-SYNC1`: Click action on `[🔄 Làm mới Chrome]` refreshing account state and updating sync timestamp (Achieved).
 
 ## E5 - P5 Evidence
 

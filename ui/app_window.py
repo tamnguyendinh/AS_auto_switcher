@@ -19,6 +19,11 @@ import queue
 from typing import Optional, List, Dict, Any, Callable, Union
 from core.state_resolver import AccountManager, AccountInfo, SwitchResult
 from core.api_connector import find_language_server_process
+from core.account_store import AccountStore
+
+if not hasattr(AccountStore, "list_accounts"):
+    AccountStore.list_accounts = AccountStore.list_stored_emails
+
 
 
 # Modern Dark Palette
@@ -304,14 +309,20 @@ class AppWindow:
         # Status bar update
         stored_count = 0
         try:
-            if hasattr(self.manager, "store") and hasattr(self.manager.store, "list_stored_emails"):
-                stored_count = len(self.manager.store.list_stored_emails())
+            store = getattr(self.manager, "store", None)
+            if store is not None:
+                if hasattr(store, "list_accounts"):
+                    res = store.list_accounts()
+                    stored_count = len(res) if isinstance(res, (list, tuple, set, dict)) else int(res)
+                elif hasattr(store, "list_stored_emails"):
+                    res = store.list_stored_emails()
+                    stored_count = len(res) if isinstance(res, (list, tuple, set, dict)) else int(res)
         except Exception:
             stored_count = 0
 
         now_str = datetime.datetime.now().strftime("%H:%M:%S")
         self.status_bar_text = f"Đồng bộ lúc {now_str} • {stored_count} tài khoản trong kho JSON • {len(accounts)} trên Chrome"
-        if hasattr(self, "status_bar"):
+        if hasattr(self, "status_bar") and self.status_bar and hasattr(self.status_bar, "config"):
             try:
                 self.status_bar.config(text=self.status_bar_text)
             except Exception:
@@ -604,9 +615,19 @@ class AppWindow:
         return self.last_switch_result
 
     def _on_save_current_session(self) -> Optional[str]:
-        email = self.manager.auto_capture_active_session()
+        try:
+            email = self.manager.auto_capture_active_session()
+        except Exception:
+            email = None
+
         if email:
             self.refresh_accounts()
+            self.status_bar_text = f"Đã lưu phiên của {email} vào kho JSON"
+            if hasattr(self, "status_bar") and self.status_bar and hasattr(self.status_bar, "config"):
+                try:
+                    self.status_bar.config(text=self.status_bar_text)
+                except Exception:
+                    pass
             if not self.headless and self.root is not None and self.show_dialogs:
                 try:
                     messagebox.showinfo(
@@ -617,6 +638,12 @@ class AppWindow:
                 except Exception:
                     pass
         else:
+            self.status_bar_text = "Chưa phát hiện phiên đăng nhập Antigravity nào để lưu"
+            if hasattr(self, "status_bar") and self.status_bar and hasattr(self.status_bar, "config"):
+                try:
+                    self.status_bar.config(text=self.status_bar_text)
+                except Exception:
+                    pass
             if not self.headless and self.root is not None and self.show_dialogs:
                 try:
                     messagebox.showwarning(
