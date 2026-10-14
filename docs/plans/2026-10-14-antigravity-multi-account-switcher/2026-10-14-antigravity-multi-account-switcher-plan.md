@@ -676,7 +676,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - P4-B: 1-Click Hot-Swap Trigger & Status Feedback
   - P4-C: Session Persistence & Manual Chrome Sync Controls
 
-- [ ] P4-A: Real-time Account List & Visual State Badging
+- [x] P4-A: Real-time Account List & Visual State Badging
   - Goal: Render accounts in the dark mode UI with accurate visual state badges (🟢 `[ĐANG DÙNG]`, 🟢 `[⚡ Chuyển sang]`, 🟡 `[Chưa lưu vào kho]`) and display active RAM email in the header.
   - Scope Boundary:
     - Editable: `ui/app_window.py`.
