@@ -104,6 +104,7 @@ Out of scope:
 | R7 | 2026-10-14 | commit 53a456b (Slice P3-B) | `core/state_resolver.py`, `tests/test_all.py` | P3-B complete: live RAM identity binding, state machine resolution (ACTIVE, READY, UNAUTH), and auto-capture implemented and verified | `E3-P3B-STATE1` | Proceed to Slice P3-C (4-Step Closed-Loop Hot-Swap Coordinator) |
 | R8 | 2026-10-14 | commit cf952ea (Slice P3-C) | `core/state_resolver.py`, `tests/test_all.py` | P3-C complete: 4-step closed-loop hot-swap coordinator implemented and verified | `E3-P3C-SW1` | Proceed to Phase P4 (User Interface Upgrades) |
 | R9 | 2026-10-14 | commit ddd180e (Slice P4-A) | `ui/app_window.py`, `tests/test_all.py` | P4-A complete: UI wired to live RAM state and hot-swap coordinator with visual badging and status bar feedback | `E4-P4A-UI1` | Proceed to Slice P4-B (1-Click Hot-Swap Trigger & Status Feedback) |
+| R10 | 2026-10-14 | commit 3460f02 (Slice P4-B) | `ui/app_window.py`, `tests/test_all.py` | P4-B complete: 1-click hot-swap trigger connected with visual progress feedback, error handling, and post-swap state refresh | `E4-P4B-ACT1` | Proceed to Slice P4-C (Session Persistence & Manual Chrome Sync Controls) |
 
 ## Phase Touch Map
 

@@ -737,7 +737,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Refresh row `ui/app_window.py`.
   - Commit Boundary: Commit milestone `feat(P4-A): render live account list and RAM status in UI`.
 
-- [ ] P4-B: 1-Click Hot-Swap Trigger & Status Feedback
+- [x] P4-B: 1-Click Hot-Swap Trigger & Status Feedback
   - Goal: Wire the `[⚡ Chuyển sang]` button to execute the 4-step hot-swap flow with instant visual status feedback and user alerts.
   - Scope Boundary:
     - Editable: `ui/app_window.py`.
