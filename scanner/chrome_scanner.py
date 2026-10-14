@@ -1,7 +1,6 @@
 """
 Chrome Profile Discovery Engine.
 Scans Google Chrome User Data to dynamically detect signed-in Google accounts.
-Enforces exclusion filter (e.g. strict blacklist).
 """
 
 import os
@@ -10,9 +9,6 @@ import re
 from dataclasses import dataclass
 from typing import List, Set, Optional, Dict, Any
 
-
-# Strictly filtered words (case-insensitive)
-BLACKLIST_KEYWORDS = ["anvien"]
 
 # Regular expression matching valid email address format
 EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$')
@@ -27,30 +23,13 @@ class ChromeAccountInfo:
     avatar_url: Optional[str] = None
 
 
-def is_blacklisted(email: Optional[str]) -> bool:
-    """
-    Checks if an email matches any blacklisted keywords (case-insensitive).
-    Returns True if blacklisted, False otherwise.
-    """
-    if not email or not isinstance(email, str):
-        return False
-    lower = email.lower().strip()
-    for kw in BLACKLIST_KEYWORDS:
-        if kw in lower:
-            return True
-    return False
-
-
 def is_valid_email(email: Optional[str]) -> bool:
     """
-    Checks if a string is a syntactically valid email and not an obvious false positive
-    or blacklisted address.
+    Checks if a string is a syntactically valid email and not an obvious false positive.
     """
     if not email or not isinstance(email, str):
         return False
     norm = email.strip().lower()
-    if is_blacklisted(norm):
-        return False
     # Filter out obvious false positives like file extensions or internal schemas
     if norm.endswith((".png", ".jpg", ".jpeg", ".js", ".css", ".json", ".googleapis.com", ".chromium.org")):
         return False
@@ -146,17 +125,16 @@ def get_chrome_account_details(user_data_path: Optional[str] = None) -> List[Chr
                             user_name = p_data.get("user_name", "")
                             if user_name and is_valid_email(str(user_name)):
                                 em = str(user_name).strip().lower()
-                                if not is_blacklisted(em):
-                                    name = str(p_data.get("gaia_name") or p_data.get("name") or "").strip()
-                                    avatar = p_data.get("last_downloaded_gaia_picture_url_with_size") or p_data.get("picture_url") or None
-                                    if avatar and not isinstance(avatar, str):
-                                        avatar = str(avatar)
-                                    accounts_map[em] = ChromeAccountInfo(
-                                        email=em,
-                                        name=name,
-                                        profile_dir=str(prof_dir),
-                                        avatar_url=avatar,
-                                    )
+                                name = str(p_data.get("gaia_name") or p_data.get("name") or "").strip()
+                                avatar = p_data.get("last_downloaded_gaia_picture_url_with_size") or p_data.get("picture_url") or None
+                                if avatar and not isinstance(avatar, str):
+                                    avatar = str(avatar)
+                                accounts_map[em] = ChromeAccountInfo(
+                                    email=em,
+                                    name=name,
+                                    profile_dir=str(prof_dir),
+                                    avatar_url=avatar,
+                                )
         except (PermissionError, FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
             pass
         except Exception:
@@ -209,26 +187,25 @@ def get_chrome_account_details(user_data_path: Optional[str] = None) -> List[Chr
                         raw_em = item.get("email")
                         if raw_em and is_valid_email(str(raw_em)):
                             em = str(raw_em).strip().lower()
-                            if not is_blacklisted(em):
-                                fn = str(item.get("full_name") or item.get("given_name") or "").strip()
-                                pic = item.get("picture_url") or item.get("last_downloaded_image_url_with_size") or None
-                                if pic and not isinstance(pic, str):
-                                    pic = str(pic)
-                                if em not in accounts_map:
-                                    accounts_map[em] = ChromeAccountInfo(
-                                        email=em,
-                                        name=fn,
-                                        profile_dir=entry,
-                                        avatar_url=pic,
-                                    )
-                                else:
-                                    existing = accounts_map[em]
-                                    if not existing.name and fn:
-                                        existing.name = fn
-                                    if not existing.avatar_url and pic:
-                                        existing.avatar_url = pic
-                                    if not existing.profile_dir:
-                                        existing.profile_dir = entry
+                            fn = str(item.get("full_name") or item.get("given_name") or "").strip()
+                            pic = item.get("picture_url") or item.get("last_downloaded_image_url_with_size") or None
+                            if pic and not isinstance(pic, str):
+                                pic = str(pic)
+                            if em not in accounts_map:
+                                accounts_map[em] = ChromeAccountInfo(
+                                    email=em,
+                                    name=fn,
+                                    profile_dir=entry,
+                                    avatar_url=pic,
+                                )
+                            else:
+                                existing = accounts_map[em]
+                                if not existing.name and fn:
+                                    existing.name = fn
+                                if not existing.avatar_url and pic:
+                                    existing.avatar_url = pic
+                                if not existing.profile_dir:
+                                    existing.profile_dir = entry
 
                 # Older Chrome: account_tracker_service_last_update dict
                 tracker = pref_data.get("account_tracker_service_last_update")
@@ -239,31 +216,30 @@ def get_chrome_account_details(user_data_path: Optional[str] = None) -> List[Chr
                         raw_em = item.get("email")
                         if raw_em and is_valid_email(str(raw_em)):
                             em = str(raw_em).strip().lower()
-                            if not is_blacklisted(em):
-                                fn = str(item.get("full_name") or item.get("given_name") or "").strip()
-                                pic = item.get("picture_url") or None
-                                if pic and not isinstance(pic, str):
-                                    pic = str(pic)
-                                if em not in accounts_map:
-                                    accounts_map[em] = ChromeAccountInfo(
-                                        email=em,
-                                        name=fn,
-                                        profile_dir=entry,
-                                        avatar_url=pic,
-                                    )
-                                else:
-                                    existing = accounts_map[em]
-                                    if not existing.name and fn:
-                                        existing.name = fn
-                                    if not existing.avatar_url and pic:
-                                        existing.avatar_url = pic
-                                    if not existing.profile_dir:
-                                        existing.profile_dir = entry
+                            fn = str(item.get("full_name") or item.get("given_name") or "").strip()
+                            pic = item.get("picture_url") or None
+                            if pic and not isinstance(pic, str):
+                                pic = str(pic)
+                            if em not in accounts_map:
+                                accounts_map[em] = ChromeAccountInfo(
+                                    email=em,
+                                    name=fn,
+                                    profile_dir=entry,
+                                    avatar_url=pic,
+                                )
+                            else:
+                                existing = accounts_map[em]
+                                if not existing.name and fn:
+                                    existing.name = fn
+                                if not existing.avatar_url and pic:
+                                    existing.avatar_url = pic
+                                if not existing.profile_dir:
+                                    existing.profile_dir = entry
 
             # Fallback regex search on Preferences content
             regex_emails = extract_emails_from_preferences(pref_path)
             for em in regex_emails:
-                if is_valid_email(em) and not is_blacklisted(em):
+                if is_valid_email(em):
                     if em not in accounts_map:
                         accounts_map[em] = ChromeAccountInfo(
                             email=em,
@@ -277,7 +253,7 @@ def get_chrome_account_details(user_data_path: Optional[str] = None) -> List[Chr
     # Final filtering and sorting
     final_accounts = [
         acc for acc in accounts_map.values()
-        if is_valid_email(acc.email) and not is_blacklisted(acc.email)
+        if is_valid_email(acc.email)
     ]
     final_accounts.sort(key=lambda x: x.email)
     return final_accounts
@@ -286,7 +262,6 @@ def get_chrome_account_details(user_data_path: Optional[str] = None) -> List[Chr
 def get_chrome_signed_in_accounts(user_data_path: Optional[str] = None) -> List[str]:
     """
     Scans all Chrome profiles and returns a unique, sorted list of signed-in Google accounts.
-    Accounts removed from Chrome or matching blacklist keywords are excluded.
     """
     details = get_chrome_account_details(user_data_path=user_data_path)
     return [acc.email for acc in details]

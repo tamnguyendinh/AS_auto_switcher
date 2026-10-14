@@ -14,7 +14,6 @@ from scanner.chrome_scanner import (
     get_chrome_signed_in_accounts,
     get_chrome_account_details,
     ChromeAccountInfo,
-    is_blacklisted,
 )
 from core.credential_manager import read_antigravity_token, write_antigravity_token
 from core.jwt_helper import extract_email_from_token_data
@@ -165,7 +164,7 @@ class AccountManager:
                 continue
 
             norm_email = raw_email.strip().lower()
-            if not norm_email or is_blacklisted(norm_email):
+            if not norm_email:
                 continue
 
             if norm_email in seen_emails:

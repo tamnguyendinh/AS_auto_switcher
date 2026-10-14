@@ -456,9 +456,26 @@ Matching plan item(s): `P3-A`, `P3-B`, `P3-C`
     ALL 5 RUNS PASSED 100% CLEANLY!
     ```
 
+- `E3-P3-CLEAN1`: Complete Purge of Bogus Blacklist & Truthful 7-Account Discovery:
+  - Direct Owner Mandate: Removed bogus `anvien` keyword blacklist completely from `scanner/chrome_scanner.py` and `core/state_resolver.py`.
+  - Deleted `BLACKLIST_KEYWORDS` and `is_blacklisted()` to eliminate artificial censorship and restore natural Chrome profile discovery semantics.
+  - Verified truthful discovery of all 7 Google accounts from host Chrome User Data (including the Owner's business account `hokinhdoanh.anvien.sales@gmail.com`):
+    1. `daohien204ccyersin@gmail.com` (Name: "Long Nguyễn đình", Profile: "Profile 1")
+    2. `hiendao1760@gmail.com` (Name: "Hiền Đào thị", Profile: "Profile 1")
+    3. `hokinhdoanh.anvien.sales@gmail.com` (Name: "Tâm Nguyễn Đình", Profile: "Profile 1")
+    4. `ngau2hung@gmail.com` (Name: "Logan Duroc", Profile: "Profile 1")
+    5. `quantritaikhoanemail@gmail.com` (Name: "Tâm Nguyễn Đình", Profile: "Profile 1")
+    6. `skey.miennam@gmail.com` (Name: "Miền Nam SKEY", Profile: "Profile 1")
+    7. `skey.vanphongmiennam@gmail.com` (Name: "Miền Nam Skey", Profile: "Profile 1")
+  - Test Suite Validation: 35/35 tests passing cleanly in `tests/test_all.py` across 5 consecutive execution passes:
+    ```text
+    Results: [0, 0, 0, 0, 0]
+    ```
+
 Planned Evidence Targets:
-- `E3-P3A-SCAN1`: Multi-profile Chrome discovery output with zero blacklisted items (Achieved).
+- `E3-P3A-SCAN1`: Multi-profile Chrome discovery output with truthful 7-account detection (Achieved).
 - `E3-P3B-STATE1`: State machine output matrix resolving 🟢 ACTIVE, 🟢 READY, 🟡 UNAUTH (Achieved).
+- `E3-P3-CLEAN1`: Elimination of blacklist filtering and truthful discovery of `hokinhdoanh.anvien.sales@gmail.com` (Achieved).
 - `E3-P3C-SW1`: Execution of full 4-step hot-swap loop (GetUserStatus -> AuthLogout -> Credential write -> ReAuth trigger).
 
 ## E4 - P4 Evidence

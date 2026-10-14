@@ -11,7 +11,6 @@ import time
 from core.jwt_helper import decode_jwt_payload, extract_email_from_token_data
 from core.account_store import AccountStore, sanitize_filename
 from scanner.chrome_scanner import (
-    is_blacklisted,
     get_chrome_signed_in_accounts,
     get_chrome_account_details,
     ChromeAccountInfo,
@@ -68,25 +67,18 @@ class TestAntigravitySwitcher(unittest.TestCase):
         email = extract_email_from_token_data({"id_token": jwt_mock})
         self.assertEqual(email, "testuser@gmail.com")
 
-    def test_blacklist_enforcement(self):
-        # Case variations and substrings
-        self.assertTrue(is_blacklisted("hokinhdoanh.anvien.sales@gmail.com"))
-        self.assertTrue(is_blacklisted("anvien@gmail.com"))
-        self.assertTrue(is_blacklisted("ANVIEN@company.com"))
-        self.assertTrue(is_blacklisted("Test.Anvien@Domain.Org"))
-        self.assertTrue(is_blacklisted("user@sub.anvien.net"))
-        self.assertTrue(is_blacklisted("anvien"))
-        self.assertTrue(is_blacklisted("  anvien@gmail.com  "))
-
-        # Clean non-blacklisted emails
-        self.assertFalse(is_blacklisted("hiendao1760@gmail.com"))
-        self.assertFalse(is_blacklisted("mydev@gmail.com"))
-        self.assertFalse(is_blacklisted("alice@example.com"))
-
-        # Non-string / empty edge cases
-        self.assertFalse(is_blacklisted(""))
-        self.assertFalse(is_blacklisted(None))
-        self.assertFalse(is_blacklisted("   "))
+    def test_chrome_scanner_truthful_account_discovery(self):
+        # Direct verification: Chrome scanner truthfully detects all 7 accounts
+        # including the owner's business account (hokinhdoanh.anvien.sales@gmail.com)
+        accounts = get_chrome_signed_in_accounts()
+        self.assertEqual(len(accounts), 7)
+        self.assertIn("hokinhdoanh.anvien.sales@gmail.com", accounts)
+        self.assertIn("hiendao1760@gmail.com", accounts)
+        self.assertIn("daohien204ccyersin@gmail.com", accounts)
+        self.assertIn("ngau2hung@gmail.com", accounts)
+        self.assertIn("quantritaikhoanemail@gmail.com", accounts)
+        self.assertIn("skey.miennam@gmail.com", accounts)
+        self.assertIn("skey.vanphongmiennam@gmail.com", accounts)
 
     def test_account_store_json_files(self):
         test_email = "developer_b@gmail.com"
@@ -284,21 +276,19 @@ class TestAntigravitySwitcher(unittest.TestCase):
     def test_live_chrome_scanner(self):
         accounts = get_chrome_signed_in_accounts()
         self.assertIsInstance(accounts, list)
-        self.assertGreater(len(accounts), 0)
-        for acc in accounts:
-            self.assertFalse(is_blacklisted(acc))
-            self.assertNotIn("anvien", acc.lower())
+        self.assertEqual(len(accounts), 7)
+        self.assertIn("hokinhdoanh.anvien.sales@gmail.com", accounts)
 
     def test_live_chrome_account_details(self):
         details = get_chrome_account_details()
         self.assertIsInstance(details, list)
-        self.assertGreater(len(details), 0)
+        self.assertEqual(len(details), 7)
+        emails = [acc.email for acc in details]
+        self.assertIn("hokinhdoanh.anvien.sales@gmail.com", emails)
         for acc in details:
             self.assertIsInstance(acc, ChromeAccountInfo)
             self.assertIsInstance(acc.email, str)
             self.assertTrue("@" in acc.email)
-            self.assertFalse(is_blacklisted(acc.email))
-            self.assertNotIn("anvien", acc.email.lower())
             self.assertIsInstance(acc.name, str)
             self.assertIsInstance(acc.profile_dir, str)
 
@@ -392,17 +382,16 @@ class TestAntigravitySwitcher(unittest.TestCase):
         accounts = get_chrome_signed_in_accounts(user_data_path=mock_user_data)
         expected_accounts = [
             "alice@gmail.com",
+            "anvien.sub@evil.org",
+            "blocked.anvien@company.com",
             "bob@example.com",
             "legacy.user@example.org",
+            "nested.anvien.user@gmail.com",
             "regex.user@domain.com",
             "secondary@gmail.com",
+            "tracker.anvien@example.com",
         ]
         self.assertEqual(accounts, expected_accounts)
-
-        # Verify absolutely zero blacklisted accounts present
-        for acc in accounts:
-            self.assertFalse(is_blacklisted(acc))
-            self.assertNotIn("anvien", acc.lower())
 
         # Test get_chrome_account_details with user_data_path
         details = get_chrome_account_details(user_data_path=mock_user_data)
@@ -434,10 +423,11 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertIsNotNone(regex_info)
         self.assertEqual(regex_info.profile_dir, "Profile 3")
 
-        # Verify none of the details contain anvien
-        for d in details:
-            self.assertFalse(is_blacklisted(d.email))
-            self.assertNotIn("anvien", d.email.lower())
+        # Verify anvien accounts are truthfully retained
+        anvien_info = details_by_email.get("blocked.anvien@company.com")
+        self.assertIsNotNone(anvien_info)
+        self.assertEqual(anvien_info.name, "Anvien User")
+        self.assertEqual(anvien_info.profile_dir, "Profile 2")
 
     def test_chrome_scanner_corrupted_and_empty_dirs(self):
         # 1. Non-existent path returns empty list
@@ -1055,8 +1045,8 @@ class TestAntigravitySwitcher(unittest.TestCase):
                 avatar_url=None
             ),
             ChromeAccountInfo(
-                email="blocked.anvien.sales@gmail.com",
-                name="Blocked Anvien",
+                email="hokinhdoanh.anvien.sales@gmail.com",
+                name="Tâm Nguyễn Đình",
                 profile_dir="Profile 3",
                 avatar_url=None
             )
@@ -1072,8 +1062,8 @@ class TestAntigravitySwitcher(unittest.TestCase):
         active_email, accounts = manager.resolve_accounts()
 
         self.assertEqual(active_email, "active_user@example.com")
-        # Blocked account must be excluded: 3 accounts remaining
-        self.assertEqual(len(accounts), 3)
+        # All 4 accounts recognized truthfully
+        self.assertEqual(len(accounts), 4)
 
         acc_map = {acc.email: acc for acc in accounts}
 
@@ -1108,8 +1098,15 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertEqual(unauth_acc.display_badge, "[Chưa lưu vào kho]")
         self.assertEqual(unauth_acc.name, "Unauth User")
 
-        # 4. Verify blacklisted account completely absent
-        self.assertNotIn("blocked.anvien.sales@gmail.com", acc_map)
+        # 4. Verify anvien business account truthfully present with UNAUTH status
+        anvien_acc = acc_map.get("hokinhdoanh.anvien.sales@gmail.com")
+        self.assertIsNotNone(anvien_acc)
+        self.assertFalse(anvien_acc.is_active)
+        self.assertFalse(anvien_acc.has_token)
+        self.assertEqual(anvien_acc.status_code, "UNAUTH")
+        self.assertEqual(anvien_acc.status_color, "yellow")
+        self.assertEqual(anvien_acc.display_badge, "[Chưa lưu vào kho]")
+        self.assertEqual(anvien_acc.name, "Tâm Nguyễn Đình")
 
     def test_account_manager_auto_capture_and_deduplication(self):
         # Auto-capture active session from Windows Credential Manager
@@ -1123,7 +1120,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
             "autocapture@example.com",
             "AUTOCAPTURE@EXAMPLE.COM",
             "other@example.com",
-            "anvien@gmail.com"  # blacklisted
+            "hokinhdoanh.anvien.sales@gmail.com"
         ]
 
         manager = AccountManager(
@@ -1140,10 +1137,10 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertTrue(self.store.has_account("autocapture@example.com"))
 
         # Deduplication check: "autocapture@example.com" should only appear once
-        # Blacklist check: "anvien@gmail.com" should be excluded
-        self.assertEqual(len(accounts), 2)
+        # All valid accounts are retained without censorship
+        self.assertEqual(len(accounts), 3)
         emails = [a.email for a in accounts]
-        self.assertEqual(emails, ["autocapture@example.com", "other@example.com"])
+        self.assertEqual(emails, ["autocapture@example.com", "other@example.com", "hokinhdoanh.anvien.sales@gmail.com"])
 
         # Auto-captured active account has status ACTIVE
         self.assertTrue(accounts[0].is_active)
