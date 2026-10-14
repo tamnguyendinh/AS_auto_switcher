@@ -377,9 +377,88 @@ Matching plan item(s): `P3-A`, `P3-B`, `P3-C`
     Results: [0, 0, 0, 0, 0]
     ```
 
+### P3-B Execution Evidence
+
+- `E3-P3B-STATE1`: Multi-Account State Machine Resolution (`ACTIVE`, `READY`, `UNAUTH`) and Live RAM Identity Binding in `core/state_resolver.py`:
+  - `AccountInfo` dataclass extended with rich metadata: `name: str = ""`, `avatar_url: Optional[str] = None`.
+  - `AccountManager.__init__(self, store=None, user_status_provider=None, chrome_accounts_provider=None, credential_reader=None)`:
+    - Provides dependency injection hooks for deterministic, isolated unit testing without depending on or touching live Windows host processes or credentials.
+  - `get_current_active_email(self, user_status_provider=None) -> Optional[str]`:
+    - Prioritizes live RAM identity by querying `find_language_server_process()` and `get_user_status(info)`.
+    - If language server is absent, times out, or returns None, safely falls back to reading Windows Credential Manager (`read_antigravity_token()` + `extract_email_from_token_data()`).
+    - Normalizes emails to lowercase and handles non-string or exception conditions gracefully.
+  - `auto_capture_active_session(self) -> Optional[str]`:
+    - Automatically persists active session into `accounts_store/<email>.json` if valid token is present in Windows Credential Manager.
+  - `resolve_accounts(self, chrome_accounts_provider=None, user_status_provider=None) -> Tuple[Optional[str], List[AccountInfo]]`:
+    - Discovers accounts via `get_chrome_account_details()` (or injected provider) with rich Gaia name and avatar metadata.
+    - Categorizes accounts into:
+      * `ACTIVE`: matches live RAM identity (`is_active=True`, `has_token=True`, `status_code="ACTIVE"`, `status_color="green"`, `display_badge="[ĐANG DÙNG]"`)
+      * `READY`: saved in `accounts_store/<email>.json` (`is_active=False`, `has_token=True`, `status_code="READY"`, `status_color="green"`, `display_badge="[⚡ Chuyển sang]"`)
+      * `UNAUTH`: in Chrome but missing from `accounts_store/` (`is_active=False`, `has_token=False`, `status_code="UNAUTH"`, `status_color="yellow"`, `display_badge="[Chưa lưu vào kho]"`)
+    - Filters out blacklisted accounts (`is_blacklisted()`) and deduplicates email variants.
+  - Validated via comprehensive unit test suite in `tests/test_all.py` (35 tests passing cleanly):
+    - `test_account_manager_get_active_email_priority`: verifies RAM identity provider priority, dict response format, method argument override, fallback to Windows Credential Manager on None, both None handling, and provider exception resilience.
+    - `test_account_manager_resolve_accounts_state_machine`: verifies exact categorization into ACTIVE, READY, UNAUTH, avatar and name metadata population, and total elimination of blacklisted accounts.
+    - `test_account_manager_auto_capture_and_deduplication`: verifies auto-capture from credential into `accounts_store/`, case-insensitive deduplication, and status assignment.
+    - `test_account_manager_account_info_metadata`: verifies `AccountInfo` dataclass instantiation with default and custom metadata.
+    - `test_state_resolver_with_account_store`: verifies integration with live store and accounts resolution.
+  - Full test execution output:
+    ```text
+    python -m unittest -v tests/test_all.py
+    test_account_manager_account_info_metadata (tests.test_all.TestAntigravitySwitcher.test_account_manager_account_info_metadata) ... ok
+    test_account_manager_auto_capture_and_deduplication (tests.test_all.TestAntigravitySwitcher.test_account_manager_auto_capture_and_deduplication) ... ok
+    test_account_manager_get_active_email_priority (tests.test_all.TestAntigravitySwitcher.test_account_manager_get_active_email_priority) ... ok
+    test_account_manager_resolve_accounts_state_machine (tests.test_all.TestAntigravitySwitcher.test_account_manager_resolve_accounts_state_machine) ... ok
+    test_account_store_atomic_write_and_payload (tests.test_all.TestAntigravitySwitcher.test_account_store_atomic_write_and_payload) ... ok
+    test_account_store_corrupted_json (tests.test_all.TestAntigravitySwitcher.test_account_store_corrupted_json) ... ok
+    test_account_store_json_files (tests.test_all.TestAntigravitySwitcher.test_account_store_json_files) ... ok
+    test_api_connector_invalid_info_graceful_handling (tests.test_all.TestAntigravitySwitcher.test_api_connector_invalid_info_graceful_handling) ... ok
+    test_auth_logout_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_auth_logout_mock_errors_and_timeout) ... ok
+    test_auth_logout_mock_success (tests.test_all.TestAntigravitySwitcher.test_auth_logout_mock_success) ... ok
+    test_auto_capture_active_session (tests.test_all.TestAntigravitySwitcher.test_auto_capture_active_session) ... ok
+    test_blacklist_enforcement (tests.test_all.TestAntigravitySwitcher.test_blacklist_enforcement) ... ok
+    test_chrome_scanner_corrupted_and_empty_dirs (tests.test_all.TestAntigravitySwitcher.test_chrome_scanner_corrupted_and_empty_dirs) ... ok
+    test_chrome_scanner_mock_profiles (tests.test_all.TestAntigravitySwitcher.test_chrome_scanner_mock_profiles) ... ok
+    test_credential_manager_read_edge_cases (tests.test_all.TestAntigravitySwitcher.test_credential_manager_read_edge_cases) ... ok
+    test_credential_manager_round_trip_and_delete (tests.test_all.TestAntigravitySwitcher.test_credential_manager_round_trip_and_delete) ... ok
+    test_credential_manager_write_validation (tests.test_all.TestAntigravitySwitcher.test_credential_manager_write_validation) ... ok
+    test_discover_listening_port_mocked (tests.test_all.TestAntigravitySwitcher.test_discover_listening_port_mocked) ... ok
+    test_extract_csrf_token_formats_and_edge_cases (tests.test_all.TestAntigravitySwitcher.test_extract_csrf_token_formats_and_edge_cases) ... ok
+    test_find_language_server_process_mocked (tests.test_all.TestAntigravitySwitcher.test_find_language_server_process_mocked) ... ok
+    test_get_user_status_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_get_user_status_mock_errors_and_timeout) ... ok
+    test_get_user_status_mock_success (tests.test_all.TestAntigravitySwitcher.test_get_user_status_mock_success) ... ok
+    test_jwt_payload_decode (tests.test_all.TestAntigravitySwitcher.test_jwt_payload_decode) ... ok
+    test_language_server_info_dataclass (tests.test_all.TestAntigravitySwitcher.test_language_server_info_dataclass) ... ok
+    test_live_chrome_account_details (tests.test_all.TestAntigravitySwitcher.test_live_chrome_account_details) ... ok
+    test_live_chrome_scanner (tests.test_all.TestAntigravitySwitcher.test_live_chrome_scanner) ... ok
+    test_live_credential_read (tests.test_all.TestAntigravitySwitcher.test_live_credential_read) ... ok
+    test_live_find_language_server_process (tests.test_all.TestAntigravitySwitcher.test_live_find_language_server_process) ... ok
+    test_live_get_user_status (tests.test_all.TestAntigravitySwitcher.test_live_get_user_status) ... ok
+    test_live_session_reloader_safety (tests.test_all.TestAntigravitySwitcher.test_live_session_reloader_safety) ... ok
+    test_reload_antigravity_session_coordinated_flow (tests.test_all.TestAntigravitySwitcher.test_reload_antigravity_session_coordinated_flow) ... ok
+    test_sanitize_filename_edge_cases (tests.test_all.TestAntigravitySwitcher.test_sanitize_filename_edge_cases) ... ok
+    test_state_resolver_with_account_store (tests.test_all.TestAntigravitySwitcher.test_state_resolver_with_account_store) ... ok
+    test_trigger_reauth_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_trigger_reauth_mock_errors_and_timeout) ... ok
+    test_trigger_reauth_mock_success (tests.test_all.TestAntigravitySwitcher.test_trigger_reauth_mock_success) ... ok
+
+    ----------------------------------------------------------------------
+    Ran 35 tests in 6.855s
+
+    OK
+    ```
+  - Batch stability verification (5 sequential runs):
+    ```text
+    Iteration 0: OK
+    Iteration 1: OK
+    Iteration 2: OK
+    Iteration 3: OK
+    Iteration 4: OK
+    ALL 5 RUNS PASSED 100% CLEANLY!
+    ```
+
 Planned Evidence Targets:
 - `E3-P3A-SCAN1`: Multi-profile Chrome discovery output with zero blacklisted items (Achieved).
-- `E3-P3B-STATE1`: State machine output matrix resolving 🟢 ACTIVE, 🟢 READY, 🟡 UNAUTH.
+- `E3-P3B-STATE1`: State machine output matrix resolving 🟢 ACTIVE, 🟢 READY, 🟡 UNAUTH (Achieved).
 - `E3-P3C-SW1`: Execution of full 4-step hot-swap loop (GetUserStatus -> AuthLogout -> Credential write -> ReAuth trigger).
 
 ## E4 - P4 Evidence
