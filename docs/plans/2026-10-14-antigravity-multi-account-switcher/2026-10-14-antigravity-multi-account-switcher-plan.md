@@ -195,7 +195,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Confirm row `core/account_store.py` remains `correct`.
   - Commit Boundary: Commit milestone `feat(P1-A): ensure atomic JSON account storage`.
 
-- [ ] P1-B: Active Session Capture & Credential Synchronization
+- [x] P1-B: Active Session Capture & Credential Synchronization
   - Goal: Enable reading and writing the active Antigravity OAuth credential via Windows Credential Manager (`LegacyGeneric:target=gemini:antigravity`).
   - Scope Boundary:
     - Editable: `core/credential_manager.py`.

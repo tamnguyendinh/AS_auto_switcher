@@ -96,6 +96,7 @@ Out of scope:
 |---------|------|------------|----------------|----------------|----------|-------------------|
 | R0 | 2026-10-14 | baseline before P0 | Entire repository | Initial classification: 3 correct, 4 partial, 1 missing | `E0-P0A-SRC1..SRC8`, `E0-P0A-PROC1..PROC2`, `E0-P0A-TEST1` | Proceed to implementation slices P1 through P5 |
 | R1 | 2026-10-14 | commit 2088e77 (Slice P1-A) | `core/account_store.py`, `tests/test_all.py` | P1-A complete: atomic JSON file operations, filename sanitation, schema validation verified | `E1-P1A-STORE1`, `E1-P1A-STORE2` | Proceed to Slice P1-B (Active Session Capture & Credential Synchronization) |
+| R2 | 2026-10-14 | commit 50149b2 (Slice P1-B) | `core/credential_manager.py`, `tests/test_all.py` | P1-B complete: Windows Credential Manager integration hardened (validation, error resilience, safe delete) and verified | `E1-P1B-CRED1`, `E1-P1B-AUTO1` | Proceed to Phase P2 (Language Server API Connector) |
 
 ## Phase Touch Map
 
