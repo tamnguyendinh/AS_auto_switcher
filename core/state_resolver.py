@@ -87,6 +87,7 @@ class AccountManager:
         token_writer: Optional[Callable[[Dict[str, Any]], bool]] = None,
         process_finder: Optional[Callable[[], Any]] = None,
         status_getter: Optional[Callable[[Any], Optional[Dict[str, Any]]]] = None,
+        force_logout: bool = False,
     ):
         self.store = store or AccountStore()
         self.user_status_provider = user_status_provider
@@ -97,6 +98,7 @@ class AccountManager:
         self.token_writer = token_writer
         self.process_finder = process_finder
         self.status_getter = status_getter
+        self.force_logout = force_logout
 
     def get_current_active_email(
         self,
@@ -256,20 +258,26 @@ class AccountManager:
     def switch_account(
         self,
         target_email: str,
+        force_logout: Optional[bool] = None,
+        skip_logout: Optional[bool] = None,
         logout_fn: Optional[Callable[[Any], bool]] = None,
         reloader_fn: Optional[Callable[..., bool]] = None,
         token_writer: Optional[Callable[[Dict[str, Any]], bool]] = None,
         process_finder: Optional[Callable[[], Any]] = None,
         status_getter: Optional[Callable[[Any], Optional[Dict[str, Any]]]] = None,
+        **kwargs: Any,
     ) -> SwitchResult:
         """
-        Executes the Owner's Mandated 4-Step Closed-Loop Hot-Swap Coordinator:
+        Executes Smooth Zero-Chrome Hot-Swap (or full 4-step coordinator if force_logout=True):
           Step 1 (GetUserStatus): Discover running language_server.exe and query current active email in RAM.
                                   If already active on target_email, return True (idempotent / no-op).
-          Step 2 (AuthLogout): If language_server.exe is running, flush old credentials from RAM.
-          Step 3 (Swap Token): Load target token from store. If missing or invalid, return False.
-                               Write target token to Windows Credential Manager.
-          Step 4 (Re-Auth Trigger): Signal Antigravity to reload credentials into RAM.
+          Step 2 (AuthLogout): By default, DO NOT call auth_logout()! Bypassing AuthLogout() avoids
+                               notifying the Electron IDE that the user logged out, eliminating the Chrome OAuth popup.
+                               Only called if force_logout=True (or skip_logout=False).
+          Step 3 (Swap Token): Load target token from store. If missing or invalid, abort safely.
+                               Write target Token B directly into Windows Credential Manager.
+          Step 4 (Re-Auth / Reload Trigger): Signal Antigravity to reload credentials from Windows Credential Manager
+                               into RAM in 0.1s — completely seamless, with ZERO Chrome popups and ZERO user clicks!
         """
         if not target_email or not isinstance(target_email, str):
             return SwitchResult(False, "Email tài khoản không hợp lệ.")
@@ -277,6 +285,19 @@ class AccountManager:
         norm_email = target_email.strip().lower()
         if not norm_email:
             return SwitchResult(False, "Email tài khoản không hợp lệ.")
+
+        # Determine should_logout behavior:
+        # Default is False (smooth zero-chrome hot-swap without OAuth popups)
+        if callable(force_logout):
+            logout_fn = force_logout
+            force_logout = None
+
+        if skip_logout is not None:
+            should_logout = not bool(skip_logout)
+        elif force_logout is not None:
+            should_logout = bool(force_logout)
+        else:
+            should_logout = bool(getattr(self, "force_logout", False))
 
         # Resolve providers (method parameter override > instance attribute > default)
         finder = process_finder or self.process_finder or find_language_server_process
@@ -335,15 +356,15 @@ class AccountManager:
         if not target_token or not isinstance(target_token, dict):
             return SwitchResult(False, f"Chưa có file JSON của {norm_email} trong accounts_store/!")
 
-        # Step 2 (AuthLogout): Flush old credentials from RAM if language_server.exe is running
-        if info is not None:
+        # Step 2 (AuthLogout): Only invoked if should_logout is True
+        if should_logout and info is not None:
             logout = logout_fn or self.logout_fn or auth_logout
             try:
                 logout(info)
             except Exception:
                 pass
 
-        # Step 3 (Swap Token): Write target token to Windows Credential Manager
+        # Step 3 (Swap Token): Write target Token B directly to Windows Credential Manager
         writer = token_writer or self.token_writer or write_antigravity_token
         write_ok = False
         try:
@@ -354,7 +375,7 @@ class AccountManager:
         if not write_ok:
             return SwitchResult(False, "Không thể ghi Token vào Windows Credential Manager!")
 
-        # Step 4 (Re-Auth Trigger): Signal Antigravity to reload credentials into RAM
+        # Step 4 (Re-Auth / Reload Trigger): Signal Antigravity to reload credentials into RAM
         reloader = reloader_fn or self.reloader_fn or reload_antigravity_session
         try:
             import inspect

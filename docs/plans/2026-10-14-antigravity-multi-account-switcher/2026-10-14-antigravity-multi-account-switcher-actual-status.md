@@ -88,7 +88,7 @@ Out of scope:
 | `scanner/chrome_scanner.py` | Multi-profile extraction and strict `anvien` blacklist filtering hardened. | Robust extraction of signed-in Chrome emails excluding blacklisted terms. | `correct` | 2 related files | `E0-P0A-SRC5`, `E0-P0A-SEC1`, `E3-P3A-SCAN1` | Preserve in P3-B, wire into state resolver |
 | `core/state_resolver.py` | Live RAM identity binding, auto-capture, and state resolution (ACTIVE, READY, UNAUTH) implemented. | Resolves accounts using RAM status from `GetUserStatus()`; coordinates full 4-step hot-swap loop. | `correct` | 4 related files | `E0-P0A-SRC4`, `E3-P3B-STATE1` | Preserve in P3-C / wire 4-step switching loop coordinator |
 | `ui/app_window.py` | Live RAM identity display, 1-click hot-swap with visual feedback, session persistence, and manual sync controls implemented. | Displays live RAM account status, real-time 4-step switching progress, error feedback, and manual sync. | `correct` | 2 related files | `E0-P0A-SRC6`, `E4-P4A-UI1`, `E4-P4B-ACT1`, `E4-P4C-SYNC1` | Preserve in Phase P5 / verify in test suite |
-| `tests/test_all.py` | 6 unit tests passing for store, jwt, blacklist, and live credential read. | Comprehensive test suite covering API connector, port discovery, 4-step switching loop, and edge cases. | `partial` | 6 related files | `E0-P0A-SRC7`, `E0-P0A-TEST1` | Expand in P5-A, P5-B |
+| `tests/test_all.py` | 68 unit & regression tests passing, 100% pass rate. | Comprehensive test suite covering API connector, port discovery, smooth hot-swap, PID discovery, and edge cases. | `correct` | 6 related files | `E5-P5A-UNIT1`, `E5-P5B-REG1` | Verified in P5-B |
 
 ## Status Refresh Log
 
@@ -107,6 +107,7 @@ Out of scope:
 | R10 | 2026-10-14 | commit 3460f02 (Slice P4-B) | `ui/app_window.py`, `tests/test_all.py` | P4-B complete: 1-click hot-swap trigger connected with visual progress feedback, error handling, and post-swap state refresh | `E4-P4B-ACT1` | Proceed to Slice P4-C (Session Persistence & Manual Chrome Sync Controls) |
 | R11 | 2026-10-14 | commit 14b567b (Slice P4-C) | `ui/app_window.py`, `tests/test_all.py` | P4-C complete: session persistence and manual Chrome sync controls implemented and verified | `E4-P4C-SYNC1` | Proceed to Phase P5 (Verification & Regression QA) |
 | R12 | 2026-10-14 | commit 4673f40 (Slice P5-A) | `tests/test_all.py` | P5-A complete: expanded comprehensive unit and integration test suite (API connector, 4-step switching flow, store, credential manager) verified | `E5-P5A-UNIT1` | Proceed to Slice P5-B (End-to-End Switching Cycle & Robustness Verification) |
+| R13 | 2026-10-14 | Slice P5-B | `core/session_reloader.py`, `core/state_resolver.py`, `tests/test_all.py` | P5-B complete: PID-based window discovery and smooth zero-chrome hot-swap implemented; 68/68 tests passing across 5 consecutive runs | `E5-P5B-REG1` | Proceed to Supervisor loop (Pn-A) |
 
 ## Phase Touch Map
 

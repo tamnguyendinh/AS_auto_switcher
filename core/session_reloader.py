@@ -7,7 +7,7 @@ import ctypes
 from ctypes import wintypes
 import time
 import logging
-from typing import Optional, List, Callable
+from typing import Optional, List, Callable, Any
 from core.api_connector import LanguageServerInfo, trigger_reauth
 
 logger = logging.getLogger(__name__)
@@ -45,44 +45,129 @@ VK_R = 0x52
 KEYEVENTF_KEYUP = 0x0002
 
 
-def find_antigravity_windows() -> list[wintypes.HWND]:
-    """Finds all visible window handles belonging to Antigravity."""
-    hwnds: list[wintypes.HWND] = []
+import subprocess
+import csv
+import io
+
+def find_antigravity_pids(
+    command_runner: Optional[Callable[..., Any]] = None,
+) -> List[int]:
+    """
+    Discovers all running PIDs belonging to process Antigravity.exe (or Antigravity)
+    using standard Windows tools (tasklist /FI "IMAGENAME eq Antigravity.exe" /FO CSV).
+    Handles missing tools or errors gracefully.
+    """
+    pids: List[int] = []
+    try:
+        if command_runner is not None:
+            output = command_runner(["tasklist", "/FI", "IMAGENAME eq Antigravity.exe", "/FO", "CSV"])
+            if hasattr(output, "stdout"):
+                raw_text = output.stdout
+            elif isinstance(output, list):
+                for item in output:
+                    if isinstance(item, int) and item > 0 and item not in pids:
+                        pids.append(item)
+                    elif isinstance(item, str) and item.isdigit() and int(item) > 0 and int(item) not in pids:
+                        pids.append(int(item))
+                return pids
+            else:
+                raw_text = str(output or "")
+        else:
+            creationflags = 0
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                creationflags = subprocess.CREATE_NO_WINDOW
+            res = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq Antigravity.exe", "/FO", "CSV"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=creationflags,
+            )
+            raw_text = res.stdout
+
+        reader = csv.reader(io.StringIO(raw_text))
+        for row in reader:
+            if len(row) >= 2:
+                img_name = row[0].strip().lower()
+                pid_str = row[1].strip()
+                if pid_str.isdigit() and ("antigravity" in img_name):
+                    pid_val = int(pid_str)
+                    if pid_val > 0 and pid_val not in pids:
+                        pids.append(pid_val)
+    except Exception as exc:
+        logger.debug("find_antigravity_pids error: %s", exc)
+
+    return pids
+
+
+def find_antigravity_windows(
+    pid_provider: Optional[Callable[[], List[int]]] = None,
+    enum_windows_fn: Optional[Callable[[Any, int], bool]] = None,
+) -> List[wintypes.HWND]:
+    """
+    Finds all visible window handles belonging to Antigravity.
+    Matches visible window handles (HWND) whose GetWindowThreadProcessId matches any PID of Antigravity.exe.
+    Retains fallback window title check (if "antigravity" in title.lower()) if PID discovery returns empty.
+    Supports injecting pid_provider and enum_windows_fn for hermetic testing.
+    """
+    hwnds: List[wintypes.HWND] = []
+    try:
+        finder = pid_provider if pid_provider is not None else find_antigravity_pids
+        target_pids = set(finder() or [])
+    except Exception:
+        target_pids = set()
 
     def enum_proc(hwnd, lparam):
         if IsWindowVisible(hwnd):
             pid = wintypes.DWORD()
             GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            buf = ctypes.create_unicode_buffer(512)
-            GetWindowTextW(hwnd, buf, 512)
-            title = buf.value
-            # Check window title or class
-            if "antigravity" in title.lower():
-                hwnds.append(hwnd)
+            curr_pid = int(pid.value)
+            if target_pids:
+                if curr_pid in target_pids:
+                    hwnds.append(hwnd)
+            else:
+                buf = ctypes.create_unicode_buffer(512)
+                GetWindowTextW(hwnd, buf, 512)
+                title = buf.value
+                if "antigravity" in title.lower():
+                    hwnds.append(hwnd)
         return True
 
-    EnumWindows(WNDENUMPROC(enum_proc), 0)
+    enum_fn = enum_windows_fn or EnumWindows
+    try:
+        enum_fn(WNDENUMPROC(enum_proc), 0)
+    except Exception as exc:
+        logger.debug("find_antigravity_windows error: %s", exc)
+
     return hwnds
 
 
-def reload_antigravity_window() -> bool:
+def reload_antigravity_window(
+    windows: Optional[List[wintypes.HWND]] = None,
+    windows_finder: Optional[Callable[[], List[wintypes.HWND]]] = None,
+) -> bool:
     """
     Sends Ctrl+R to Antigravity window if found, to refresh the Electron window cleanly.
     """
-    windows = find_antigravity_windows()
+    if windows is None:
+        finder = windows_finder or find_antigravity_windows
+        windows = finder()
     if not windows:
         return False
 
     for hwnd in windows:
-        SetForegroundWindow(hwnd)
-        time.sleep(0.05)
-        # Press Ctrl+R
-        keybd_event(VK_CONTROL, 0, 0, None)
-        keybd_event(VK_R, 0, 0, None)
-        time.sleep(0.05)
-        keybd_event(VK_R, 0, KEYEVENTF_KEYUP, None)
-        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, None)
-        time.sleep(0.1)
+        try:
+            SetForegroundWindow(hwnd)
+            time.sleep(0.05)
+            # Press Ctrl+R
+            keybd_event(VK_CONTROL, 0, 0, None)
+            keybd_event(VK_R, 0, 0, None)
+            time.sleep(0.05)
+            keybd_event(VK_R, 0, KEYEVENTF_KEYUP, None)
+            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, None)
+            time.sleep(0.1)
+        except Exception as exc:
+            logger.debug("reload_antigravity_window error on HWND %s: %s", hwnd, exc)
 
     return True
 

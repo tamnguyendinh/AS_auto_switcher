@@ -918,7 +918,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Refresh row `tests/test_all.py`.
   - Commit Boundary: Commit milestone `test(P5-A): expand comprehensive test suite`.
 
-- [ ] P5-B: End-to-End Switching Cycle & Robustness Verification
+- [x] P5-B: End-to-End Switching Cycle & Robustness Verification
   - Goal: Implement PID-based 100% accurate Antigravity window discovery in `core/session_reloader.py`, refine `core/state_resolver.py::AccountManager.switch_account` to execute smooth hot-swap (bypassing `AuthLogout()` by default to avoid triggering Chrome browser OAuth re-login, writing Token B directly to Windows Credential Manager, and sending reload signal directly to `Antigravity.exe` window to load Token B into RAM), and run full regression & multi-run stability validation ensuring 100% test pass rate across the entire test suite.
   - Scope Boundary:
     - Editable: `core/session_reloader.py`, `core/state_resolver.py`, `tests/test_all.py`, `docs/plans/2026-10-14-antigravity-multi-account-switcher/`.

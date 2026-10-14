@@ -34,6 +34,7 @@ from core.api_connector import (
     DEFAULT_REAUTH_ENDPOINTS,
 )
 from core.session_reloader import (
+    find_antigravity_pids,
     find_antigravity_windows,
     reload_antigravity_window,
     reload_antigravity_session,
@@ -956,6 +957,92 @@ class TestAntigravitySwitcher(unittest.TestCase):
         res = reload_antigravity_session(info=None, reload_window=False)
         self.assertIsInstance(res, bool)
 
+    def test_find_antigravity_pids_mock_and_errors(self):
+        # 1. Successful CSV parsing with multiple Antigravity PIDs and non-Antigravity processes
+        sample_csv = (
+            '"Antigravity.exe","14408","Console","1","156,788 K"\n'
+            '"Antigravity.exe","2668","Console","1","279,664 K"\n'
+            '"chrome.exe","9999","Console","1","10,000 K"\n'
+            '"Antigravity","13716","Console","1","58,504 K"\n'
+        )
+        pids = find_antigravity_pids(command_runner=lambda cmd: sample_csv)
+        self.assertEqual(pids, [14408, 2668, 13716])
+
+        # 2. tasklist output when no matching tasks exist
+        info_no_tasks = "INFO: No tasks are running which match the specified criteria.\n"
+        pids_empty = find_antigravity_pids(command_runner=lambda cmd: info_no_tasks)
+        self.assertEqual(pids_empty, [])
+
+        # 3. Custom runner returning direct list of PIDs
+        direct_pids = find_antigravity_pids(command_runner=lambda cmd: [5492, "9680", 0, -5])
+        self.assertEqual(direct_pids, [5492, 9680])
+
+        # 4. Runner throwing exception handled gracefully returning []
+        def throwing_runner(cmd):
+            raise OSError("tasklist executable not found")
+
+        self.assertEqual(find_antigravity_pids(command_runner=throwing_runner), [])
+
+    def test_find_antigravity_windows_pid_matching_and_title_fallback(self):
+        import ctypes
+        from ctypes import wintypes
+        from unittest.mock import patch
+
+        # Mock windows data: (hwnd, pid, title, visible)
+        mock_windows = [
+            (101, 14408, "Project Alpha - Google Antigravity", True),
+            (102, 99999, "Chrome Browser", True),
+            (103, 2668, "Sub-window", True),
+            (104, 14408, "Hidden", False),
+        ]
+
+        def fake_enum_windows(enum_proc, lparam):
+            for hwnd, pid_val, title, visible in mock_windows:
+                def make_set_pid(p):
+                    return lambda h, ref: setattr(ref._obj, "value", p)
+                def make_set_text(t):
+                    def _setter(h, buf, maxlen):
+                        buf.value = t
+                        return len(t)
+                    return _setter
+
+                with patch("core.session_reloader.IsWindowVisible", return_value=visible), \
+                     patch("core.session_reloader.GetWindowThreadProcessId", side_effect=make_set_pid(pid_val)), \
+                     patch("core.session_reloader.GetWindowTextW", side_effect=make_set_text(title)):
+                    enum_proc(hwnd, lparam)
+            return True
+
+        # Case 1: PID discovery succeeds -> matches window 101 and 103 (visible, matching PIDs)
+        matched_hwnds = find_antigravity_windows(
+            pid_provider=lambda: [14408, 2668],
+            enum_windows_fn=fake_enum_windows,
+        )
+        self.assertEqual(matched_hwnds, [101, 103])
+
+        # Case 2: PID discovery returns empty -> fallback to title check containing "antigravity"
+        matched_fallback = find_antigravity_windows(
+            pid_provider=lambda: [],
+            enum_windows_fn=fake_enum_windows,
+        )
+        self.assertEqual(matched_fallback, [101])
+
+        # Case 3: PID provider raises exception -> falls back to title check safely
+        def broken_pid_provider():
+            raise RuntimeError("Process query failed")
+
+        matched_exc = find_antigravity_windows(
+            pid_provider=broken_pid_provider,
+            enum_windows_fn=fake_enum_windows,
+        )
+        self.assertEqual(matched_exc, [101])
+
+    def test_live_find_antigravity_pids(self):
+        pids = find_antigravity_pids()
+        self.assertIsInstance(pids, list)
+        for pid in pids:
+            self.assertIsInstance(pid, int)
+            self.assertGreater(pid, 0)
+
     def test_live_get_user_status(self):
         info = find_language_server_process()
         if info is not None:
@@ -1223,9 +1310,9 @@ class TestAntigravitySwitcher(unittest.TestCase):
             reloader_fn=mock_reloader,
         )
 
+        # 1. Default switch: smooth zero-chrome hot-swap (auth_logout bypassed to prevent OAuth popups)
         res = manager.switch_account(target_email)
 
-        # Assert result semantics (boolean truthy and tuple unpacking)
         self.assertTrue(res)
         self.assertEqual(res, True)
         self.assertTrue(res.success)
@@ -1236,12 +1323,25 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(msg, res.message)
 
-        # Verify exact 4-step sequence execution
+        # Verify default smooth sequence: logout is bypassed!
+        self.assertEqual(len(step_trace), 4)
+        self.assertEqual(step_trace[0], "step1_finder")
+        self.assertEqual(step_trace[1], ("step1_getter", 8888))
+        self.assertEqual(step_trace[2], ("step3_writer", "mock_id_token_b"))
+        self.assertEqual(step_trace[3], ("step4_reloader", 8888))
+        self.assertNotIn(("step2_logout", 8888), step_trace)
+
+        # 2. Forced logout switch: force_logout=True explicitly invokes auth_logout
+        step_trace.clear()
+        target_email_c = "account_c@gmail.com"
+        self.store.store_account(target_email_c, {"access_token": "at_c", "id_token": "mock_id_token_c"})
+        res_forced = manager.switch_account(target_email_c, force_logout=True)
+        self.assertTrue(res_forced)
         self.assertEqual(len(step_trace), 5)
         self.assertEqual(step_trace[0], "step1_finder")
         self.assertEqual(step_trace[1], ("step1_getter", 8888))
         self.assertEqual(step_trace[2], ("step2_logout", 8888))
-        self.assertEqual(step_trace[3], ("step3_writer", "mock_id_token_b"))
+        self.assertEqual(step_trace[3], ("step3_writer", "mock_id_token_c"))
         self.assertEqual(step_trace[4], ("step4_reloader", 8888))
 
     def test_switch_account_idempotent_when_already_active(self):
@@ -1479,9 +1579,10 @@ class TestAntigravitySwitcher(unittest.TestCase):
             process_finder=default_finder,
         )
 
-        # Pass custom mocks as keyword arguments directly to switch_account
+        # Pass custom mocks as keyword arguments directly to switch_account (with force_logout=True)
         res = manager.switch_account(
             target_email,
+            force_logout=True,
             logout_fn=custom_logout,
             reloader_fn=custom_reloader,
             token_writer=custom_writer,
@@ -1496,6 +1597,96 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertIn("custom_logout", invoked_calls)
         self.assertIn("custom_writer", invoked_calls)
         self.assertIn("custom_reloader", invoked_calls)
+
+    def test_switch_account_smooth_zero_chrome_hot_swap_comprehensive(self):
+        """
+        Comprehensive test verifying Owner's smooth zero-chrome hot-swap flow:
+        - By default, auth_logout is strictly NOT called (eliminating Chrome OAuth login tab)
+        - Token is written directly to Windows Credential Manager
+        - Session reload (Ctrl+R / Re-Auth) dispatched to IDE
+        - Supports skip_logout=True (bypasses logout) and skip_logout=False (invokes logout)
+        - Supports force_logout=False (bypasses logout) and force_logout=True (invokes logout)
+        - Supports AccountManager instance level force_logout setting
+        """
+        email_b = "smooth_target_b@gmail.com"
+        email_c = "smooth_target_c@gmail.com"
+        email_d = "smooth_target_d@gmail.com"
+        email_e = "smooth_target_e@gmail.com"
+        token_data = {"access_token": "smooth_at", "id_token": "smooth_id"}
+
+        for em in [email_b, email_c, email_d, email_e]:
+            self.store.store_account(em, token_data)
+
+        actions = []
+        mock_info = LanguageServerInfo(pid=1111, csrf_token="smooth-csrf", port=59999)
+
+        def mock_finder():
+            actions.append("finder")
+            return mock_info
+
+        def mock_getter(info):
+            actions.append("getter")
+            return {"email": "active_user@gmail.com"}
+
+        def mock_logout(info):
+            actions.append("logout")
+            return True
+
+        def mock_writer(tok):
+            actions.append("writer")
+            return True
+
+        def mock_reloader(info=None):
+            actions.append("reloader")
+            return True
+
+        # 1. Default switch: zero-chrome hot-swap (no logout)
+        mgr = AccountManager(
+            store=self.store,
+            process_finder=mock_finder,
+            status_getter=mock_getter,
+            logout_fn=mock_logout,
+            token_writer=mock_writer,
+            reloader_fn=mock_reloader,
+        )
+        res1 = mgr.switch_account(email_b)
+        self.assertTrue(res1)
+        self.assertEqual(actions, ["finder", "getter", "writer", "reloader"])
+        self.assertNotIn("logout", actions)
+
+        # 2. skip_logout=True explicitly
+        actions.clear()
+        res2 = mgr.switch_account(email_c, skip_logout=True)
+        self.assertTrue(res2)
+        self.assertEqual(actions, ["finder", "getter", "writer", "reloader"])
+        self.assertNotIn("logout", actions)
+
+        # 3. skip_logout=False -> logout called
+        actions.clear()
+        res3 = mgr.switch_account(email_d, skip_logout=False)
+        self.assertTrue(res3)
+        self.assertEqual(actions, ["finder", "getter", "logout", "writer", "reloader"])
+
+        # 4. force_logout=True -> logout called
+        actions.clear()
+        res4 = mgr.switch_account(email_e, force_logout=True)
+        self.assertTrue(res4)
+        self.assertEqual(actions, ["finder", "getter", "logout", "writer", "reloader"])
+
+        # 5. AccountManager instance with force_logout=True
+        actions.clear()
+        mgr_forced = AccountManager(
+            store=self.store,
+            process_finder=mock_finder,
+            status_getter=mock_getter,
+            logout_fn=mock_logout,
+            token_writer=mock_writer,
+            reloader_fn=mock_reloader,
+            force_logout=True,
+        )
+        res5 = mgr_forced.switch_account(email_b)
+        self.assertTrue(res5)
+        self.assertEqual(actions, ["finder", "getter", "logout", "writer", "reloader"])
 
     def test_switch_result_tuple_and_boolean_semantics(self):
         # Truthy SwitchResult
@@ -2458,11 +2649,21 @@ class TestAntigravitySwitcher(unittest.TestCase):
             reloader_fn=tracked_reloader,
         )
 
-        res = manager.switch_account(target_email)
+        # 1. Exact chronological order assertion with force_logout=True
+        res = manager.switch_account(target_email, force_logout=True)
         self.assertTrue(res)
         self.assertEqual(
             chronological_log,
             ["step1_finder", "step1_getter", "step2_logout", "step3_writer", "step4_reloader"]
+        )
+
+        # 1b. Smooth hot-swap by default: auth_logout is bypassed
+        chronological_log.clear()
+        res_smooth = manager.switch_account(target_email)
+        self.assertTrue(res_smooth)
+        self.assertEqual(
+            chronological_log,
+            ["step1_finder", "step1_getter", "step3_writer", "step4_reloader"]
         )
 
         # 2. Mid-step failure at Step 1 (target missing from store)
@@ -2492,7 +2693,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertIn("step3_writer", chronological_log)
         self.assertIn("step4_reloader", chronological_log)
 
-        # 4. Mid-step failure at Step 2 (logout raises exception)
+        # 4. Mid-step failure at Step 2 (logout raises exception when force_logout=True)
         def broken_logout(inf):
             raise ConnectionResetError("TCP connection reset during logout")
 
@@ -2505,7 +2706,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
             token_writer=tracked_writer,
             reloader_fn=tracked_reloader,
         )
-        res_log_fail = manager_broken_logout.switch_account(target_email)
+        res_log_fail = manager_broken_logout.switch_account(target_email, force_logout=True)
         self.assertTrue(res_log_fail)
         self.assertIn("step3_writer", chronological_log)
         self.assertIn("step4_reloader", chronological_log)
@@ -2525,7 +2726,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
             token_writer=failing_writer,
             reloader_fn=tracked_reloader,
         )
-        res_wfail = manager_writer_fail.switch_account(target_email)
+        res_wfail = manager_writer_fail.switch_account(target_email, force_logout=True)
         self.assertFalse(res_wfail)
         self.assertIn("Không thể ghi Token", res_wfail.message)
         self.assertIn("step3_writer_fail", chronological_log)
@@ -2547,7 +2748,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
             token_writer=tracked_writer,
             reloader_fn=broken_reloader,
         )
-        res_rfail = manager_reloader_fail.switch_account(target_email)
+        res_rfail = manager_reloader_fail.switch_account(target_email, force_logout=True)
         self.assertTrue(res_rfail)
         self.assertIn("step4_reloader_fail", chronological_log)
 
