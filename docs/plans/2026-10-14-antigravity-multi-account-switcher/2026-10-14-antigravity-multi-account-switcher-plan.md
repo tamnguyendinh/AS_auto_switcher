@@ -919,58 +919,72 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Commit Boundary: Commit milestone `test(P5-A): expand comprehensive test suite`.
 
 - [ ] P5-B: End-to-End Switching Cycle & Robustness Verification
-  - Goal: Run full end-to-end regression validation, verifying 100% pass rate, zero regressions, and accurate benchmark records.
+  - Goal: Implement PID-based 100% accurate Antigravity window discovery in `core/session_reloader.py`, refine `core/state_resolver.py::AccountManager.switch_account` to execute smooth hot-swap (bypassing `AuthLogout()` by default to avoid triggering Chrome browser OAuth re-login, writing Token B directly to Windows Credential Manager, and sending reload signal directly to `Antigravity.exe` window to load Token B into RAM), and run full regression & multi-run stability validation ensuring 100% test pass rate across the entire test suite.
   - Scope Boundary:
-    - Editable: `tests/test_all.py`, `docs/plans/2026-10-14-antigravity-multi-account-switcher/`.
-    - Inspect-only: Entire repository.
-    - Preserve-only: N/A.
-    - Out of scope: Source modifications.
-  - Non-Goals: N/A.
+    - Editable: `core/session_reloader.py`, `core/state_resolver.py`, `tests/test_all.py`, `docs/plans/2026-10-14-antigravity-multi-account-switcher/`.
+    - Inspect-only: Entire repository (`core/`, `scanner/`, `ui/`, `tests/`).
+    - Preserve-only: Baseline test coverage and existing account store JSON formats.
+    - Out of scope: Modifying Chrome scanner logic or UI layout.
+  - Non-Goals: Invoking interactive browser login prompts or terminating Antigravity process forcefully.
   - Pre-flight Questions:
-    - Data source: Test suites and benchmarks.
+    - Data source: `Antigravity.exe` process IDs (via ctypes / Windows API / tasklist), window enumeration (`EnumWindows`), and `accounts_store/<target_email>.json`.
     - Display permission: N/A.
-    - DB read flow: Full suite.
-    - DB write flow: N/A.
-    - Render location: Console.
-    - UI behavior flow: N/A.
+    - DB read flow: Read target Token B from `accounts_store/`.
+    - DB write flow: Write target Token B directly to Windows Credential Manager (`LegacyGeneric:target=gemini:antigravity`).
+    - Render location: Antigravity IDE UI window (receives reload event).
+    - UI behavior flow: Antigravity session reloads smoothly without launching Chrome OAuth login tab.
     - Docker runtime: N/A.
     - Playwright target: N/A.
-    - Behavior test: Full suite regression.
-    - Cleanup/quarantine: All temp files removed.
-    - External side effects: N/A.
+    - Behavior test: Validate PID-based window discovery, assert smooth hot-swap bypasses `AuthLogout()`, and execute full regression test suite.
+    - Cleanup/quarantine: All temporary test accounts, tokens, and credentials cleaned up in test `tearDown`.
+    - External side effects: Modifies active Antigravity session credential and dispatches UI reload event.
     - N/A notes: Docker/Playwright N/A.
   - Work Steps:
-    1. Code (Execute leaf atomic tasks in test harness only):
-       - Task 1.1: Regression Suite Execution
-         + Action: Execute full automated test suite `python -m unittest tests/test_all.py`.
-         + Inputs: Complete codebase.
+    1. Code (Execute leaf atomic tasks in core source files and test harness):
+       - Task 1.1: PID-based Window Discovery in `core/session_reloader.py::find_antigravity_windows`
+         + Action: Upgrade `find_antigravity_windows()` to discover all process IDs of `Antigravity.exe` using standard Windows commands/ctypes (`GetWindowThreadProcessId`, matching PID against running `Antigravity.exe` processes obtained via `psutil`/`tasklist`/ctypes), ensuring 100% accurate HWND identification regardless of window title mutations, while retaining window title matching as a robust fallback.
+         + Inputs: System processes, visible window handles (`EnumWindows`).
+         + Allowed Edit Scope: `core/session_reloader.py::find_antigravity_windows`.
+         + Outputs: `List[wintypes.HWND]` belonging strictly to `Antigravity.exe` processes.
+         + Verification Condition: Accurately identifies window handle of `Antigravity.exe` even when window title does not contain `"antigravity"`.
+         + Task Checkpoint: `wip(P5-B): task 1.1 - PID-based window discovery implemented`
+       - Task 1.2: Smooth Hot-Swap Execution in `core/state_resolver.py::AccountManager.switch_account`
+         + Action: Refactor `AccountManager.switch_account` to execute the Owner's smooth hot-swap mechanism: bypass `AuthLogout()` by default (e.g., via `skip_logout=True`) to eliminate unwanted Chrome OAuth re-login popups, write Token B from `accounts_store/` directly into Windows Credential Manager via `token_writer`, and dispatch window/session reload directly to `Antigravity.exe` to immediately load Token B into RAM.
+         + Inputs: `target_email: str`, `accounts_store/` token JSON, `skip_logout: bool = True`.
+         + Allowed Edit Scope: `core/state_resolver.py::AccountManager.switch_account`.
+         + Outputs: `SwitchResult` with success status and user feedback.
+         + Verification Condition: Token B is committed to credential store, `AuthLogout()` is skipped by default, reload signal is dispatched, and no external browser login is triggered.
+         + Task Checkpoint: `wip(P5-B): task 1.2 - smooth hot-swap execution bypassing logout implemented`
+       - Task 1.3: Full Regression & Multi-Run Stability across Test Suite
+         + Action: Expand `tests/test_all.py` with comprehensive test cases for PID-based window discovery and smooth hot-swap (asserting `auth_logout` is not invoked during default switch), and execute multi-run test suite across all modules (`core`, `scanner`, `ui`) verifying 100% pass rate with zero regressions.
+         + Inputs: Updated `core/session_reloader.py`, `core/state_resolver.py`, and test harness.
          + Allowed Edit Scope: `tests/test_all.py`.
-         + Outputs: 100% pass output.
-         + Verification Condition: Zero errors, zero failures.
-         + Task Checkpoint: `wip(P5-B): task 1.1 - full regression suite verified`
+         + Outputs: 100% passing test assertions across all test cases.
+         + Verification Condition: `python -m unittest tests/test_all.py` passes 100% with zero errors and zero failures.
+         + Task Checkpoint: `wip(P5-B): task 1.3 - regression suite and smooth hot-swap tests verified`
     2. Code Inspection & Lint:
-       - Review test execution log.
+       - Review diff in `core/session_reloader.py`, `core/state_resolver.py`, and `tests/test_all.py` for clean error handling, ctypes resource management, and zero external dependency footprint.
     3. Update Tests (Code first, test second):
-       - Confirm all test targets green.
+       - Confirm all unit and regression tests in `tests/test_all.py` cover PID window discovery, smooth hot-swap without logout, and credential write verification.
     4. Build:
        - Compile all project files: `python -m compileall core scanner ui tests main.py`.
     5. QA (Mini QA / Runtime Validation):
-       - Verify test timings and pass counts.
-       - Evidence target: `E5-P5B-REG1`.
+       - Run full test suite: `python -m unittest tests/test_all.py`.
+       - Evidence target: `E5-P5B-REG1`, `E5-P5B-PID1`, `E5-P5B-SWOOTH1`.
     6. Slice Acceptance & Official Milestone Commit:
-       - Verify slice acceptance criteria, record evidence in `evidence.md`, refresh `actual-status.md`, commit with `test(P5-B): verify complete switching regression suite`.
+       - Verify slice acceptance criteria, record evidence in `evidence.md`, refresh `actual-status.md`, commit with `test(P5-B): verify complete switching regression suite with PID window discovery and smooth hot-swap`.
   - Implementation Gate: `P5-A` completed.
   - Acceptance:
-    - Source: All modules compile cleanly.
-    - Runtime/UI: Zero regressions.
-    - DB/data: Consistent.
-    - Behavior test: 100% test pass rate.
-    - Cleanup/quarantine: Clean worktree.
-    - Evidence IDs: `E5-P5B-REG1`.
-    - Actual-status rows refreshed: `tests/test_all.py` -> `correct`.
-  - Evidence Targets: `E5-P5B-REG1`.
-  - Actual-status Update: Transition `tests/test_all.py` to `correct`.
-  - Commit Boundary: Commit milestone `test(P5-B): verify complete switching regression suite`.
+    - Source: `core/session_reloader.py` implements PID-based window discovery; `core/state_resolver.py` executes smooth hot-swap bypassing `AuthLogout()`.
+    - Runtime/UI: Antigravity window accurately targeted by PID; hot-swap reloads session without launching Chrome OAuth.
+    - DB/data: Windows Credential Manager updated with target Token B.
+    - Behavior test: 100% test pass rate across `tests/test_all.py`.
+    - Cleanup/quarantine: Clean worktree; temporary test credentials purged.
+    - Evidence IDs: `E5-P5B-REG1`, `E5-P5B-PID1`, `E5-P5B-SWOOTH1`.
+    - Actual-status rows refreshed: `core/session_reloader.py` -> `correct`, `core/state_resolver.py` -> `correct`, `tests/test_all.py` -> `correct`.
+  - Evidence Targets: `E5-P5B-REG1`, `E5-P5B-PID1`, `E5-P5B-SWOOTH1`.
+  - Actual-status Update: Transition `core/session_reloader.py`, `core/state_resolver.py`, and `tests/test_all.py` to `correct`.
+  - Commit Boundary: Commit milestone `test(P5-B): verify complete switching regression suite with PID window discovery and smooth hot-swap`.
 
 - [ ] Pn-A: Call supervisor for the implemented-plan acceptance loop.
   - Goal: Verify completed plan work against the accepted plan, actual-status decisions, evidence, benchmark, changed files, and validation results before closure.
