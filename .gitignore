@@ -5,3 +5,4 @@ __pycache__/
 accounts_store/
 .idea/
 .vscode/
+.agents/
