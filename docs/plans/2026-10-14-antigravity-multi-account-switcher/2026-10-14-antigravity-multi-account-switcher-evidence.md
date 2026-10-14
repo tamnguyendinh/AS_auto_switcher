@@ -144,8 +144,34 @@ Matching plan item(s): `P1-A`, `P1-B`
 
 Matching plan item(s): `P2-A`, `P2-B`, `P2-C`
 
+### P2-A Execution Evidence
+
+- `E2-P2A-DISC1`: Automated discovery of `language_server.exe` PID, listening port, and `--csrf_token` argument from Windows process table (via `Get-CimInstance Win32_Process`) and TCP listening table (`netstat -ano -p tcp` with fallback to `Get-NetTCPConnection`).
+  - Extracted fields on live system:
+    - PID: `17516`
+    - CSRF Token: `06404fbc-050a-451b-840b-e39b7da7b334`
+    - Discovered Port: `59227` (HTTP listener matching active `language_server.exe` loopback ports `59226` [HTTPS/gRPC] and `59227` [HTTP])
+    - Base URL: `http://127.0.0.1:59227`
+  - Validated via unit test suite in `tests/test_all.py`:
+    - `test_extract_csrf_token_formats_and_edge_cases`: verifies space-separated, equals-separated, single/double quoted, and complex real-world Antigravity command lines, plus graceful `None` handling for empty, non-string, or missing tokens.
+    - `test_language_server_info_dataclass`: verifies dataclass attributes, equality, and `base_url` property.
+    - `test_discover_listening_port_mocked`: verifies port extraction with mocked port provider, multiple ports fallback, invalid PIDs, and empty port lists.
+    - `test_find_language_server_process_mocked`: verifies process discovery, missing token, missing port, empty lists, and runtime exceptions handled gracefully.
+    - `test_live_find_language_server_process`: verifies dynamic discovery against live running Antigravity process.
+  ```text
+  python -m unittest -v tests/test_all.py
+  test_extract_csrf_token_formats_and_edge_cases (tests.test_all.TestAntigravitySwitcher.test_extract_csrf_token_formats_and_edge_cases) ... ok
+  test_language_server_info_dataclass (tests.test_all.TestAntigravitySwitcher.test_language_server_info_dataclass) ... ok
+  test_discover_listening_port_mocked (tests.test_all.TestAntigravitySwitcher.test_discover_listening_port_mocked) ... ok
+  test_find_language_server_process_mocked (tests.test_all.TestAntigravitySwitcher.test_find_language_server_process_mocked) ... ok
+  test_live_find_language_server_process (tests.test_all.TestAntigravitySwitcher.test_live_find_language_server_process) ... ok
+  ----------------------------------------------------------------------
+  Ran 18 tests in 1.384s
+  OK
+  ```
+
 Planned Evidence Targets:
-- `E2-P2A-DISC1`: Automated discovery of `language_server.exe` PID, listening port, and `--csrf_token` argument from process table and TCP connection state.
+- `E2-P2A-DISC1`: Automated discovery of `language_server.exe` PID, listening port, and `--csrf_token` argument from process table and TCP connection state (Achieved).
 - `E2-P2B-API1`: `GetUserStatus()` invocation returning active email and display name from language server RAM.
 - `E2-P2B-API2`: `AuthLogout()` invocation returning HTTP 200 / success and clearing active session in language server RAM.
 - `E2-P2C-REAUTH1`: Re-Auth trigger signaling language server to re-read Windows Credential and log `Auth succeeded` for Account B.

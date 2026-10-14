@@ -18,6 +18,13 @@ from core.credential_manager import (
     write_raw_credential,
 )
 from core.state_resolver import AccountManager
+from core.api_connector import (
+    LanguageServerInfo,
+    extract_csrf_token,
+    discover_listening_port,
+    discover_listening_ports,
+    find_language_server_process,
+)
 
 
 class TestAntigravitySwitcher(unittest.TestCase):
@@ -277,6 +284,127 @@ class TestAntigravitySwitcher(unittest.TestCase):
         stored_token = self.store.get_account_token(captured_email)
         self.assertIsNotNone(stored_token)
         self.assertIn("id_token", stored_token)
+
+    def test_extract_csrf_token_formats_and_edge_cases(self):
+        token_uuid = "06404fbc-050a-451b-840b-e39b7da7b334"
+
+        # 1. Standard space-separated
+        cmd1 = f"language_server.exe --standalone --csrf_token {token_uuid} --port 0"
+        self.assertEqual(extract_csrf_token(cmd1), token_uuid)
+
+        # 2. Equals-separated
+        cmd2 = f"language_server.exe --standalone --csrf_token={token_uuid} --port 0"
+        self.assertEqual(extract_csrf_token(cmd2), token_uuid)
+
+        # 3. Double-quoted
+        cmd3 = f'language_server.exe --csrf_token "{token_uuid}" --app_data_dir antigravity'
+        self.assertEqual(extract_csrf_token(cmd3), token_uuid)
+
+        # 4. Single-quoted
+        cmd4 = f"language_server.exe --csrf_token='{token_uuid}'"
+        self.assertEqual(extract_csrf_token(cmd4), token_uuid)
+
+        # 5. Full realistic Antigravity command line
+        full_cmd = (
+            r'"C:\Users\TAM NGUYEN\AppData\Local\Programs\antigravity\resources\bin\language_server.exe" '
+            r'--standalone --override_ide_name antigravity --subclient_type hub --override_ide_version 2.23.0 '
+            r'--override_user_agent_name antigravity --https_server_port 0 '
+            rf'--csrf_token {token_uuid} --app_data_dir antigravity '
+            r'--api_server_url https://generativelanguage.googleapis.com'
+        )
+        self.assertEqual(extract_csrf_token(full_cmd), token_uuid)
+
+        # 6. Edge cases: missing, empty, non-string, malformed
+        self.assertIsNone(extract_csrf_token(None))
+        self.assertIsNone(extract_csrf_token(""))
+        self.assertIsNone(extract_csrf_token("   "))
+        self.assertIsNone(extract_csrf_token(12345))  # type: ignore
+        self.assertIsNone(extract_csrf_token("language_server.exe --standalone --https_server_port 0"))
+        self.assertIsNone(extract_csrf_token("language_server.exe --csrf_token"))
+
+    def test_language_server_info_dataclass(self):
+        info = LanguageServerInfo(pid=17516, csrf_token="test-uuid-1234", port=59227)
+        self.assertEqual(info.pid, 17516)
+        self.assertEqual(info.csrf_token, "test-uuid-1234")
+        self.assertEqual(info.port, 59227)
+        self.assertEqual(info.base_url, "http://127.0.0.1:59227")
+
+        info_dup = LanguageServerInfo(pid=17516, csrf_token="test-uuid-1234", port=59227)
+        self.assertEqual(info, info_dup)
+
+    def test_discover_listening_port_mocked(self):
+        # 1. Invalid PID handling
+        self.assertIsNone(discover_listening_port(0))
+        self.assertIsNone(discover_listening_port(-1))
+
+        # 2. Single port returned directly
+        self.assertEqual(discover_listening_port(9999, ports_provider=lambda pid: [54321]), 54321)
+
+        # 3. Empty ports provider returns None
+        self.assertIsNone(discover_listening_port(9999, ports_provider=lambda pid: []))
+
+        # 4. Multiple ports fallback
+        self.assertIn(
+            discover_listening_port(9999, ports_provider=lambda pid: [59226, 59227]),
+            [59226, 59227]
+        )
+
+    def test_find_language_server_process_mocked(self):
+        mock_uuid = "11112222-3333-4444-5555-666677778888"
+
+        # 1. Successful discovery
+        mock_procs = [
+            {
+                "ProcessId": 8888,
+                "CommandLine": f"language_server.exe --csrf_token {mock_uuid}"
+            }
+        ]
+        info = find_language_server_process(
+            process_provider=lambda: mock_procs,
+            port_provider=lambda pid: 50001
+        )
+        self.assertIsNotNone(info)
+        self.assertEqual(info.pid, 8888)
+        self.assertEqual(info.csrf_token, mock_uuid)
+        self.assertEqual(info.port, 50001)
+
+        # 2. Missing token
+        mock_no_token = [{"ProcessId": 8888, "CommandLine": "language_server.exe --standalone"}]
+        self.assertIsNone(find_language_server_process(
+            process_provider=lambda: mock_no_token,
+            port_provider=lambda pid: 50001
+        ))
+
+        # 3. Missing port
+        self.assertIsNone(find_language_server_process(
+            process_provider=lambda: mock_procs,
+            port_provider=lambda pid: None
+        ))
+
+        # 4. Empty candidate list
+        self.assertIsNone(find_language_server_process(
+            process_provider=lambda: [],
+            port_provider=lambda pid: 50001
+        ))
+
+        # 5. Process provider exception handled gracefully
+        def broken_provider():
+            raise RuntimeError("OS process query failed")
+
+        self.assertIsNone(find_language_server_process(
+            process_provider=broken_provider,
+            port_provider=lambda pid: 50001
+        ))
+
+    def test_live_find_language_server_process(self):
+        info = find_language_server_process()
+        # On this live host, Antigravity language_server.exe is running under PID 17516
+        if info is not None:
+            self.assertGreater(info.pid, 0)
+            self.assertIsInstance(info.csrf_token, str)
+            self.assertGreater(len(info.csrf_token), 10)
+            self.assertGreater(info.port, 1024)
+            self.assertTrue(info.base_url.startswith("http://127.0.0.1:"))
 
 
 if __name__ == "__main__":
