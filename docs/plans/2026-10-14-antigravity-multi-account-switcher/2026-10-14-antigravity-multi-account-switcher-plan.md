@@ -533,7 +533,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Confirm row `scanner/chrome_scanner.py` remains `correct`.
   - Commit Boundary: Commit milestone `feat(P3-A): harden Chrome profile account discovery`.
 
-- [ ] P3-B: Multi-Account State Machine Resolution (ACTIVE, READY, UNAUTH)
+- [x] P3-B: Multi-Account State Machine Resolution (ACTIVE, READY, UNAUTH)
   - Goal: Resolve each account into `ACTIVE` (matching true email in RAM via `GetUserStatus()`), `READY` (in Chrome + saved in `accounts_store/`), or `UNAUTH` (in Chrome but not yet in `accounts_store/`).
   - Scope Boundary:
     - Editable: `core/state_resolver.py`.
