@@ -506,8 +506,44 @@ Planned Evidence Targets:
 
 Matching plan item(s): `P4-A`, `P4-B`, `P4-C`
 
+### P4-A Execution Evidence
+
+- `E4-P4A-UI1`: UI Wiring & Status Visualization in `ui/app_window.py`:
+  - `AppWindow` / `SwitcherApp` Architecture:
+    * Supports dependency injection of custom/mock `AccountManager` (`manager: Optional[AccountManager] = None`) for hermetic unit testing.
+    * Supports headless execution (`headless: bool = False`, defaults to True if `root is None` or if Tk initialization fails) so tests and non-display environments run cleanly without crashing or requiring X11/Win32 display handles.
+    * Graceful Tkinter initialization and fallback: handles missing accounts directory, empty account list, and UI modal suppression via `show_dialogs: bool = True`.
+  - Header RAM Status Presentation:
+    * Detects running language server process via `find_language_server_process()` or injected `process_finder`.
+    * Prominently displays active email with green indicator: `● Đang hoạt động: <email>` (or `● Đang hoạt động: <email> (Credential fallback)` when offline).
+    * Displays `● Chưa phát hiện phiên Antigravity` in yellow when no active session is detected.
+  - Account Card List & Visual Badging:
+    * Renders name, email, avatar URL (if present), and status dot (🟢 for ACTIVE / READY, 🟡 for UNAUTH).
+    * `ACTIVE`: Display badge `[ĐANG DÙNG]` with green highlight styling.
+    * `READY`: Action button `⚡ Chuyển sang` (1-click hot swap) bound to `_on_switch_click`.
+    * `UNAUTH`: Display badge `[Chưa lưu vào kho]` in yellow.
+    * Empty state notice: `Không tìm thấy tài khoản Google nào trên Chrome.` when no accounts exist.
+  - Hot-Swap Click Feedback:
+    * `_on_switch_click(target_email)`: Immediately updates status bar to `Đang chuyển đổi sang <email>...`, disables button, calls `manager.switch_account(target_email)`, refreshes account cards, and displays completion toast/status bar notification with timestamp.
+  - Automated Test Suite Validation (49 tests passing 100%):
+    * `test_app_window_initialization_headless_with_mock_manager`: verifies active RAM identity, language server detection, card rendering, and badge formatting (`[ĐANG DÙNG]`, `[⚡ Chuyển sang]`, `[Chưa lưu vào kho]`).
+    * `test_app_window_fallback_status_when_language_server_offline`: verifies fallback text when language server is not running.
+    * `test_app_window_switch_click_trigger`: verifies switch click triggers `manager.switch_account`, returns `SwitchResult`, and updates status bar.
+    * `test_app_window_empty_and_error_states`: verifies empty accounts message and error handling during switch failure.
+    * `test_app_window_tk_rendering_and_button_wiring`: verifies Tkinter widget creation and button command invocation with withdrawn root.
+    * `test_app_window_aliases_and_exports`: verifies `AppWindow is SwitcherApp`.
+  - Full test execution output:
+    ```text
+    Ran 49 tests in 11.289s
+    OK
+    ```
+  - Batch stability verification across 5 sequential runs:
+    ```text
+    Results: [0, 0, 0, 0, 0]
+    ```
+
 Planned Evidence Targets:
-- `E4-P4A-UI1`: Tkinter GUI rendering accounts with exact color dots and status badges.
+- `E4-P4A-UI1`: Tkinter GUI rendering accounts with exact color dots and status badges (Achieved).
 - `E4-P4B-ACT1`: Click action on `[⚡ Chuyển sang]` executing hot-swap with modal/status bar feedback.
 - `E4-P4C-SYNC1`: Click action on `[🔄 Làm mới Chrome]` refreshing account state and updating sync timestamp.
 

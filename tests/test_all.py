@@ -38,6 +38,7 @@ from core.session_reloader import (
     reload_antigravity_window,
     reload_antigravity_session,
 )
+from ui.app_window import AppWindow, SwitcherApp
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -1530,6 +1531,211 @@ class TestAntigravitySwitcher(unittest.TestCase):
         s0, m0 = res_err
         self.assertIs(s0, False)
         self.assertEqual(m0, "Something went wrong")
+
+    def test_app_window_initialization_headless_with_mock_manager(self):
+        # 1. Mock AccountManager with 3 accounts (ACTIVE, READY, UNAUTH)
+        self.store.store_account("ready@example.com", {"access_token": "mock_ready"})
+        acc_active = AccountInfo(
+            email="active@example.com",
+            is_active=True,
+            has_token=True,
+            status_code="ACTIVE",
+            status_color="green",
+            display_badge="[ĐANG DÙNG]",
+            name="Active Developer",
+            avatar_url="https://avatar.example.com/active.png"
+        )
+        acc_ready = AccountInfo(
+            email="ready@example.com",
+            is_active=False,
+            has_token=True,
+            status_code="READY",
+            status_color="green",
+            display_badge="[⚡ Chuyển sang]",
+            name="Ready Developer",
+            avatar_url=None
+        )
+        acc_unauth = AccountInfo(
+            email="unauth@example.com",
+            is_active=False,
+            has_token=False,
+            status_code="UNAUTH",
+            status_color="yellow",
+            display_badge="[Chưa lưu vào kho]",
+            name="Unsaved Developer",
+            avatar_url=None
+        )
+
+        mock_manager = AccountManager(
+            store=self.store,
+            user_status_provider=lambda: "active@example.com",
+            chrome_accounts_provider=lambda: [acc_active, acc_ready, acc_unauth],
+            process_finder=lambda: LanguageServerInfo(pid=12345, csrf_token="mock-csrf", port=59999),
+        )
+
+        # 2. Initialize in headless mode
+        app = AppWindow(manager=mock_manager, headless=True)
+
+        # 3. Assert active RAM identity and Language Server detection
+        self.assertEqual(app.active_email, "active@example.com")
+        self.assertTrue(app.is_language_server_detected)
+        self.assertEqual(app.active_status_text, "● Đang hoạt động: active@example.com")
+        self.assertEqual(app.active_status_color, "#a6e3a1")
+
+        # 4. Assert accounts list and badges
+        self.assertEqual(len(app.rendered_accounts), 3)
+        self.assertEqual(app.account_badges["active@example.com"], "[ĐANG DÙNG]")
+        self.assertEqual(app.account_badges["ready@example.com"], "[⚡ Chuyển sang]")
+        self.assertEqual(app.account_badges["unauth@example.com"], "[Chưa lưu vào kho]")
+
+    def test_app_window_fallback_status_when_language_server_offline(self):
+        acc_fallback = AccountInfo(
+            email="fallback@example.com",
+            is_active=True,
+            has_token=True,
+            status_code="ACTIVE",
+            status_color="green",
+            display_badge="[ĐANG DÙNG]"
+        )
+
+        mock_manager = AccountManager(
+            store=self.store,
+            user_status_provider=lambda: "fallback@example.com",
+            chrome_accounts_provider=lambda: [acc_fallback],
+            process_finder=lambda: None,  # Language server offline
+        )
+
+        app = AppWindow(manager=mock_manager, headless=True)
+
+        self.assertEqual(app.active_email, "fallback@example.com")
+        self.assertFalse(app.is_language_server_detected)
+        self.assertIn("● Đang hoạt động: fallback@example.com (Credential fallback)", app.active_status_text)
+        self.assertEqual(app.active_status_color, "#a6e3a1")
+
+    def test_app_window_switch_click_trigger(self):
+        target_email = "ready@example.com"
+        self.store.store_account(target_email, {"access_token": "mock_ready"})
+        switched_calls = []
+
+        def mock_switch(target):
+            switched_calls.append(target)
+            return SwitchResult(True, f"Đã chuyển đổi thành công sang: {target}")
+
+        mock_manager = AccountManager(
+            store=self.store,
+            user_status_provider=lambda: "active@example.com",
+            chrome_accounts_provider=lambda: [
+                AccountInfo(
+                    email="ready@example.com",
+                    is_active=False,
+                    has_token=True,
+                    status_code="READY",
+                    status_color="green",
+                    display_badge="[⚡ Chuyển sang]"
+                )
+            ]
+        )
+        mock_manager.switch_account = mock_switch
+
+        app = AppWindow(manager=mock_manager, headless=True, show_dialogs=False)
+
+        res = app._on_switch_click(target_email)
+
+        self.assertTrue(res)
+        self.assertEqual(switched_calls, [target_email])
+        self.assertIsNotNone(app.last_switch_result)
+        self.assertTrue(app.last_switch_result.success)
+        self.assertIn(f"Đã chuyển đổi thành công sang: {target_email}", app.status_bar_text)
+
+    def test_app_window_empty_and_error_states(self):
+        # 1. Empty accounts state
+        mock_empty_manager = AccountManager(
+            store=self.store,
+            user_status_provider=lambda: None,
+            chrome_accounts_provider=lambda: [],
+            credential_reader=lambda: None
+        )
+        app_empty = AppWindow(manager=mock_empty_manager, headless=True)
+        self.assertIsNone(app_empty.active_email)
+        self.assertEqual(app_empty.active_status_text, "● Chưa phát hiện phiên Antigravity")
+        self.assertEqual(app_empty.empty_message, "Không tìm thấy tài khoản Google nào trên Chrome.")
+        self.assertEqual(len(app_empty.rendered_accounts), 0)
+
+        # 2. Switch error handling
+        mock_err_manager = AccountManager(
+            store=self.store,
+            user_status_provider=lambda: "active@example.com",
+            chrome_accounts_provider=lambda: [],
+            credential_reader=lambda: None
+        )
+        mock_err_manager.switch_account = lambda target: SwitchResult(False, "Lỗi ghi token!")
+        app_err = AppWindow(manager=mock_err_manager, headless=True, show_dialogs=False)
+
+        res = app_err._on_switch_click("failed@example.com")
+        self.assertFalse(res)
+        self.assertFalse(app_err.last_switch_result.success)
+        self.assertIn("Lỗi chuyển đổi: Lỗi ghi token!", app_err.status_bar_text)
+
+    def test_app_window_tk_rendering_and_button_wiring(self):
+        # Full widget rendering test using Tkinter with a withdrawn root
+        import tkinter as tk
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except Exception:
+            self.skipTest("Tkinter display not available on this environment")
+
+        try:
+            self.store.store_account("ready@example.com", {"access_token": "mock_ready"})
+            acc_active = AccountInfo(
+                email="active@example.com",
+                is_active=True,
+                has_token=True,
+                status_code="ACTIVE",
+                status_color="green",
+                display_badge="[ĐANG DÙNG]",
+                name="Active User"
+            )
+            acc_ready = AccountInfo(
+                email="ready@example.com",
+                is_active=False,
+                has_token=True,
+                status_code="READY",
+                status_color="green",
+                display_badge="[⚡ Chuyển sang]",
+                name="Ready User"
+            )
+            mock_manager = AccountManager(
+                store=self.store,
+                user_status_provider=lambda: "active@example.com",
+                chrome_accounts_provider=lambda: [acc_active, acc_ready],
+                process_finder=lambda: LanguageServerInfo(pid=9999, csrf_token="csrf-tk", port=59998)
+            )
+            mock_manager.switch_account = lambda target: SwitchResult(True, f"Switched to {target}")
+
+            app = AppWindow(root=root, manager=mock_manager, show_dialogs=False)
+
+            # Check header widget
+            self.assertEqual(app.active_status_label.cget("text"), "● Đang hoạt động: active@example.com")
+
+            # Check switch button rendered for ready account
+            self.assertIn("ready@example.com", app.switch_buttons)
+            btn = app.switch_buttons["ready@example.com"]
+            self.assertIsInstance(btn, tk.Button)
+            self.assertEqual(btn.cget("text"), "⚡ Chuyển sang")
+
+            # Invoke button
+            btn.invoke()
+            self.assertIsNotNone(app.last_switch_result)
+            self.assertTrue(app.last_switch_result.success)
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+    def test_app_window_aliases_and_exports(self):
+        self.assertIs(AppWindow, SwitcherApp)
 
 
 class MockHttpServerHelper:
