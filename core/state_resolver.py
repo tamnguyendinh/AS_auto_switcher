@@ -1,10 +1,10 @@
 """
 State Resolver & Account Switch Manager.
-Orchestrates Chrome discovery, Token Vault, and Windows Credential Manager.
+Orchestrates Chrome discovery, AccountStore (accounts_store/<email>.json), and Windows Credential Manager.
 Resolves each account into:
-  🟢 ACTIVE: Currently in Windows Credential Manager
-  🟢 READY: In Chrome AND valid token in Vault
-  🟡 UNAUTH: In Chrome but no token in Vault yet
+  🟢 ACTIVE: Currently loaded in Antigravity
+  🟢 READY: In Chrome AND saved in accounts_store/
+  🟡 UNAUTH: In Chrome but not yet saved in accounts_store/
 """
 
 from dataclasses import dataclass
@@ -12,7 +12,7 @@ from typing import List, Optional, Tuple
 from scanner.chrome_scanner import get_chrome_signed_in_accounts
 from core.credential_manager import read_antigravity_token, write_antigravity_token
 from core.jwt_helper import extract_email_from_token_data
-from core.vault import TokenVault
+from core.account_store import AccountStore
 from core.session_reloader import reload_antigravity_window
 
 
@@ -29,8 +29,8 @@ class AccountInfo:
 class AccountManager:
     """Core state manager for Antigravity multi-account switching."""
 
-    def __init__(self, vault: Optional[TokenVault] = None):
-        self.vault = vault or TokenVault()
+    def __init__(self, store: Optional[AccountStore] = None):
+        self.store = store or AccountStore()
 
     def get_current_active_email(self) -> Optional[str]:
         """Reads and extracts the email currently active in Antigravity."""
@@ -40,22 +40,22 @@ class AccountManager:
         return extract_email_from_token_data(token_data)
 
     def auto_capture_active_session(self) -> Optional[str]:
-        """Automatically captures current active Antigravity session into Vault."""
+        """Automatically captures current active Antigravity session into accounts_store/."""
         token_data = read_antigravity_token()
         if not token_data:
             return None
         email = extract_email_from_token_data(token_data)
         if email:
-            self.vault.store_account(email, token_data)
+            self.store.store_account(email, token_data)
             return email
         return None
 
     def resolve_accounts(self) -> Tuple[Optional[str], List[AccountInfo]]:
         """
-        Scans Chrome and Vault to resolve the live account list and their states.
+        Scans Chrome and accounts_store/ to resolve the live account list and their states.
         Accounts removed from Chrome will automatically not appear in this list.
         """
-        # Ensure active session is saved into vault
+        # Ensure active session is saved into accounts_store
         active_email = self.auto_capture_active_session()
         if not active_email:
             active_email = self.get_current_active_email()
@@ -68,7 +68,7 @@ class AccountManager:
         for email in chrome_emails:
             norm_email = email.strip().lower()
             is_active = (active_email is not None and norm_email == active_email.strip().lower())
-            has_token = self.vault.has_account(norm_email) or is_active
+            has_token = self.store.has_account(norm_email) or is_active
 
             if is_active:
                 status_code = "ACTIVE"
@@ -81,7 +81,7 @@ class AccountManager:
             else:
                 status_code = "UNAUTH"
                 status_color = "yellow"
-                display_badge = "[🔑 Kích hoạt]"
+                display_badge = "[Chưa lưu vào kho]"
 
             account_list.append(AccountInfo(
                 email=norm_email,
@@ -97,16 +97,16 @@ class AccountManager:
     def switch_account(self, target_email: str) -> Tuple[bool, str]:
         """
         Switches Antigravity session to the target email.
-        Writes token to Windows Credential Manager and triggers reload.
+        Writes token from accounts_store/<email>.json to Windows Credential Manager and triggers reload.
         """
         norm_email = target_email.strip().lower()
 
-        # Before switching, make sure the CURRENT session is saved
+        # Save current session first before switching
         self.auto_capture_active_session()
 
-        target_token = self.vault.get_account_token(norm_email)
+        target_token = self.store.get_account_token(norm_email)
         if not target_token:
-            return False, f"Chưa có Token của {norm_email} trong Kho bảo mật!"
+            return False, f"Chưa có file JSON của {norm_email} trong accounts_store/!"
 
         success = write_antigravity_token(target_token)
         if not success:

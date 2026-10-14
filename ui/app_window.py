@@ -3,13 +3,14 @@ Modern GUI for Antigravity Multi-Account Switcher using Tkinter.
 Features:
 - Dark theme UI
 - Real-time Chrome account sync
-- Status dots: 🟢 Active, 🟢 Ready, 🟡 Unauthenticated
-- 1-Click hot-swap
+- Status dots: 🟢 Active, 🟢 Ready, 🟡 Unsaved
+- 1-Click hot-swap between saved JSON accounts
+- [💾 Lưu phiên Antigravity hiện tại] button
 - Always-on-top toggle
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 import datetime
 from typing import Optional
 from core.state_resolver import AccountManager, AccountInfo
@@ -34,9 +35,9 @@ FONT_SMALL = ("Segoe UI", 8)
 class SwitcherApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("⚡ Antigravity Account Switcher")
-        self.root.geometry("480x520")
-        self.root.minsize(420, 460)
+        self.root.title("⚡ Antigravity Multi-Account Switcher")
+        self.root.geometry("500x540")
+        self.root.minsize(440, 480)
         self.root.configure(bg=BG_DARK)
 
         self.manager = AccountManager()
@@ -53,7 +54,7 @@ class SwitcherApp:
 
         title_label = tk.Label(
             header,
-            text="⚡ Antigravity Account Switcher",
+            text="⚡ Antigravity Multi-Account Switcher",
             font=FONT_TITLE,
             fg=COLOR_BLUE,
             bg=BG_CARD
@@ -62,20 +63,20 @@ class SwitcherApp:
 
         self.active_status_label = tk.Label(
             header,
-            text="● Đang kiểm tra tài khoản...",
+            text="● Đang kiểm tra Antigravity...",
             font=FONT_BOLD,
             fg=COLOR_GREEN,
             bg=BG_CARD
         )
         self.active_status_label.pack(anchor="w", pady=(4, 0))
 
-        # Top Controls: Always on Top toggle
+        # Top Controls Bar
         top_ctrl = tk.Frame(self.root, bg=BG_DARK)
         top_ctrl.pack(fill=tk.X, padx=14, pady=4)
 
         top_check = tk.Checkbutton(
             top_ctrl,
-            text="Luôn nổi trên cùng (Always on Top)",
+            text="Ghim trên cùng (Always on Top)",
             variable=self.always_on_top_var,
             command=self._toggle_always_on_top,
             bg=BG_DARK,
@@ -86,6 +87,22 @@ class SwitcherApp:
             font=FONT_SMALL
         )
         top_check.pack(side=tk.LEFT)
+
+        save_btn = tk.Button(
+            top_ctrl,
+            text="💾 Lưu phiên hiện tại",
+            font=FONT_SMALL,
+            command=self._on_save_current_session,
+            bg="#2a3f5f",
+            fg=COLOR_BLUE,
+            activebackground="#36507a",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=8,
+            pady=2,
+            cursor="hand2"
+        )
+        save_btn.pack(side=tk.RIGHT, padx=(4, 0))
 
         refresh_btn = tk.Button(
             top_ctrl,
@@ -127,7 +144,7 @@ class SwitcherApp:
         legend = tk.Frame(self.root, bg=BG_CARD, padx=12, pady=8)
         legend.pack(fill=tk.X, padx=12, pady=(4, 6))
 
-        l_text = "🟢 Sẵn sàng chuyển đổi ngầm   |   🟡 Cần kích hoạt 1 lần"
+        l_text = "🟢 Sẵn sàng chuyển đổi ngầm   |   🟡 Chưa có file JSON trong kho"
         tk.Label(
             legend,
             text=l_text,
@@ -156,8 +173,7 @@ class SwitcherApp:
         self.root.attributes("-topmost", self.always_on_top_var.get())
 
     def refresh_accounts(self):
-        """Re-scans Chrome profiles and Vault to render the updated account list."""
-        # Clear existing list items
+        """Re-scans Chrome profiles and accounts_store/ to render the updated account list."""
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
 
@@ -170,7 +186,7 @@ class SwitcherApp:
             )
         else:
             self.active_status_label.config(
-                text="● Chưa phát hiện tài khoản Antigravity",
+                text="● Chưa phát hiện phiên Antigravity",
                 fg=COLOR_YELLOW
             )
 
@@ -188,14 +204,16 @@ class SwitcherApp:
             for acc in accounts:
                 self._render_account_row(acc)
 
+        stored_count = len(self.manager.store.list_stored_emails())
         now_str = datetime.datetime.now().strftime("%H:%M:%S")
-        self.status_bar.config(text=f"Đã đồng bộ từ Google Chrome lúc {now_str} • {len(accounts)} tài khoản")
+        self.status_bar.config(
+            text=f"Đồng bộ lúc {now_str} • {stored_count} tài khoản trong kho JSON • {len(accounts)} trên Chrome"
+        )
 
     def _render_account_row(self, acc: AccountInfo):
         row = tk.Frame(self.scrollable_frame, bg=BG_CARD, padx=12, pady=10)
         row.pack(fill=tk.X, pady=4)
 
-        # Dot + Email container
         left = tk.Frame(row, bg=BG_CARD)
         left.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
@@ -240,39 +258,42 @@ class SwitcherApp:
                 pady=3
             )
             switch_btn.pack(side=tk.RIGHT)
-        else: # UNAUTH
-            auth_btn = tk.Button(
+        else: # UNAUTH (Not yet in accounts_store/)
+            hint_lbl = tk.Label(
                 row,
-                text="🔑 Kích hoạt",
-                font=FONT_MAIN,
-                command=lambda em=acc.email: self._on_activate_click(em),
-                bg="#5c4a20",
+                text="Chưa lưu JSON",
+                font=FONT_SMALL,
                 fg=COLOR_YELLOW,
-                activebackground="#755e28",
-                activeforeground="#ffffff",
-                relief=tk.FLAT,
-                cursor="hand2",
-                padx=10,
-                pady=3
+                bg=BG_CARD,
+                padx=6
             )
-            auth_btn.pack(side=tk.RIGHT)
+            hint_lbl.pack(side=tk.RIGHT)
 
     def _on_switch_click(self, target_email: str):
         success, msg = self.manager.switch_account(target_email)
         if success:
             self.refresh_accounts()
-            messagebox.showinfo("Chuyển Đổi Thành Công", f"{msg}\n\nAntigravity đã nhận phiên làm việc mới.")
+            messagebox.showinfo(
+                "Chuyển Đổi Thành Công",
+                f"{msg}\n\nAntigravity đã nhận phiên mới và sẵn sàng tiếp tục công việc!"
+            )
         else:
             messagebox.showerror("Lỗi Chuyển Đổi", msg)
 
-    def _on_activate_click(self, target_email: str):
-        msg = (
-            f"Để kích hoạt tài khoản {target_email} lần đầu tiên:\n\n"
-            f"1. Trên Antigravity, bạn chỉ cần chọn Đăng xuất và đăng nhập lại bằng email: {target_email}.\n"
-            f"2. Ngay khi Antigravity đăng nhập xong, Tool sẽ tự động bắt Token và biến tài khoản này thành 🟢 Xanh lá vĩnh viễn!\n\n"
-            f"Sau đó, bạn chỉ cần bấm nút [⚡ Chuyển sang] bất kỳ lúc nào mà không cần mở lại trình duyệt."
-        )
-        messagebox.showinfo("Hướng Dẫn Kích Hoạt 1 Lần", msg)
+    def _on_save_current_session(self):
+        email = self.manager.auto_capture_active_session()
+        if email:
+            self.refresh_accounts()
+            messagebox.showinfo(
+                "Đã Lưu Phiên",
+                f"Đã lưu thành công token của {email} vào thư mục accounts_store/{email}.json!\n\n"
+                f"Tài khoản này đã sẵn sàng để tái sử dụng vĩnh viễn."
+            )
+        else:
+            messagebox.showwarning(
+                "Không Tìm Thấy Phiên",
+                "Chưa phát hiện phiên đăng nhập Antigravity nào để lưu."
+            )
 
 
 def run_app():
