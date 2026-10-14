@@ -134,7 +134,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - P1-A: Account Store Directory & File I/O Management
   - P1-B: Active Session Capture & Credential Synchronization
 
-- [ ] P1-A: Account Store Directory & File I/O Management
+- [x] P1-A: Account Store Directory & File I/O Management
   - Goal: Provide safe, atomic JSON file reading, writing, listing, and removal in `accounts_store/` with email sanitization.
   - Scope Boundary:
     - Editable: `core/account_store.py`.
