@@ -542,9 +542,39 @@ Matching plan item(s): `P4-A`, `P4-B`, `P4-C`
     Results: [0, 0, 0, 0, 0]
     ```
 
+### P4-B Execution Evidence
+
+- `E4-P4B-ACT1`: 1-Click Hot-Swap Trigger & Status Feedback in `ui/app_window.py`:
+  - Hardened `_on_switch_click(self, target_email: str, run_in_background: Optional[bool] = None, callback: Optional[Callable[[SwitchResult], None]] = None) -> Union[SwitchResult, threading.Thread]`:
+    * Concurrency Guard: Maintains `self.is_switching` state flag. If a switch is already in progress, any subsequent trigger immediately returns `SwitchResult(False, "Chuyển đổi đang diễn ra, vui lòng đợi...")` without calling `manager.switch_account` or modifying ongoing UI feedback.
+    * Immediate Progress Feedback: Updates status bar to `Đang chuyển đổi sang <target_email>...`, changes target button text to `Đang chuyển...`, and disables all action buttons (`switch_buttons`, `save_btn`, `refresh_btn`) to prevent concurrent interactions. Calls `self.root.update_idletasks()` to flush GUI rendering before entering execution.
+    * Non-Blocking Background Thread Execution: Supports `run_in_background=True` (and `async_mode=True`) using `threading.Thread` and a thread-safe `queue.Queue` polling bridge (`_poll_switch` scheduled via `self.root.after(20, _poll_switch)`). Worker thread never touches Tcl/Tkinter directly, eliminating thread-affinity runtime errors and preventing the desktop window from freezing during HTTP API requests (`AuthLogout`, `GetUserStatus`, `reload_antigravity_session`).
+    * Synchronous Fallback & `wait_for_switch(timeout)` Helper: In test/scripting environments (`run_in_background=False`), executes synchronously and returns `SwitchResult` directly for 100% deterministic testing. Provides `wait_for_switch()` to safely join background threads and dispatch UI completion handlers.
+    * Success Feedback: Calls `self.refresh_accounts()`, updates status bar to `Đã chuyển đổi thành công sang: <target_email> lúc <timestamp>`, and displays `messagebox.showinfo` ("Chuyển Đổi Thành Công").
+    * Error Feedback & Button Restoration: Restores all switch buttons to `NORMAL` state and text `⚡ Chuyển sang`, re-enables `save_btn` and `refresh_btn`, updates status bar to `Lỗi chuyển đổi: <msg>`, and displays `messagebox.showerror` ("Lỗi Chuyển Đổi"). Handles unexpected exceptions safely.
+    * Headless Popup Suppression: When `self.headless=True` or `self.root is None` or `not self.show_dialogs`, all modal dialogs (`messagebox.showinfo`, `messagebox.showerror`, `messagebox.showwarning`) are strictly suppressed so headless tests and automation never hang.
+  - Automated Unit Test Suite Validation in `tests/test_all.py` (54 passing tests):
+    * `test_app_window_switch_click_trigger`: verifies switch click triggers `manager.switch_account`, returns `SwitchResult`, and updates status bar.
+    * `test_app_window_switch_updates_active_email_and_status`: verifies successful switch trigger transitions active email in header, updates status text with timestamp, and refreshes cards.
+    * `test_app_window_switch_failure_and_exception_resilience`: verifies error handling for failed switch results, unexpected exceptions (`RuntimeError`), and invalid/empty email arguments without crashing.
+    * `test_app_window_switch_concurrency_guard`: verifies double-click concurrency protection using `threading.Event` to prove parallel switch attempts are rejected while a switch is executing.
+    * `test_app_window_headless_popup_suppression`: verifies complete suppression of modal dialogs (`showinfo`, `showerror`, `showwarning`) in headless mode.
+    * `test_app_window_button_states_during_and_after_switch_tk`: verifies button states transition to `DISABLED` with text `Đang chuyển...` during switch and restore to `NORMAL` with `⚡ Chuyển sang` upon failure.
+    * `test_app_window_empty_and_error_states`: verifies empty state notice and error state reporting.
+    * `test_app_window_tk_rendering_and_button_wiring`: verifies Tkinter widget creation and button command invocation with withdrawn root.
+  - Test suite execution output:
+    ```text
+    Ran 54 tests in 18.129s
+    OK
+    ```
+  - Batch stability verification across 5 sequential runs:
+    ```text
+    Batch Results: [0, 0, 0, 0, 0]
+    ```
+
 Planned Evidence Targets:
 - `E4-P4A-UI1`: Tkinter GUI rendering accounts with exact color dots and status badges (Achieved).
-- `E4-P4B-ACT1`: Click action on `[⚡ Chuyển sang]` executing hot-swap with modal/status bar feedback.
+- `E4-P4B-ACT1`: Click action on `[⚡ Chuyển sang]` executing hot-swap with modal/status bar feedback (Achieved).
 - `E4-P4C-SYNC1`: Click action on `[🔄 Làm mới Chrome]` refreshing account state and updating sync timestamp.
 
 ## E5 - P5 Evidence

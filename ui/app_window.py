@@ -14,7 +14,9 @@ Features:
 import tkinter as tk
 from tkinter import messagebox
 import datetime
-from typing import Optional, List, Dict, Any
+import threading
+import queue
+from typing import Optional, List, Dict, Any, Callable, Union
 from core.state_resolver import AccountManager, AccountInfo, SwitchResult
 from core.api_connector import find_language_server_process
 
@@ -41,12 +43,14 @@ class AppWindow:
         root: Optional[tk.Tk] = None,
         manager: Optional[AccountManager] = None,
         headless: bool = False,
-        show_dialogs: bool = True
+        show_dialogs: bool = True,
+        async_mode: bool = False
     ):
         self.manager = manager or AccountManager()
         self.show_dialogs = show_dialogs
         self.headless = headless or (root is None)
         self.root = root
+        self.async_mode = async_mode
 
         # Model / Controller state
         self.active_email: Optional[str] = None
@@ -59,6 +63,12 @@ class AppWindow:
         self.account_badges: Dict[str, str] = {}
         self.switch_buttons: Dict[str, Any] = {}
         self.last_switch_result: Optional[SwitchResult] = None
+        self.is_switching: bool = False
+        self.current_switch_thread: Optional[threading.Thread] = None
+        self._active_switch_queue: Optional[Any] = None
+        self._active_finish_fn: Optional[Any] = None
+        self.save_btn: Optional[Any] = None
+        self.refresh_btn: Optional[Any] = None
 
         self.always_on_top_var = None
 
@@ -141,6 +151,7 @@ class AppWindow:
             cursor="hand2"
         )
         save_btn.pack(side=tk.RIGHT, padx=(4, 0))
+        self.save_btn = save_btn
 
         refresh_btn = tk.Button(
             top_ctrl,
@@ -157,6 +168,7 @@ class AppWindow:
             cursor="hand2"
         )
         refresh_btn.pack(side=tk.RIGHT)
+        self.refresh_btn = refresh_btn
 
         # 2. Main Account List Frame (Scrollable)
         list_container = tk.Frame(self.root, bg=BG_DARK)
@@ -396,18 +408,53 @@ class AppWindow:
             )
             hint_lbl.pack(side=tk.RIGHT)
 
-    def _on_switch_click(self, target_email: str) -> SwitchResult:
-        # Provide immediate visual feedback
+    def _on_switch_click(
+        self,
+        target_email: str,
+        run_in_background: Optional[bool] = None,
+        callback: Optional[Callable[[SwitchResult], None]] = None
+    ) -> Union[SwitchResult, threading.Thread]:
+        """
+        1-Click hot-swap trigger with progress feedback and concurrency protection.
+        """
+        # Concurrency guard: reject concurrent multiple switches
+        if self.is_switching:
+            return SwitchResult(False, "Chuyển đổi đang diễn ra, vui lòng đợi...")
+        self.is_switching = True
+
+        if not target_email or not isinstance(target_email, str):
+            self.is_switching = False
+            return SwitchResult(False, "Email tài khoản không hợp lệ.")
+
+        # 1. Provide immediate visual feedback and disable all action buttons
+        for btn in self.switch_buttons.values():
+            if hasattr(btn, "config"):
+                try:
+                    btn.config(state=tk.DISABLED)
+                except Exception:
+                    pass
+
         if target_email in self.switch_buttons:
             btn = self.switch_buttons[target_email]
             if hasattr(btn, "config"):
                 try:
-                    btn.config(state=tk.DISABLED, text="Đang chuyển...")
+                    btn.config(text="Đang chuyển...")
                 except Exception:
                     pass
 
+        if hasattr(self, "save_btn") and self.save_btn and hasattr(self.save_btn, "config"):
+            try:
+                self.save_btn.config(state=tk.DISABLED)
+            except Exception:
+                pass
+        if hasattr(self, "refresh_btn") and self.refresh_btn and hasattr(self.refresh_btn, "config"):
+            try:
+                self.refresh_btn.config(state=tk.DISABLED)
+            except Exception:
+                pass
+
         self.status_bar_text = f"Đang chuyển đổi sang {target_email}..."
-        if hasattr(self, "status_bar"):
+        if hasattr(self, "status_bar") and self.status_bar and hasattr(self.status_bar, "config"):
             try:
                 self.status_bar.config(text=self.status_bar_text)
             except Exception:
@@ -419,50 +466,148 @@ class AppWindow:
             except Exception:
                 pass
 
-        # Execute switch via AccountManager
-        res = self.manager.switch_account(target_email)
-        self.last_switch_result = res
-        success, msg = res
+        def _finish_switch(res: SwitchResult):
+            try:
+                self.last_switch_result = res
+                success, msg = res
 
-        # Refresh UI
-        self.refresh_accounts()
+                # Re-enable top action buttons
+                if hasattr(self, "save_btn") and self.save_btn and hasattr(self.save_btn, "config"):
+                    try:
+                        self.save_btn.config(state=tk.NORMAL)
+                    except Exception:
+                        pass
+                if hasattr(self, "refresh_btn") and self.refresh_btn and hasattr(self.refresh_btn, "config"):
+                    try:
+                        self.refresh_btn.config(state=tk.NORMAL)
+                    except Exception:
+                        pass
 
-        if success:
-            now_str = datetime.datetime.now().strftime("%H:%M:%S")
-            self.status_bar_text = f"Đã chuyển đổi thành công sang: {target_email} lúc {now_str}"
-            if hasattr(self, "status_bar"):
+                if success:
+                    # Refresh UI to show new active account
+                    self.refresh_accounts()
+                    now_str = datetime.datetime.now().strftime("%H:%M:%S")
+                    self.status_bar_text = f"Đã chuyển đổi thành công sang: {target_email} lúc {now_str}"
+                    if hasattr(self, "status_bar") and self.status_bar and hasattr(self.status_bar, "config"):
+                        try:
+                            self.status_bar.config(text=self.status_bar_text)
+                        except Exception:
+                            pass
+                    if not self.headless and self.root is not None and self.show_dialogs:
+                        try:
+                            messagebox.showinfo(
+                                "Chuyển Đổi Thành Công",
+                                f"{msg}\n\nAntigravity đã nhận phiên mới và sẵn sàng tiếp tục công việc!"
+                            )
+                        except Exception:
+                            pass
+                else:
+                    # Restore buttons on error
+                    for b in self.switch_buttons.values():
+                        if hasattr(b, "config"):
+                            try:
+                                b.config(state=tk.NORMAL, text="⚡ Chuyển sang")
+                            except Exception:
+                                pass
+                    self.status_bar_text = f"Lỗi chuyển đổi: {msg}"
+                    if hasattr(self, "status_bar") and self.status_bar and hasattr(self.status_bar, "config"):
+                        try:
+                            self.status_bar.config(text=self.status_bar_text)
+                        except Exception:
+                            pass
+                    if not self.headless and self.root is not None and self.show_dialogs:
+                        try:
+                            messagebox.showerror("Lỗi Chuyển Đổi", msg)
+                        except Exception:
+                            pass
+
+                if callback:
+                    try:
+                        callback(res)
+                    except Exception:
+                        pass
+            finally:
+                self.is_switching = False
+                self._active_switch_queue = None
+                self._active_finish_fn = None
+
+        if run_in_background is None:
+            run_in_background = getattr(self, "async_mode", False)
+
+        if run_in_background:
+            res_queue = queue.Queue() if (self.root and not self.headless) else None
+            self._active_switch_queue = res_queue
+            self._active_finish_fn = _finish_switch
+
+            def _worker():
                 try:
-                    self.status_bar.config(text=self.status_bar_text)
+                    res = self.manager.switch_account(target_email)
+                except Exception as exc:
+                    res = SwitchResult(False, f"Lỗi ngoại lệ: {exc}")
+
+                if res_queue is not None:
+                    res_queue.put(res)
+                else:
+                    _finish_switch(res)
+
+            th = threading.Thread(target=_worker, daemon=True)
+            self.current_switch_thread = th
+
+            if res_queue is not None and self.root and hasattr(self.root, "after"):
+                def _poll_switch():
+                    if res_queue is not None and not res_queue.empty():
+                        try:
+                            res = res_queue.get_nowait()
+                            _finish_switch(res)
+                        except Exception:
+                            pass
+                        return
+                    if th.is_alive():
+                        try:
+                            self.root.after(20, _poll_switch)
+                        except Exception:
+                            pass
+                    else:
+                        if res_queue is not None and not res_queue.empty():
+                            try:
+                                res = res_queue.get_nowait()
+                                _finish_switch(res)
+                            except Exception:
+                                pass
+                try:
+                    self.root.after(20, _poll_switch)
                 except Exception:
                     pass
-            if self.show_dialogs and not self.headless:
-                try:
-                    messagebox.showinfo(
-                        "Chuyển Đổi Thành Công",
-                        f"{msg}\n\nAntigravity đã nhận phiên mới và sẵn sàng tiếp tục công việc!"
-                    )
-                except Exception:
-                    pass
+
+            th.start()
+            return th
         else:
-            self.status_bar_text = f"Lỗi chuyển đổi: {msg}"
-            if hasattr(self, "status_bar"):
-                try:
-                    self.status_bar.config(text=self.status_bar_text)
-                except Exception:
-                    pass
-            if self.show_dialogs and not self.headless:
-                try:
-                    messagebox.showerror("Lỗi Chuyển Đổi", msg)
-                except Exception:
-                    pass
+            try:
+                res = self.manager.switch_account(target_email)
+            except Exception as exc:
+                res = SwitchResult(False, f"Lỗi ngoại lệ: {exc}")
+            _finish_switch(res)
+            return res
 
-        return res
+    def wait_for_switch(self, timeout: float = 2.0) -> Optional[SwitchResult]:
+        """Helper to wait for an active background switch and dispatch its UI completion."""
+        if self.current_switch_thread and self.current_switch_thread.is_alive():
+            self.current_switch_thread.join(timeout=timeout)
+        if getattr(self, "_active_switch_queue", None) is not None:
+            try:
+                if not self._active_switch_queue.empty():
+                    res = self._active_switch_queue.get_nowait()
+                    if getattr(self, "_active_finish_fn", None) is not None:
+                        self._active_finish_fn(res)
+            except Exception:
+                pass
+        return self.last_switch_result
 
     def _on_save_current_session(self) -> Optional[str]:
         email = self.manager.auto_capture_active_session()
         if email:
             self.refresh_accounts()
-            if self.show_dialogs and not self.headless:
+            if not self.headless and self.root is not None and self.show_dialogs:
                 try:
                     messagebox.showinfo(
                         "Đã Lưu Phiên",
@@ -472,7 +617,7 @@ class AppWindow:
                 except Exception:
                     pass
         else:
-            if self.show_dialogs and not self.headless:
+            if not self.headless and self.root is not None and self.show_dialogs:
                 try:
                     messagebox.showwarning(
                         "Không Tìm Thấy Phiên",

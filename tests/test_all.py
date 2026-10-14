@@ -1730,12 +1730,255 @@ class TestAntigravitySwitcher(unittest.TestCase):
             self.assertTrue(app.last_switch_result.success)
         finally:
             try:
+                if 'app' in locals() and hasattr(app, "always_on_top_var"):
+                    app.always_on_top_var = None
                 root.destroy()
             except Exception:
                 pass
 
     def test_app_window_aliases_and_exports(self):
         self.assertIs(AppWindow, SwitcherApp)
+
+    def test_app_window_switch_updates_active_email_and_status(self):
+        target_email = "target_success@example.com"
+        self.store.store_account(target_email, {"access_token": "mock_target_tok"})
+
+        current_active = ["initial@example.com"]
+
+        def mock_switch(target):
+            current_active[0] = target
+            return SwitchResult(True, f"Đã chuyển đổi thành công sang: {target}")
+
+        mock_manager = AccountManager(
+            store=self.store,
+            user_status_provider=lambda: current_active[0],
+            chrome_accounts_provider=lambda: [
+                AccountInfo(
+                    email="initial@example.com",
+                    is_active=(current_active[0] == "initial@example.com"),
+                    has_token=True,
+                    status_code="ACTIVE" if current_active[0] == "initial@example.com" else "READY",
+                    status_color="green",
+                    display_badge="[ĐANG DÙNG]" if current_active[0] == "initial@example.com" else "[⚡ Chuyển sang]"
+                ),
+                AccountInfo(
+                    email="target_success@example.com",
+                    is_active=(current_active[0] == "target_success@example.com"),
+                    has_token=True,
+                    status_code="ACTIVE" if current_active[0] == "target_success@example.com" else "READY",
+                    status_color="green",
+                    display_badge="[ĐANG DÙNG]" if current_active[0] == "target_success@example.com" else "[⚡ Chuyển sang]"
+                ),
+            ],
+            process_finder=lambda: LanguageServerInfo(pid=1234, csrf_token="token", port=50000)
+        )
+        mock_manager.switch_account = mock_switch
+
+        app = AppWindow(manager=mock_manager, headless=True, show_dialogs=False)
+        self.assertEqual(app.active_email, "initial@example.com")
+
+        # Execute switch
+        res = app._on_switch_click(target_email)
+        self.assertTrue(res)
+        self.assertTrue(res.success)
+        self.assertEqual(app.active_email, target_email)
+        self.assertIn(f"Đã chuyển đổi thành công sang: {target_email}", app.status_bar_text)
+        self.assertIn(f"● Đang hoạt động: {target_email}", app.active_status_text)
+        self.assertFalse(app.is_switching)
+
+    def test_app_window_switch_failure_and_exception_resilience(self):
+        # 1. Normal failure message handling
+        mock_manager = AccountManager(store=self.store)
+        mock_manager.switch_account = lambda target: SwitchResult(False, "Tài khoản không tồn tại!")
+        app = AppWindow(manager=mock_manager, headless=True, show_dialogs=False)
+
+        res = app._on_switch_click("nonexistent@example.com")
+        self.assertFalse(res)
+        self.assertFalse(res.success)
+        self.assertIn("Lỗi chuyển đổi: Tài khoản không tồn tại!", app.status_bar_text)
+        self.assertFalse(app.is_switching)
+
+        # 2. Unexpected exception handling without crashing
+        def blow_up(target):
+            raise RuntimeError("Unexpected language server socket crash")
+
+        mock_manager.switch_account = blow_up
+        res_ex = app._on_switch_click("crash@example.com")
+        self.assertFalse(res_ex)
+        self.assertFalse(res_ex.success)
+        self.assertIn("Lỗi ngoại lệ: Unexpected language server socket crash", app.status_bar_text)
+        self.assertFalse(app.is_switching)
+
+        # 3. Invalid email inputs
+        self.assertFalse(app._on_switch_click(None).success)
+        self.assertFalse(app._on_switch_click("").success)
+        self.assertFalse(app.is_switching)
+
+    def test_app_window_switch_concurrency_guard(self):
+        # Concurrency guard: double click does not trigger multiple parallel switches
+        switch_started = threading.Event()
+        switch_continue = threading.Event()
+        calls = []
+
+        def blocking_switch(target):
+            calls.append(target)
+            switch_started.set()
+            switch_continue.wait(timeout=2.0)
+            return SwitchResult(True, f"Switched to {target}")
+
+        mock_manager = AccountManager(store=self.store)
+        mock_manager.switch_account = blocking_switch
+        app = AppWindow(manager=mock_manager, headless=True, show_dialogs=False)
+
+        # Trigger first switch in background thread
+        th = app._on_switch_click("account1@example.com", run_in_background=True)
+        self.assertTrue(switch_started.wait(timeout=1.0))
+        self.assertTrue(app.is_switching)
+
+        # Concurrently attempt second switch while first is running
+        res_rejected = app._on_switch_click("account2@example.com")
+        self.assertFalse(res_rejected)
+        self.assertFalse(res_rejected.success)
+        self.assertIn("Chuyển đổi đang diễn ra", res_rejected.message)
+        # Verify manager.switch_account was NOT called a second time
+        self.assertEqual(calls, ["account1@example.com"])
+
+        # Release first switch and join
+        switch_continue.set()
+        th.join(timeout=2.0)
+
+        # Verify is_switching reset to False
+        self.assertFalse(app.is_switching)
+        self.assertIn("Đã chuyển đổi thành công sang: account1@example.com", app.status_bar_text)
+
+        # Subsequent switch can now execute cleanly
+        switch_started.clear()
+        switch_continue.set()
+        res_next = app._on_switch_click("account3@example.com")
+        self.assertTrue(res_next)
+        self.assertEqual(calls, ["account1@example.com", "account3@example.com"])
+
+    def test_app_window_headless_popup_suppression(self):
+        # In headless mode (headless=True or root=None), modal dialogs are strictly suppressed
+        from unittest.mock import patch
+
+        mock_manager = AccountManager(store=self.store)
+        mock_manager.switch_account = lambda target: SwitchResult(True, "Success")
+        mock_manager.auto_capture_active_session = lambda: "captured@example.com"
+
+        app = AppWindow(manager=mock_manager, headless=True, show_dialogs=True)
+        self.assertTrue(app.headless)
+
+        with patch("ui.app_window.messagebox.showinfo") as mock_info, \
+             patch("ui.app_window.messagebox.showerror") as mock_err, \
+             patch("ui.app_window.messagebox.showwarning") as mock_warn:
+
+            # 1. Successful switch -> no popup
+            res_ok = app._on_switch_click("target@example.com")
+            self.assertTrue(res_ok.success)
+            mock_info.assert_not_called()
+            mock_err.assert_not_called()
+
+            # 2. Failed switch -> no popup
+            mock_manager.switch_account = lambda target: SwitchResult(False, "Failed switch")
+            res_err = app._on_switch_click("target@example.com")
+            self.assertFalse(res_err.success)
+            mock_info.assert_not_called()
+            mock_err.assert_not_called()
+
+            # 3. Save session -> no popup
+            app._on_save_current_session()
+            mock_info.assert_not_called()
+            mock_warn.assert_not_called()
+
+            mock_manager.auto_capture_active_session = lambda: None
+            app._on_save_current_session()
+            mock_warn.assert_not_called()
+
+    def test_app_window_button_states_during_and_after_switch_tk(self):
+        import tkinter as tk
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except Exception:
+            self.skipTest("Tkinter display not available on this environment")
+
+        try:
+            self.store.store_account("ready@example.com", {"access_token": "mock_tok"})
+            acc_active = AccountInfo(
+                email="active@example.com",
+                is_active=True,
+                has_token=True,
+                status_code="ACTIVE",
+                status_color="green",
+                display_badge="[ĐANG DÙNG]"
+            )
+            acc_ready = AccountInfo(
+                email="ready@example.com",
+                is_active=False,
+                has_token=True,
+                status_code="READY",
+                status_color="green",
+                display_badge="[⚡ Chuyển sang]"
+            )
+
+            switch_hold = threading.Event()
+            switch_finish = threading.Event()
+
+            def delayed_switch(target):
+                switch_hold.set()
+                switch_finish.wait(timeout=2.0)
+                return SwitchResult(False, "Simulated rollback error")
+
+            mock_manager = AccountManager(
+                store=self.store,
+                user_status_provider=lambda: "active@example.com",
+                chrome_accounts_provider=lambda: [acc_active, acc_ready]
+            )
+            mock_manager.switch_account = delayed_switch
+
+            app = AppWindow(root=root, manager=mock_manager, show_dialogs=False)
+
+            self.assertIn("ready@example.com", app.switch_buttons)
+            btn = app.switch_buttons["ready@example.com"]
+            self.assertEqual(str(btn.cget("state")), tk.NORMAL)
+
+            # Start switch in background thread
+            th = app._on_switch_click("ready@example.com", run_in_background=True)
+            self.assertTrue(switch_hold.wait(timeout=1.0))
+
+            # While switch is executing, button should be DISABLED and display "Đang chuyển..."
+            self.assertEqual(str(btn.cget("state")), tk.DISABLED)
+            self.assertEqual(str(btn.cget("text")), "Đang chuyển...")
+            if app.save_btn:
+                self.assertEqual(str(app.save_btn.cget("state")), tk.DISABLED)
+            if app.refresh_btn:
+                self.assertEqual(str(app.refresh_btn.cget("state")), tk.DISABLED)
+
+            # Let the switch complete with error
+            switch_finish.set()
+            app.wait_for_switch(timeout=2.0)
+            try:
+                root.update()
+            except Exception:
+                pass
+
+            # After failure, buttons must be restored to NORMAL state
+            self.assertEqual(str(btn.cget("state")), tk.NORMAL)
+            self.assertEqual(str(btn.cget("text")), "⚡ Chuyển sang")
+            if app.save_btn:
+                self.assertEqual(str(app.save_btn.cget("state")), tk.NORMAL)
+            if app.refresh_btn:
+                self.assertEqual(str(app.refresh_btn.cget("state")), tk.NORMAL)
+            self.assertIn("Lỗi chuyển đổi: Simulated rollback error", app.status_bar_text)
+            self.assertFalse(app.is_switching)
+        finally:
+            try:
+                if 'app' in locals() and hasattr(app, "always_on_top_var"):
+                    app.always_on_top_var = None
+                root.destroy()
+            except Exception:
+                pass
 
 
 class MockHttpServerHelper:
