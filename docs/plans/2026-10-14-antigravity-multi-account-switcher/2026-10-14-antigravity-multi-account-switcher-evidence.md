@@ -100,9 +100,28 @@ Matching plan item(s): `P0-A`
 
 Matching plan item(s): `P1-A`, `P1-B`
 
-Planned Evidence Targets:
-- `E1-P1A-STORE1`: JSON file creation in `accounts_store/<email>.json` with complete token structure (`access_token`, `refresh_token`, `id_token`, `expiry`, `token_type`).
-- `E1-P1A-STORE2`: Filename sanitation verification with various email formats and domain dots.
+### P1-A Execution Evidence
+
+- `E1-P1A-STORE1`: JSON file creation in `accounts_store/<email>.json` with complete token structure (`access_token`, `refresh_token`, `id_token`, `expiry`, `token_type`) and atomic writing via `.tmp` file and `os.replace`. `saved_at` timestamp recorded using `time.time()`. Corrupted and empty JSON files handled gracefully without crashing `has_account`, `get_account_token`, or `list_stored_emails`. Verified via `test_account_store_atomic_write_and_payload`, `test_account_store_corrupted_json`, and `test_account_store_json_files` in `tests/test_all.py`:
+  ```text
+  python -m unittest -v tests/test_all.py
+  test_account_store_atomic_write_and_payload (tests.test_all.TestAntigravitySwitcher.test_account_store_atomic_write_and_payload) ... ok
+  test_account_store_corrupted_json (tests.test_all.TestAntigravitySwitcher.test_account_store_corrupted_json) ... ok
+  test_account_store_json_files (tests.test_all.TestAntigravitySwitcher.test_account_store_json_files) ... ok
+  ```
+- `E1-P1A-STORE2`: Filename sanitation verification with various email formats, domain dots, case normalization, plus aliases, special characters, and path traversal prevention. Verified via `test_sanitize_filename_edge_cases` in `tests/test_all.py`:
+  - `User.Test@Gmail.COM` -> `user.test@gmail.com.json`
+  - `  developer@domain.com.  ` -> `developer@domain.com.json`
+  - `dev+test@domain.com` -> `dev+test@domain.com.json`
+  - `user#special!name@domain.com` -> `user_special_name@domain.com.json`
+  - `user..name@domain.com` -> `user.name@domain.com.json`
+  - `../../evil@domain.com` -> `_._evil@domain.com.json` (no directory traversal)
+  - `""` and `None` -> `unknown_account.json`
+  ```text
+  test_sanitize_filename_edge_cases (tests.test_all.TestAntigravitySwitcher.test_sanitize_filename_edge_cases) ... ok
+  ```
+
+Planned Downstream Evidence Targets:
 - `E1-P1B-CRED1`: Round-trip write and read to Windows Credential Manager target `LegacyGeneric:target=gemini:antigravity`.
 - `E1-P1B-AUTO1`: Active session capture into store upon tool startup.
 

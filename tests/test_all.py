@@ -6,6 +6,8 @@ import unittest
 import base64
 import os
 import shutil
+import json
+import time
 from core.jwt_helper import decode_jwt_payload, extract_email_from_token_data
 from core.account_store import AccountStore, sanitize_filename
 from scanner.chrome_scanner import is_blacklisted, get_chrome_signed_in_accounts
@@ -67,6 +69,93 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertTrue(self.store.remove_account(test_email))
         self.assertFalse(self.store.has_account(test_email))
         self.assertFalse(os.path.exists(expected_file))
+
+    def test_sanitize_filename_edge_cases(self):
+        # Case normalization
+        self.assertEqual(sanitize_filename("User.Test@Gmail.COM"), "user.test@gmail.com.json")
+        # Trailing dot and whitespace
+        self.assertEqual(sanitize_filename("  developer@domain.com.  "), "developer@domain.com.json")
+        # Plus alias
+        self.assertEqual(sanitize_filename("dev+test@domain.com"), "dev+test@domain.com.json")
+        # Special characters in local part
+        self.assertEqual(sanitize_filename("user#special!name@domain.com"), "user_special_name@domain.com.json")
+        # Consecutive dots
+        self.assertEqual(sanitize_filename("user..name@domain.com"), "user.name@domain.com.json")
+        # Path traversal prevention
+        sanitized_traversal = sanitize_filename("../../evil@domain.com")
+        self.assertNotIn("/", sanitized_traversal)
+        self.assertNotIn("\\", sanitized_traversal)
+        self.assertTrue(sanitized_traversal.endswith(".json"))
+        # Empty or None handling
+        self.assertEqual(sanitize_filename(""), "unknown_account.json")
+        self.assertEqual(sanitize_filename(None), "unknown_account.json")
+
+    def test_account_store_atomic_write_and_payload(self):
+        test_email = "atomic_user@example.com"
+        full_token = {
+            "access_token": "mock_access_token_12345",
+            "refresh_token": "mock_refresh_token_67890",
+            "id_token": "mock_id_token_abcde",
+            "expiry": "2026-10-15T12:00:00Z",
+            "token_type": "Bearer"
+        }
+
+        # Verify initial write
+        t_before = time.time()
+        self.assertTrue(self.store.store_account(test_email, full_token))
+        t_after = time.time()
+
+        account_path = os.path.join(self.test_store_dir, f"{test_email}.json")
+        self.assertTrue(os.path.exists(account_path))
+
+        # Check no .tmp file left behind
+        tmp_path = f"{account_path}.tmp"
+        self.assertFalse(os.path.exists(tmp_path))
+
+        # Inspect raw JSON file content
+        with open(account_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        self.assertEqual(data.get("email"), test_email)
+        self.assertIn("saved_at", data)
+        self.assertGreaterEqual(data["saved_at"], t_before - 1.0)
+        self.assertLessEqual(data["saved_at"], t_after + 1.0)
+        self.assertEqual(data.get("token_data"), full_token)
+
+        # Overwrite account and check atomic update
+        updated_token = dict(full_token)
+        updated_token["access_token"] = "mock_access_token_updated"
+        self.assertTrue(self.store.store_account(test_email, updated_token))
+        self.assertFalse(os.path.exists(tmp_path))
+
+        retrieved = self.store.get_account_token(test_email)
+        self.assertEqual(retrieved.get("access_token"), "mock_access_token_updated")
+
+    def test_account_store_corrupted_json(self):
+        corrupt_email = "corrupt_user@example.com"
+        corrupt_path = os.path.join(self.test_store_dir, f"{corrupt_email}.json")
+        with open(corrupt_path, "w", encoding="utf-8") as f:
+            f.write("{ invalid json content ...")
+
+        empty_email = "empty_user@example.com"
+        empty_path = os.path.join(self.test_store_dir, f"{empty_email}.json")
+        with open(empty_path, "w", encoding="utf-8") as f:
+            f.write("")
+
+        # Corrupted / empty files should be handled gracefully
+        self.assertFalse(self.store.has_account(corrupt_email))
+        self.assertIsNone(self.store.get_account_token(corrupt_email))
+        self.assertFalse(self.store.has_account(empty_email))
+        self.assertIsNone(self.store.get_account_token(empty_email))
+
+        # list_stored_emails should skip corrupt/empty files without crashing
+        stored = self.store.list_stored_emails()
+        self.assertNotIn(corrupt_email, stored)
+        self.assertNotIn(empty_email, stored)
+
+        # Clean removal of corrupted file
+        self.assertTrue(self.store.remove_account(corrupt_email))
+        self.assertFalse(os.path.exists(corrupt_path))
 
     def test_live_credential_read(self):
         token_data = read_antigravity_token()
