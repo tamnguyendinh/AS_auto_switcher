@@ -337,7 +337,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Actual-status Update: Transition `core/api_connector.py` from `missing` to `partial`.
   - Commit Boundary: Commit milestone `feat(P2-A): implement language server discovery`.
 
-- [ ] P2-B: Internal Auth API Client (GetUserStatus & AuthLogout)
+- [x] P2-B: Internal Auth API Client (GetUserStatus & AuthLogout)
   - Goal: Implement Step 1 (`GetUserStatus`) and Step 2 (`AuthLogout`) HTTP clients communicating with `language_server.exe` using the discovered port and CSRF token.
   - Scope Boundary:
     - Editable: `core/api_connector.py`.
