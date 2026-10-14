@@ -6,7 +6,7 @@
 **Authority:** Owner Directive via CEO Agent (`403f41a7-0810-44d9-b875-1e08c4ed13a0`)  
 **Status:** APPROVED ARCHITECTURAL SPECIFICATION  
 **Target Milestones:**  
-- **Phase P6:** Go Engine Port & Standalone Native Windows Binary (`antigravity-switch.exe`)  
+- **Phase P6:** Go Engine Port, Fyne Native GUI & Standalone Windows Binary (`antigravity-switch.exe`)  
 - **Phase P7:** Go-Native Autonomous Quota Failover Daemon & Auto-Switching Engine  
 
 ---
@@ -24,7 +24,12 @@ When an active developer or autonomous agent hits these limits:
 3. **Fragile Session State in Manual Restarts**: If developers attempt to restart the IDE or sign out manually, uncommitted editor buffers, live terminal processes, and ephemeral agent context can be disrupted.
 4. **Runtime Footprint of Interpreted Prototypes**: While the Python implementation (Phases P1–P5) proved the feasibility of the 4-step closed-loop internal API switching architecture, running a continuous Python runtime in the background consumes 40MB–80MB RAM, requires an active Python interpreter/virtual environment on the developer's machine, and introduces DLL startup overhead.
 
-### 1.2 The Two-Stage Architectural Evolution (Phases P6 & P7)
+### 1.2 UI Design Philosophy: The Pure Developer Tool Doctrine
+The Owner has explicitly mandated the UI design philosophy and architecture decision for the Go conversion:
+- **Philosophy:** A developer tool must be as lightweight as possible, run as fast as possible. The UI does not need to be fancy, heavy, or bloated; what matters is pure **practicality**—displaying correct, complete information, and executing with 100% reliability.
+- **Decision:** Formally select **Fyne (100% Pure Go Native GUI)** and **Native Windows System Tray** as the UI stack for Phase P6. This eliminates external browser engines, Node.js dependencies, and heavy webview components, providing instantaneous rendering with minimal memory footprint.
+
+### 1.3 The Two-Stage Architectural Evolution (Phases P6 & P7)
 
 To solve these challenges permanently and build a production-grade developer tool, the Owner and CEO have established a two-stage roadmap:
 
@@ -32,19 +37,20 @@ To solve these challenges permanently and build a production-grade developer too
 [ Phases P1 - P5: Python Validation Prototype ]
                      |
                      v
-[ Phase P6: High-Performance Go Engine & Standalone Binary ]
+[ Phase P6: High-Performance Go Engine, Fyne Native GUI & Standalone Binary ]
   - Complete port to compiled Go (golang)
+  - Pure Go Native GUI (Fyne) with zero web runtime bloat (< 20MB RAM)
   - Standalone single executable: antigravity-switch.exe (10-15MB)
   - Native Win32 Advapi32.dll integration via golang.org/x/sys/windows
   - Zero external runtime dependencies (no Python, no pip, no MSVC runtimes)
-  - Ultra-low footprint: < 12MB RAM, < 0.05% CPU, sub-millisecond startup
+  - Ultra-low footprint: < 12MB RAM (daemon) / < 20MB RAM (GUI), < 0.05% CPU
                      |
                      v
 [ Phase P7: Go-Native Autonomous Quota Failover Daemon ]
   - Background goroutine log tailer (sniffing language_server.log)
   - High-performance regex / token bucket rate limit interceptor
   - Real-time round-robin account pool with automated cooldown tracking
-  - Native Windows System Tray (systray) & discrete Windows Toast notifications
+  - Native Windows System Tray (desktop.App / systray) & discrete Windows Toast notifications
   - 100% Context Preservation: Zero disruption to open tabs, dirty buffers, and chat
 ```
 
@@ -57,7 +63,7 @@ The system is decomposed into cleanly decoupled, high-performance Go packages op
 ```
 +-----------------------------------------------------------------------------------+
 |                        PHASE P7: GO RESIDENT DAEMON & HUD                         |
-|  - System Tray Icon (systray)         - Discrete Windows Toast HUD Notifications  |
+|  - System Tray Icon (desktop.App)     - Discrete Windows Toast HUD Notifications  |
 |  - Global Hotkeys (RegisterHotKey)    - Inter-Process Control Socket / CLI Pipe   |
 +-----------------------------------------------------------------------------------+
                                         |
@@ -76,13 +82,13 @@ The system is decomposed into cleanly decoupled, high-performance Go packages op
 | - DevTools CDP Event Observer             |   |   3. Advapi32 CredWriteW inject   |
 | - Event Channel Dispatcher                |   |   4. Coordinated Re-Auth / Reload |
 +-------------------------------------------+   +-----------------------------------+
-                                                                 |
-                                                +-----------------------------------+
-                                                |     PHASE P6: NATIVE STORAGE      |
-                                                | - internal/wincred (Advapi32.dll) |
-                                                | - internal/store (JSON Atomic)    |
-                                                | - internal/scanner (Chrome pref)  |
-                                                +-----------------------------------+
+                                        |                        |
++-------------------------------------------+   +-----------------------------------+
+|          PHASE P6: FYNE NATIVE GUI        |   |     PHASE P6: NATIVE STORAGE      |
+| - Fyne 100% Pure Go Window                |   | - internal/wincred (Advapi32.dll) |
+| - Active Account Banner & 1-Click Switch  |   | - internal/store (JSON Atomic)    |
+| - Real-time Status Dots & Auto Toggle     |   | - internal/scanner (Chrome pref)  |
++-------------------------------------------+   +-----------------------------------+
 ```
 
 ---
@@ -94,7 +100,7 @@ The core engine is ported from Python to idiomatic Go, compiled into a single st
 ```
 cmd/
   switcher/
-    main.go                   # CLI commands, GUI launcher, daemon entrypoint
+    main.go                   # CLI flags, GUI launcher, daemon entrypoint
 internal/
   wincred/
     cred.go                   # Win32 Advapi32 wrapper (CredReadW, CredWriteW, CredDeleteW)
@@ -110,6 +116,11 @@ internal/
     chrome_scanner.go         # Read-only extraction of Chrome profiles with blacklist filter
   reloader/
     session_reloader.go       # Coordinated reload bridge (trigger_reauth + User32 Ctrl+R)
+  ui/
+    app.go                    # Fyne application lifecycle, dark theme, desktop.App integration
+    window.go                 # Main control dashboard: active account banner, pool card list
+    widgets.go                # Custom account item widget: status indicator, 1-click switch button
+    tray.go                   # Fyne native system tray menu and background minimize handling
 ```
 
 #### Key Technical Capabilities in Phase P6:
@@ -126,13 +137,18 @@ internal/
 3. **Atomic File Persistence (`internal/store`)**:
    - Manages `accounts_store/<email>.json` with Go's `os.CreateTemp`, `json.NewEncoder`, `os.File.Sync()`, and `os.Rename()` for transactional, corruption-proof atomicity.
 
-4. **Standalone Binary Compilation**:
+4. **Pure Go Native GUI with Fyne (`internal/ui`)**:
+   - 100% pure Go implementation; zero web runtimes (no Node.js, Electron, or Chromium embedded).
+   - Practical layout: High-contrast dark theme, active account banner, scrollable account cards with status dots (🟢 Active, 🟢 Ready, 🟡 Unauth), 1-click switch button `[⚡ Chuyển]`, `[💾 Lưu phiên]` button, and Auto-Failover toggle.
+   - Cold start in **< 50ms**, resident memory footprint **< 20MB RAM**.
+
+5. **Standalone Binary Compilation**:
    ```bash
    go build -ldflags="-H windowsgui -s -w" -o antigravity-switch.exe cmd/switcher/main.go
    ```
    - `-s -w`: Strips debug symbols and DWARF tables, reducing binary size to 10MB–15MB.
    - `-H windowsgui`: Suppresses terminal console flash when launched from desktop shortcuts or system tray.
-   - **Resource Footprint**: Consumes **< 12MB RAM** in resident memory and **< 0.05% CPU**.
+   - **Resource Footprint**: Consumes **< 12MB RAM** in daemon mode, **< 20MB RAM** with GUI open, and **< 0.05% CPU**.
 
 ---
 
@@ -152,7 +168,7 @@ internal/
     cooldown.go               # Exponential backoff cooldown tracker with time.Ticker
     hysteresis.go             # Anti-flapping debounce gate and circuit breaker
   tray/
-    tray_daemon.go            # Native Windows systray integration (systray package)
+    tray_daemon.go            # Native Windows systray integration (Fyne desktop.App / systray)
     notifications.go          # Windows 10/11 Toast Notification bridge
     hotkeys.go                # Global Win32 hotkey listener (RegisterHotKey)
 ```
@@ -187,7 +203,7 @@ internal/
 - Benchmark target: **< 1.0 second total failover time**.
 
 #### Layer 4: System Tray & Notification Hub (`internal/tray`)
-- Runs a native Windows message loop using `systray`.
+- Runs via Fyne's `desktop.App` / native Windows message loop.
 - Tray icon dynamically changes:
   * 🟢 **Green**: Healthy, multiple accounts ready.
   * 🟡 **Yellow**: Active account running; failover in progress or 1 account left.
@@ -406,8 +422,8 @@ type FailoverConfig struct {
 flowchart TD
     subgraph P6["Phase P6: Go Engine Port & Standalone Binary"]
         P6A["Slice P6-A<br/><b>Go Primitives & Win32 Credential</b><br/>(internal/wincred, internal/store)"] --> P6B["Slice P6-B<br/><b>Chrome Scanner & API Connector</b><br/>(internal/scanner, internal/connector)"]
-        P6B --> P6C["Slice P6-C<br/><b>Core Orchestrator & CLI / GUI</b><br/>(internal/reloader, cmd/switcher)"]
-        P6C --> P6D["Slice P6-D<br/><b>Standalone Windows Binary</b><br/>(antigravity-switch.exe, &lt;12MB RAM)"]
+        P6B --> P6C["Slice P6-C<br/><b>Core Orchestrator & Fyne Native GUI</b><br/>(internal/ui, cmd/switcher)"]
+        P6C --> P6D["Slice P6-D<br/><b>Standalone Windows Binary</b><br/>(antigravity-switch.exe, &lt;15MB Size)"]
     end
 
     subgraph P7["Phase P7: Go-Native Autonomous Failover Daemon"]
@@ -442,13 +458,20 @@ The objective of Phase P6 is to deliver a compiled, standalone, zero-dependency 
   - Live discovery test on running `language_server.exe` PID.
   - Mock HTTP server tests for RPC status parsing, 401/403/500 resilience, and timeout handling.
 
-#### Slice P6-C: CLI / GUI Core Orchestration & Session Reloader
+#### Slice P6-C: Core Orchestrator & Fyne Native GUI (`internal/ui`, `cmd/switcher`)
 - **Deliverables**:
   - `internal/reloader`: Coordinated reload bridge (API reauth primary, User32 `keybd_event Ctrl+R` fallback).
   - `internal/manager`: Port of `AccountManager` coordinating Chrome discovery, store, credentials, and 4-step hot-swap.
-  - `cmd/switcher/main.go`: Command-line interface (`list`, `switch <email>`, `save`, `status`).
+  - `internal/ui`: Fyne 100% Pure Go Native GUI (`app.go`, `window.go`, `widgets.go`, `tray.go`):
+    * Dark theme dashboard matching IDE aesthetics.
+    * Active account banner with live RAM verification badge.
+    * Scrollable card list with status indicators (🟢 Active, 🟢 Ready, 🟡 Unauth) and 1-click switch buttons.
+    * Auto-Failover toggle and manual capture buttons.
+    * System Tray integration via `desktop.App` with minimize-to-tray.
+  - `cmd/switcher/main.go`: Dual CLI / GUI entrypoint with flags (`--gui`, `--cli`, `--switch <email>`).
 - **Verification Gates**:
-  - Live execution of 4-step hot-swap on local host Antigravity instance.
+  - GUI cold boot in **< 50ms**, resident memory footprint **< 20MB RAM**.
+  - Live execution of 4-step hot-swap via 1-click GUI switch button.
   - Verified RAM email identity update confirmed via `GetUserStatus`.
 
 #### Slice P6-D: Standalone Windows Binary Compilation & Benchmark
@@ -458,7 +481,7 @@ The objective of Phase P6 is to deliver a compiled, standalone, zero-dependency 
   - Performance benchmarking suite.
 - **Verification Gates**:
   - Single standalone binary output (`antigravity-switch.exe`, 10MB–15MB).
-  - Startup time $\le 10\text{ms}$; resident memory footprint **$\le 12\text{MB}$ RAM**; zero external DLL dependencies.
+  - Startup time $\le 10\text{ms}$; resident memory footprint **$\le 12\text{MB}$ RAM (CLI/daemon) / $\le 20\text{MB}$ RAM (GUI)**; zero external DLL dependencies.
 
 ---
 
@@ -485,7 +508,7 @@ Building directly on top of the Phase P6 native engine, Phase P7 introduces the 
 
 #### Slice P7-C: Native Windows System Tray & Toast HUD
 - **Deliverables**:
-  - `internal/tray/tray_daemon.go`: System tray application using `systray` with dynamic icons (🟢 / 🟡 / 🔴).
+  - `internal/tray/tray_daemon.go`: System tray application using Fyne `desktop.App` / native Win32 message loop with dynamic icons (🟢 / 🟡 / 🔴).
   - Context menu for pool status, active account, manual switch override, and pause/resume toggle.
   - Windows 10/11 Toast Notification bridge for discrete hot-swap alerts.
   - Global hotkey listener (`Win+Alt+S`) via Win32 `RegisterHotKey`.
@@ -510,13 +533,47 @@ Building directly on top of the Phase P6 native engine, Phase P7 introduces the 
 | **ADR-P6-01** | Production Language & Runtime | Port engine to Go (Golang) compiled binary (`antigravity-switch.exe`) | Standalone binary (10-15MB), zero Python/pip dependencies, instant startup, < 12MB RAM footprint. | Retaining Python runtime (high 50-80MB RAM overhead, requires local Python environment, slower startup). |
 | **ADR-P6-02** | Win32 Credential API Binding | Direct Win32 via `golang.org/x/sys/windows` | Clean, native, type-safe integration with `Advapi32.dll` with zero CGo requirement. | CGo wrapper (requires C compiler/MSVC toolchain, complicates cross-compilation). |
 | **ADR-P6-03** | Internal Auth API Communication | Go standard library `net/http` | Zero-dependency, thread-safe, high-performance connection reuse for loopback RPC. | Third-party HTTP client libraries (unnecessary bloat for simple loopback JSON POSTs). |
+| **ADR-P6-05** | Native GUI Framework Selection | **Fyne (100% Pure Go Native GUI) & `desktop.App`** | Single-language Go stack, instant cold boot (< 50ms), minimal footprint (< 20MB RAM), hardware accelerated, high practicality. | Electron (200MB+ bloat); Wails/Webview (introduces CGO/webview2/web runtime complexity). |
 | **ADR-P7-01** | Real-Time Quota Detection | Goroutine Log Tailer on `language_server.log` via Go channels | Native Go channels provide sub-millisecond, lock-free event delivery with zero polling CPU waste. | Reverse proxy / MITM loopback listener (intrusive, TLS interception risks). |
-| **ADR-P7-02** | Desktop Tray & Alerting | Native `systray` + Windows Notification API | Extremely lightweight native integration without heavy GUI frameworks like Qt or Electron. | Wails / Electron for daemon (adds 80MB+ RAM overhead for a background utility). |
+| **ADR-P7-02** | Desktop Tray & Alerting | Fyne `desktop.App` System Tray + Windows Toast API | Extremely lightweight native integration without heavy webview or browser runtimes. | Electron / Web-based background daemons (excessive resource overhead). |
+
+---
+
+### Detailed Architectural Decision Record: ADR-P6-05
+
+#### Title: Selection of Fyne (Pure Go Native GUI) over Electron / WebViews
+
+- **Status:** APPROVED  
+- **Context:**  
+  A developer desktop switcher tool requires an intuitive, zero-friction interface for reviewing detected accounts, monitoring real-time active status, executing one-click manual switches, and toggling autonomous failover.
+  
+- **Alternatives Evaluated:**
+  1. *Electron (Node.js + Chromium)*:
+     - **Rejected**: Consumes **200MB–350MB RAM**, adds 80MB+ to binary installer, requires separate Node runtime, and takes 1.5s–3s to launch. Unacceptable for a lightweight background developer utility.
+  2. *Wails / Webview2 (Go Backend + HTML/JS/CSS Frontend)*:
+     - **Rejected**: While lighter than Electron (~50MB RAM), Wails still requires Windows WebView2 Evergreen runtime dependencies, requires CGO compilation on Windows, introduces npm/frontend asset toolchains, and increases build complexity.
+  3. *Fyne (100% Pure Go Native GUI)*:
+     - **Selected**: Compiles cleanly with standard Go toolchain, renders via native OpenGL/DirectX hardware acceleration, has an ultra-lightweight memory footprint (**< 20MB RAM**), launches in **< 50ms**, and embeds native system tray support directly via `desktop.App`.
+
+- **Rationale:**
+  - **Developer Tool Philosophy Alignment**: Matches the Owner's mandate that developer tooling must be as lightweight and fast as possible, emphasizing pure practicality, truthful and complete information display, and 100% execution reliability over visual bloat.
+  - **Single Language & Zero Toolchain Friction**: Entire project remains 100% Go from top to bottom (backend, storage, API, and UI). No Node.js, no npm, no webpack.
+  - **Native System Tray Integration**: Fyne provides direct `desktop.App` interfaces (`SetSystemTrayMenu`, `SetSystemTrayIcon`) enabling seamless background residency with minimize-to-tray behavior.
+
+- **UI Architecture Specification:**
+  - **Window Dimensions**: Compact $440 \times 560\text{ px}$ dark-themed window.
+  - **Header Section**: Active Account Card with prominent green status dot, live verified email from `GetUserStatus()`, and active session indicator.
+  - **Toolbar Controls**: `[🔄 Làm mới Chrome]`, `[💾 Lưu phiên]`, and `[⚡ Auto-Failover: BẬT/TẮT]` toggle switch.
+  - **Account List**: Scrollable list of accounts discovered across Chrome and `accounts_store/`. Each item renders:
+    * Status Dot (🟢 Active, 🟢 Ready, 🟡 Unauth)
+    * Email address & profile source
+    * Direct Action Button (`[⚡ Chuyển sang]` for Ready accounts, `[💾 Lưu phiên]` for active unsaved)
+  - **Status Footer**: Real-time Language Server connection indicator (`PID: <pid> | Port: <port> | Status: Sẵn sàng`).
 
 ---
 
 ## 8. Conclusion
 
-This restructured architectural blueprint directly fulfills the Owner and CEO directives:
-1. **Phase P6** delivers immediate enterprise-grade durability by compiling the core switcher into a native, standalone, high-performance Windows binary (`antigravity-switch.exe`).
+This finalized architectural blueprint integrates the Owner's mandate:
+1. **Phase P6** delivers immediate enterprise-grade durability by compiling the core switcher into a native, standalone, high-performance Windows binary (`antigravity-switch.exe`) with a pure Go native Fyne GUI (< 20MB RAM, < 50ms startup, zero webview bloat).
 2. **Phase P7** unlocks autonomous, self-healing continuous AI coding by deploying a lightweight Go goroutine daemon that detects quota exhaustion instantly and performs hot-swaps under 1 second with 100% IDE context preservation.
