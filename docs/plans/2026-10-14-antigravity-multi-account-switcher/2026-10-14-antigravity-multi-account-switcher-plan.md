@@ -857,7 +857,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - P5-A: Comprehensive Unit & Integration Test Suite
   - P5-B: End-to-End Switching Cycle & Robustness Verification
 
-- [ ] P5-A: Comprehensive Unit & Integration Test Suite
+- [x] P5-A: Comprehensive Unit & Integration Test Suite
   - Goal: Expand `tests/test_all.py` to cover `core/api_connector.py`, `core/session_reloader.py`, `core/account_store.py`, and `core/state_resolver.py`.
   - Scope Boundary:
     - Editable: `tests/test_all.py`.

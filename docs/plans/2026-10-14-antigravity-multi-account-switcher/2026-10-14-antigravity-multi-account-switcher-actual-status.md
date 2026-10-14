@@ -106,6 +106,7 @@ Out of scope:
 | R9 | 2026-10-14 | commit ddd180e (Slice P4-A) | `ui/app_window.py`, `tests/test_all.py` | P4-A complete: UI wired to live RAM state and hot-swap coordinator with visual badging and status bar feedback | `E4-P4A-UI1` | Proceed to Slice P4-B (1-Click Hot-Swap Trigger & Status Feedback) |
 | R10 | 2026-10-14 | commit 3460f02 (Slice P4-B) | `ui/app_window.py`, `tests/test_all.py` | P4-B complete: 1-click hot-swap trigger connected with visual progress feedback, error handling, and post-swap state refresh | `E4-P4B-ACT1` | Proceed to Slice P4-C (Session Persistence & Manual Chrome Sync Controls) |
 | R11 | 2026-10-14 | commit 14b567b (Slice P4-C) | `ui/app_window.py`, `tests/test_all.py` | P4-C complete: session persistence and manual Chrome sync controls implemented and verified | `E4-P4C-SYNC1` | Proceed to Phase P5 (Verification & Regression QA) |
+| R12 | 2026-10-14 | commit 4673f40 (Slice P5-A) | `tests/test_all.py` | P5-A complete: expanded comprehensive unit and integration test suite (API connector, 4-step switching flow, store, credential manager) verified | `E5-P5A-UNIT1` | Proceed to Slice P5-B (End-to-End Switching Cycle & Robustness Verification) |
 
 ## Phase Touch Map
 
