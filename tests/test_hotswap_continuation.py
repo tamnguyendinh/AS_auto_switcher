@@ -16,6 +16,7 @@ from core.session_reloader import (
     recycle_language_server,
     is_tos_modal_present,
     dismiss_tos_modal_hardware_fallback,
+    wait_and_dismiss_tos_modal,
     inject_continuation_prompt,
     reload_session,
     reload_antigravity_session,
@@ -35,7 +36,11 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.store = AccountStore(self.store_dir)
         self.storage_file = os.path.join(self.test_dir, "app_storage.json")
 
+        self.sleep_patcher = patch("time.sleep", return_value=None)
+        self.mock_sleep = self.sleep_patcher.start()
+
     def tearDown(self):
+        self.sleep_patcher.stop()
         if os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir, ignore_errors=True)
 
@@ -115,6 +120,19 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertTrue(res)
         self.assertEqual(len(killer_killer := killer_called), 1)
 
+    def test_recycle_language_server_default_wait_buffer_5s(self):
+        """Verifies recycle_language_server defaults to 5.0s wait buffer."""
+        killer_called = []
+
+        def mock_killer():
+            killer_called.append(True)
+            return True
+
+        res = recycle_language_server(process_killer=mock_killer)
+        self.assertTrue(res)
+        self.assertEqual(len(killer_called), 1)
+        self.mock_sleep.assert_called_with(5.0)
+
     def test_recycle_language_server_subprocess_run(self):
         """Verifies recycle_language_server invokes taskkill when no custom killer provided."""
         with patch("core.session_reloader.subprocess.run") as mock_run:
@@ -158,6 +176,67 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertTrue(is_tos_modal_present(modal_finder=lambda: True))
         self.assertFalse(is_tos_modal_present(modal_finder=lambda: False))
 
+    def test_wait_and_dismiss_tos_modal_adaptive_polling_detected_early(self):
+        """Verifies wait_and_dismiss_tos_modal detects modal on 2nd iteration and exits early."""
+        responses = [False, True]
+
+        def mock_finder():
+            return responses.pop(0) if responses else True
+
+        key_sender_called = []
+        def mock_key_sender():
+            key_sender_called.append("ENTER")
+
+        sleep_calls = []
+        def mock_sleeper(duration):
+            sleep_calls.append(duration)
+
+        res = wait_and_dismiss_tos_modal(
+            timeout_seconds=4.5,
+            poll_interval=0.25,
+            modal_finder=mock_finder,
+            key_sender=mock_key_sender,
+            sleep_fn=mock_sleeper,
+        )
+
+        self.assertTrue(res)
+        self.assertEqual(key_sender_called, ["ENTER"])
+        self.assertEqual(sleep_calls, [0.25])  # Exited after 1 sleep (2nd poll detected)
+
+    def test_wait_and_dismiss_tos_modal_timeout_not_detected(self):
+        """Verifies wait_and_dismiss_tos_modal polls over full timeout without detecting modal."""
+        key_sender_called = []
+        sleep_calls = []
+
+        res = wait_and_dismiss_tos_modal(
+            timeout_seconds=4.5,
+            poll_interval=0.25,
+            modal_finder=lambda: False,
+            key_sender=lambda: key_sender_called.append(True),
+            sleep_fn=lambda d: sleep_calls.append(d),
+            fallback_at_peak=False,
+        )
+
+        self.assertFalse(res)
+        self.assertEqual(len(key_sender_called), 0)
+        self.assertEqual(len(sleep_calls), 18)  # 4.5 / 0.25 = 18 polls
+        self.assertTrue(all(d == 0.25 for d in sleep_calls))
+
+    def test_wait_and_dismiss_tos_modal_fallback_at_peak(self):
+        """Verifies wait_and_dismiss_tos_modal triggers fallback VK_RETURN at peak render time if not detected."""
+        key_sender_called = []
+        res = wait_and_dismiss_tos_modal(
+            timeout_seconds=1.0,
+            poll_interval=0.25,
+            modal_finder=lambda: False,
+            key_sender=lambda: key_sender_called.append("PEAK_FALLBACK"),
+            sleep_fn=lambda d: None,
+            fallback_at_peak=True,
+        )
+
+        self.assertTrue(res)
+        self.assertEqual(key_sender_called, ["PEAK_FALLBACK"])
+
     # -------------------------------------------------------------------------
     # 5. Prompt Injection Protocol (inject_continuation_prompt)
     # -------------------------------------------------------------------------
@@ -198,6 +277,36 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             mock_clip.assert_called_once_with("continue")
             # Verify synthesized key sequences (Ctrl+L, Ctrl+V, Return)
             self.assertTrue(mock_keybd.call_count >= 6)
+
+    def test_inject_continuation_prompt_timing_parameters(self):
+        """Verifies inject_continuation_prompt ensures SetForegroundWindow, 0.5s focus settling, and 0.25s pre-Enter delay."""
+        mock_hwnd = 54321
+        foreground_hwnds = []
+        sleep_durations = []
+
+        def mock_setter(hwnd):
+            foreground_hwnds.append(hwnd)
+            return True
+
+        def mock_sleeper(duration):
+            sleep_durations.append(duration)
+
+        with patch("core.session_reloader.keybd_event"), \
+             patch("core.session_reloader._set_clipboard_text") as mock_clip:
+            res = inject_continuation_prompt(
+                prompt_text="continue",
+                window_finder=lambda: [mock_hwnd],
+                foreground_setter=mock_setter,
+                sleep_fn=mock_sleeper,
+            )
+
+            self.assertTrue(res)
+            self.assertEqual(foreground_hwnds, [mock_hwnd])
+            mock_clip.assert_called_once_with("continue")
+            # Verify required timing delays: 0.1s foreground, 0.5s focus settling, 0.25s settling before Enter
+            self.assertIn(0.1, sleep_durations)
+            self.assertIn(0.5, sleep_durations)
+            self.assertIn(0.25, sleep_durations)
 
     # -------------------------------------------------------------------------
     # 6. Full Hot-Swap Coordination Pipeline in AccountManager.switch_account
@@ -342,6 +451,59 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         res = manager.switch_account(target_email)
         self.assertTrue(res)
         self.assertEqual(dismisser_called, [])
+
+    def test_switch_account_4_stages_sequencing_and_timing(self):
+        """
+        Verifies switch_account executes the 4 stages cleanly in sequence:
+        Stage 1: Recycle language_server.exe (5.0s default buffer)
+        Stage 2: Execute wait_and_dismiss_tos_modal(timeout_seconds=4.5)
+        Stage 3: Stabilization delay of 2.5s (allowing Electron DOM to close modal)
+        Stage 4: Autonomous Prompt Continuation (trigger inject_continuation_prompt)
+        """
+        target_email = "fourstages@gmail.com"
+        target_token = {"access_token": "at_stages", "id_token": "id_stages"}
+        self.store.store_account(target_email, target_token)
+
+        stage_log = []
+
+        def mock_recycler(info=None):
+            stage_log.append("stage_1_recycle")
+            return True
+
+        def mock_watcher(timeout_seconds=4.5, poll_interval=0.25, **kwargs):
+            stage_log.append(("stage_2_watcher", timeout_seconds, poll_interval))
+            return True
+
+        def mock_sleep_fn(duration):
+            stage_log.append(("sleep", duration))
+
+        def mock_injector(prompt_text="continue", sleep_fn=None):
+            stage_log.append(("stage_4_inject", prompt_text))
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: None,
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=mock_recycler,
+            tos_watcher=mock_watcher,
+            prompt_injector=mock_injector,
+            sleep_fn=mock_sleep_fn,
+            auto_continue=True,
+            dom_settle_delay=2.5,
+            tos_timeout=4.5,
+            tos_poll_interval=0.25,
+        )
+
+        res = manager.switch_account(target_email)
+        self.assertTrue(res.success)
+
+        # Verify Stage 1 -> Stage 2 -> Stage 3 (sleep 2.5) -> Stage 4
+        self.assertEqual(stage_log[0], "stage_1_recycle")
+        self.assertEqual(stage_log[1], ("stage_2_watcher", 4.5, 0.25))
+        self.assertEqual(stage_log[2], ("sleep", 2.5))
+        self.assertEqual(stage_log[3], ("stage_4_inject", "continue"))
 
     # -------------------------------------------------------------------------
     # 7. Non-Blocking Reactive UI Feedback in AppWindow

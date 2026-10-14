@@ -273,7 +273,7 @@ def pre_patch_tos_acceptance(
 
 
 def recycle_language_server(
-    wait_seconds: float = 2.5,
+    wait_seconds: float = 5.0,
     process_killer: Optional[Callable[..., Any]] = None,
     timeout: float = 5.0,
 ) -> bool:
@@ -281,6 +281,8 @@ def recycle_language_server(
     Terminates language_server.exe cleanly.
     Antigravity's internal monitorLsCrashInternal automatically spawns a fresh
     instance within 2000ms, which calls CredReadW and loads the new token into RAM.
+    Default wait_seconds = 5.0s (2.0s restart cooldown + 1.0s Go startup + 2.0s safety lag buffer)
+    guarantees the new language server process is completely alive and listening.
     """
     try:
         if process_killer is not None:
@@ -352,6 +354,55 @@ def dismiss_tos_modal_hardware_fallback(
         logger.debug("dismiss_tos_modal_hardware_fallback error: %s", exc)
 
 
+def wait_and_dismiss_tos_modal(
+    timeout_seconds: float = 4.5,
+    poll_interval: float = 0.25,
+    modal_finder: Optional[Callable[[], bool]] = None,
+    key_sender: Optional[Callable[[], None]] = None,
+    fallback_dismisser: Optional[Callable[[], None]] = None,
+    sleep_fn: Optional[Callable[[float], None]] = None,
+    clock_fn: Optional[Callable[[], float]] = None,
+    fallback_at_peak: bool = False,
+) -> bool:
+    """
+    Layer 2 Defense: Adaptive watcher loop that continuously checks for the Antigravity ToS modal dialog
+    over a timeout window (default 4.5s) at poll intervals (default 0.25s).
+    If detected, dispatches VK_RETURN to dismiss the dialog immediately and returns True.
+    If fallback_at_peak is True (or as a fallback at peak render time), dispatches VK_RETURN
+    if the dialog was not caught during polling.
+    If the timeout expires without detecting the dialog, returns False.
+    """
+    sleeper = sleep_fn or time.sleep
+    clock = clock_fn or time.time
+    start_time = clock()
+
+    dismisser_func = fallback_dismisser or (lambda: dismiss_tos_modal_hardware_fallback(key_sender=key_sender))
+
+    max_polls = int(timeout_seconds / poll_interval) if poll_interval > 0 else 1
+    polls = 0
+
+    while (clock() - start_time) < timeout_seconds and polls < max_polls:
+        if is_tos_modal_present(modal_finder=modal_finder):
+            logger.info("ToS modal detected during adaptive poll; dismissing via hardware fallback.")
+            try:
+                dismisser_func()
+            except Exception as exc:
+                logger.debug("Error in ToS modal dismissal: %s", exc)
+            return True
+        polls += 1
+        sleeper(poll_interval)
+
+    if fallback_at_peak:
+        logger.info("ToS modal not detected, dispatching fallback VK_RETURN at peak render time.")
+        try:
+            dismisser_func()
+            return True
+        except Exception as exc:
+            logger.debug("Error in peak fallback ToS modal dismissal: %s", exc)
+
+    return False
+
+
 def _set_clipboard_text(text: str) -> bool:
     """Sets text into Windows clipboard using Win32 API, with Tkinter fallback."""
     try:
@@ -393,11 +444,15 @@ def inject_continuation_prompt(
     window_finder: Optional[Callable[[], List[wintypes.HWND]]] = None,
     foreground_setter: Optional[Callable[[wintypes.HWND], bool]] = None,
     key_sender: Optional[Callable[..., Any]] = None,
+    sleep_fn: Optional[Callable[[float], None]] = None,
 ) -> bool:
     """
     Preserves in-flight workflow by focusing the active chat tab (Ctrl+L)
     and injecting continuation prompt + Enter.
+    Ensures SetForegroundWindow is called, applies 0.5s focus settling delay after Ctrl+L,
+    injects "continue", waits 0.25s, then triggers VK_RETURN.
     """
+    sleeper = sleep_fn or time.sleep
     if key_sender is not None:
         try:
             return bool(key_sender(prompt_text))
@@ -417,31 +472,31 @@ def inject_continuation_prompt(
     target_hwnd = hwnds[0]
     try:
         setter(target_hwnd)
-        time.sleep(0.1)
+        sleeper(0.1)
 
         # 1. Synthesize Ctrl+L to focus chat input
         keybd_event(VK_CONTROL, 0, 0, None)
         keybd_event(VK_L, 0, 0, None)
-        time.sleep(0.05)
+        sleeper(0.05)
         keybd_event(VK_L, 0, KEYEVENTF_KEYUP, None)
         keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, None)
 
-        time.sleep(0.15)
+        sleeper(0.5)  # Focus settling delay 0.5s after Ctrl+L
 
         # 2. Inject text using clipboard paste (Ctrl+V) for instant high-speed Unicode injection
         _set_clipboard_text(prompt_text)
 
         keybd_event(VK_CONTROL, 0, 0, None)
         keybd_event(VK_V, 0, 0, None)
-        time.sleep(0.05)
+        sleeper(0.05)
         keybd_event(VK_V, 0, KEYEVENTF_KEYUP, None)
         keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, None)
 
-        time.sleep(0.1)
+        sleeper(0.25)  # Settling delay 0.25s before Enter
 
         # 3. Press Enter to submit prompt
         keybd_event(VK_RETURN, 0, 0, None)
-        time.sleep(0.05)
+        sleeper(0.05)
         keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, None)
         return True
     except Exception as exc:

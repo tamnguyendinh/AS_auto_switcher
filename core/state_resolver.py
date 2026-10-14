@@ -8,6 +8,7 @@ Resolves each account into:
   🟡 UNAUTH: In Chrome but not yet saved in accounts_store/
 """
 
+import time
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Set, Callable, Union, Dict, Any
 from scanner.chrome_scanner import (
@@ -23,6 +24,7 @@ from core.session_reloader import (
     recycle_language_server,
     is_tos_modal_present,
     dismiss_tos_modal_hardware_fallback,
+    wait_and_dismiss_tos_modal,
     inject_continuation_prompt,
 )
 from core.api_connector import (
@@ -101,6 +103,11 @@ class AccountManager:
         prompt_injector: Optional[Callable[..., bool]] = None,
         tos_modal_checker: Optional[Callable[[], bool]] = None,
         fallback_dismisser: Optional[Callable[[], None]] = None,
+        tos_watcher: Optional[Callable[..., bool]] = None,
+        dom_settle_delay: Optional[float] = None,
+        tos_timeout: Optional[float] = None,
+        tos_poll_interval: Optional[float] = None,
+        sleep_fn: Optional[Callable[[float], None]] = None,
     ):
         self.store = store or AccountStore()
         self.user_status_provider = user_status_provider
@@ -119,6 +126,11 @@ class AccountManager:
         self.prompt_injector = prompt_injector
         self.tos_modal_checker = tos_modal_checker
         self.fallback_dismisser = fallback_dismisser
+        self.tos_watcher = tos_watcher
+        self.dom_settle_delay = dom_settle_delay
+        self.tos_timeout = tos_timeout
+        self.tos_poll_interval = tos_poll_interval
+        self.sleep_fn = sleep_fn
 
     def get_current_active_email(
         self,
@@ -292,6 +304,11 @@ class AccountManager:
         prompt_injector: Optional[Callable[..., bool]] = None,
         tos_modal_checker: Optional[Callable[[], bool]] = None,
         fallback_dismisser: Optional[Callable[[], None]] = None,
+        tos_watcher: Optional[Callable[..., bool]] = None,
+        dom_settle_delay: Optional[float] = None,
+        tos_timeout: Optional[float] = None,
+        tos_poll_interval: Optional[float] = None,
+        sleep_fn: Optional[Callable[[float], None]] = None,
         **kwargs: Any,
     ) -> SwitchResult:
         """
@@ -414,7 +431,7 @@ class AccountManager:
         except Exception:
             pass
 
-        # Step 5: Recycle language_server.exe to re-bind credentials into RAM
+        # Stage 1: Recycle language_server.exe (5.0s default buffer)
         recycler = (
             language_server_recycler
             or reloader_fn
@@ -439,22 +456,77 @@ class AccountManager:
         except Exception:
             pass
 
-        # Step 6: Layer 2 ToS Dismissal Fallback check
+        # Stage 2: Execute wait_and_dismiss_tos_modal(timeout_seconds=4.5)
+        watcher = (
+            tos_watcher
+            or getattr(self, "tos_watcher", None)
+            or wait_and_dismiss_tos_modal
+        )
         checker = tos_modal_checker or getattr(self, "tos_modal_checker", None) or is_tos_modal_present
         dismisser = fallback_dismisser or getattr(self, "fallback_dismisser", None) or dismiss_tos_modal_hardware_fallback
+
+        t_timeout = tos_timeout if tos_timeout is not None else getattr(self, "tos_timeout", None)
+        if t_timeout is None:
+            t_timeout = kwargs.get("tos_timeout", 4.5)
+
+        p_interval = tos_poll_interval if tos_poll_interval is not None else getattr(self, "tos_poll_interval", None)
+        if p_interval is None:
+            p_interval = kwargs.get("tos_poll_interval", 0.25)
+
+        s_fn = sleep_fn or getattr(self, "sleep_fn", None) or time.sleep
+
         try:
-            if checker():
-                dismisser()
+            import inspect
+            w_sig = inspect.signature(watcher)
+            w_kwargs = {}
+            if "timeout_seconds" in w_sig.parameters:
+                w_kwargs["timeout_seconds"] = t_timeout
+            if "poll_interval" in w_sig.parameters:
+                w_kwargs["poll_interval"] = p_interval
+            if "modal_finder" in w_sig.parameters:
+                w_kwargs["modal_finder"] = checker
+            if "fallback_dismisser" in w_sig.parameters:
+                w_kwargs["fallback_dismisser"] = dismisser
+            elif "key_sender" in w_sig.parameters and callable(dismisser):
+                w_kwargs["key_sender"] = dismisser
+            if "sleep_fn" in w_sig.parameters:
+                w_kwargs["sleep_fn"] = s_fn
+
+            if w_kwargs:
+                watcher(**w_kwargs)
+            else:
+                watcher()
         except Exception:
             pass
 
-        # Step 7: Autonomous Prompt Continuation
+        # Stage 3: Stabilization delay of 2.5s (allowing Electron DOM to close modal and restore focus to active chat pane)
+        settle = dom_settle_delay if dom_settle_delay is not None else getattr(self, "dom_settle_delay", None)
+        if settle is None:
+            settle = kwargs.get("dom_settle_delay", 2.5)
+
+        if settle and settle > 0:
+            try:
+                s_fn(settle)
+            except Exception:
+                pass
+
+        # Stage 4: Autonomous Prompt Continuation
         should_auto_continue = self.auto_continue if auto_continue is None else bool(auto_continue)
         if should_auto_continue:
             injector = prompt_injector or getattr(self, "prompt_injector", None) or inject_continuation_prompt
             try:
                 p_text = prompt_text or getattr(self, "prompt_text", "continue") or "continue"
-                injector(prompt_text=p_text)
+                import inspect
+                i_sig = inspect.signature(injector)
+                i_kwargs = {}
+                if "prompt_text" in i_sig.parameters:
+                    i_kwargs["prompt_text"] = p_text
+                if "sleep_fn" in i_sig.parameters:
+                    i_kwargs["sleep_fn"] = s_fn
+                if i_kwargs:
+                    injector(**i_kwargs)
+                else:
+                    injector(p_text)
             except Exception:
                 pass
 
