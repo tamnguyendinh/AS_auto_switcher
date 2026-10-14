@@ -21,7 +21,7 @@ from core.credential_manager import (
     delete_antigravity_token,
     write_raw_credential,
 )
-from core.state_resolver import AccountManager, AccountInfo
+from core.state_resolver import AccountManager, AccountInfo, SwitchResult
 from core.api_connector import (
     LanguageServerInfo,
     extract_csrf_token,
@@ -1179,6 +1179,357 @@ class TestAntigravitySwitcher(unittest.TestCase):
         )
         self.assertEqual(info_meta.name, "John Doe")
         self.assertEqual(info_meta.avatar_url, "https://avatar.example.com/john.png")
+
+    def test_switch_account_full_4step_sequence(self):
+        # Setup test accounts in store
+        active_email = "account_a@gmail.com"
+        target_email = "account_b@gmail.com"
+        active_token = {"access_token": "at_a", "id_token": "mock_id_token_a"}
+        target_token = {"access_token": "at_b", "id_token": "mock_id_token_b"}
+
+        self.store.store_account(active_email, active_token)
+        self.store.store_account(target_email, target_token)
+
+        step_trace = []
+        mock_info = LanguageServerInfo(pid=8888, csrf_token="csrf-uuid-test", port=59999)
+
+        def mock_finder():
+            step_trace.append("step1_finder")
+            return mock_info
+
+        def mock_getter(info):
+            step_trace.append(("step1_getter", info.pid))
+            return {"email": active_email, "name": "Account A"}
+
+        def mock_logout(info):
+            step_trace.append(("step2_logout", info.pid))
+            return True
+
+        def mock_writer(token_data):
+            step_trace.append(("step3_writer", token_data.get("id_token")))
+            return True
+
+        def mock_reloader(info=None):
+            step_trace.append(("step4_reloader", info.pid if info else None))
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=mock_finder,
+            status_getter=mock_getter,
+            logout_fn=mock_logout,
+            token_writer=mock_writer,
+            reloader_fn=mock_reloader,
+        )
+
+        res = manager.switch_account(target_email)
+
+        # Assert result semantics (boolean truthy and tuple unpacking)
+        self.assertTrue(res)
+        self.assertEqual(res, True)
+        self.assertTrue(res.success)
+        self.assertIn(target_email, res.message)
+
+        # Verify tuple unpacking
+        success, msg = res
+        self.assertTrue(success)
+        self.assertEqual(msg, res.message)
+
+        # Verify exact 4-step sequence execution
+        self.assertEqual(len(step_trace), 5)
+        self.assertEqual(step_trace[0], "step1_finder")
+        self.assertEqual(step_trace[1], ("step1_getter", 8888))
+        self.assertEqual(step_trace[2], ("step2_logout", 8888))
+        self.assertEqual(step_trace[3], ("step3_writer", "mock_id_token_b"))
+        self.assertEqual(step_trace[4], ("step4_reloader", 8888))
+
+    def test_switch_account_idempotent_when_already_active(self):
+        active_email = "current_user@gmail.com"
+        mock_info = LanguageServerInfo(pid=7777, csrf_token="csrf-uuid-idem", port=59998)
+        step_trace = []
+
+        def mock_finder():
+            step_trace.append("finder")
+            return mock_info
+
+        def mock_getter(info):
+            step_trace.append("getter")
+            return {"email": active_email, "name": "Current Active"}
+
+        def mock_logout(info):
+            step_trace.append("logout")
+            return True
+
+        def mock_writer(token_data):
+            step_trace.append("writer")
+            return True
+
+        def mock_reloader(info=None):
+            step_trace.append("reloader")
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=mock_finder,
+            status_getter=mock_getter,
+            logout_fn=mock_logout,
+            token_writer=mock_writer,
+            reloader_fn=mock_reloader,
+        )
+
+        # Switch to the same account with varied case and surrounding whitespace
+        res = manager.switch_account("  CURRENT_USER@GMAIL.COM  ")
+
+        self.assertTrue(res)
+        self.assertEqual(res, True)
+        self.assertTrue(res.success)
+        self.assertIn("hiện đã đang hoạt động", res.message)
+
+        # Finder and getter were called in Step 1, but Steps 2-4 were skipped
+        self.assertEqual(step_trace, ["finder", "getter"])
+
+    def test_switch_account_target_missing_from_store(self):
+        active_email = "running_user@gmail.com"
+        mock_info = LanguageServerInfo(pid=6666, csrf_token="csrf-uuid-miss", port=59997)
+        step_trace = []
+
+        def mock_finder():
+            step_trace.append("finder")
+            return mock_info
+
+        def mock_getter(info):
+            step_trace.append("getter")
+            return {"email": active_email, "name": "Running User"}
+
+        def mock_logout(info):
+            step_trace.append("logout")
+            return True
+
+        def mock_writer(token_data):
+            step_trace.append("writer")
+            return True
+
+        def mock_reloader(info=None):
+            step_trace.append("reloader")
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=mock_finder,
+            status_getter=mock_getter,
+            logout_fn=mock_logout,
+            token_writer=mock_writer,
+            reloader_fn=mock_reloader,
+        )
+
+        # Target email does not exist in store
+        res = manager.switch_account("absent_user@gmail.com")
+
+        self.assertFalse(res)
+        self.assertEqual(res, False)
+        self.assertFalse(res.success)
+        self.assertIn("Chưa có file JSON của absent_user@gmail.com trong accounts_store/!", res.message)
+
+        # Safeguard verification: logout, writer, and reloader were NOT called
+        self.assertNotIn("logout", step_trace)
+        self.assertNotIn("writer", step_trace)
+        self.assertNotIn("reloader", step_trace)
+
+    def test_switch_account_language_server_not_running_fallback(self):
+        target_email = "offline_target@gmail.com"
+        target_token = {"access_token": "offline_at", "id_token": "offline_id"}
+        self.store.store_account(target_email, target_token)
+
+        step_trace = []
+
+        def mock_finder():
+            step_trace.append("finder")
+            return None  # Language server is not running
+
+        def mock_getter(info):
+            step_trace.append("getter")
+            return None
+
+        def mock_logout(info):
+            step_trace.append("logout")
+            return True
+
+        def mock_writer(token_data):
+            step_trace.append(("writer", token_data.get("id_token")))
+            return True
+
+        def mock_reloader(info=None):
+            step_trace.append(("reloader", info))
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=mock_finder,
+            status_getter=mock_getter,
+            logout_fn=mock_logout,
+            token_writer=mock_writer,
+            reloader_fn=mock_reloader,
+        )
+
+        res = manager.switch_account(target_email)
+
+        self.assertTrue(res)
+        self.assertEqual(res, True)
+        self.assertTrue(res.success)
+        self.assertIn(target_email, res.message)
+
+        # Step 2 logout was skipped because language_server is not running
+        self.assertNotIn("logout", step_trace)
+        self.assertNotIn("getter", step_trace)
+        # Step 3 writer was executed with target token
+        self.assertIn(("writer", "offline_id"), step_trace)
+        # Step 4 reloader was executed with info=None
+        self.assertIn(("reloader", None), step_trace)
+
+    def test_switch_account_writer_failure_handling(self):
+        target_email = "write_fail_target@gmail.com"
+        target_token = {"access_token": "fail_at", "id_token": "fail_id"}
+        self.store.store_account(target_email, target_token)
+
+        step_trace = []
+        mock_info = LanguageServerInfo(pid=5555, csrf_token="csrf-uuid-wfail", port=59996)
+
+        def mock_finder():
+            return mock_info
+
+        def mock_getter(info):
+            return {"email": "other_user@gmail.com"}
+
+        def mock_logout(info):
+            step_trace.append("logout")
+            return True
+
+        def mock_writer(token_data):
+            step_trace.append("writer_failed")
+            return False  # Write failed
+
+        def mock_reloader(info=None):
+            step_trace.append("reloader")
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=mock_finder,
+            status_getter=mock_getter,
+            logout_fn=mock_logout,
+            token_writer=mock_writer,
+            reloader_fn=mock_reloader,
+        )
+
+        res = manager.switch_account(target_email)
+
+        self.assertFalse(res)
+        self.assertEqual(res, False)
+        self.assertFalse(res.success)
+        self.assertIn("Không thể ghi Token vào Windows Credential Manager!", res.message)
+
+        # Reloader was NOT triggered because token write failed
+        self.assertIn("writer_failed", step_trace)
+        self.assertNotIn("reloader", step_trace)
+
+    def test_switch_account_invalid_target_email_inputs(self):
+        manager = AccountManager(store=self.store)
+
+        for invalid_input in [None, "", "   ", 123, [], {}]:
+            res = manager.switch_account(invalid_input)
+            self.assertFalse(res)
+            self.assertEqual(res, False)
+            self.assertFalse(res.success)
+            self.assertIn("Email tài khoản không hợp lệ", res.message)
+
+    def test_switch_account_method_kwarg_overrides(self):
+        target_email = "override_target@gmail.com"
+        target_token = {"access_token": "ovr_at", "id_token": "ovr_id"}
+        self.store.store_account(target_email, target_token)
+
+        invoked_calls = []
+
+        def default_finder():
+            invoked_calls.append("default_finder")
+            return None
+
+        def custom_finder():
+            invoked_calls.append("custom_finder")
+            return LanguageServerInfo(pid=4444, csrf_token="csrf-ovr", port=59995)
+
+        def custom_getter(info):
+            invoked_calls.append("custom_getter")
+            return {"email": "prev@gmail.com"}
+
+        def custom_logout(info):
+            invoked_calls.append("custom_logout")
+            return True
+
+        def custom_writer(token_data):
+            invoked_calls.append("custom_writer")
+            return True
+
+        def custom_reloader(info=None):
+            invoked_calls.append("custom_reloader")
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=default_finder,
+        )
+
+        # Pass custom mocks as keyword arguments directly to switch_account
+        res = manager.switch_account(
+            target_email,
+            logout_fn=custom_logout,
+            reloader_fn=custom_reloader,
+            token_writer=custom_writer,
+            process_finder=custom_finder,
+            status_getter=custom_getter,
+        )
+
+        self.assertTrue(res)
+        self.assertNotIn("default_finder", invoked_calls)
+        self.assertIn("custom_finder", invoked_calls)
+        self.assertIn("custom_getter", invoked_calls)
+        self.assertIn("custom_logout", invoked_calls)
+        self.assertIn("custom_writer", invoked_calls)
+        self.assertIn("custom_reloader", invoked_calls)
+
+    def test_switch_result_tuple_and_boolean_semantics(self):
+        # Truthy SwitchResult
+        res_ok = SwitchResult(True, "All good")
+        self.assertTrue(isinstance(res_ok, tuple))
+        self.assertTrue(bool(res_ok))
+        self.assertEqual(res_ok, True)
+        self.assertNotEqual(res_ok, False)
+        self.assertEqual(res_ok, (True, "All good"))
+        self.assertEqual(res_ok[0], True)
+        self.assertEqual(res_ok[1], "All good")
+        self.assertEqual(res_ok.success, True)
+        self.assertEqual(res_ok.message, "All good")
+        self.assertIn("SwitchResult", repr(res_ok))
+
+        # Falsy SwitchResult
+        res_err = SwitchResult(False, "Something went wrong")
+        self.assertTrue(isinstance(res_err, tuple))
+        self.assertFalse(bool(res_err))
+        self.assertEqual(res_err, False)
+        self.assertNotEqual(res_err, True)
+        self.assertEqual(res_err, (False, "Something went wrong"))
+        self.assertEqual(res_err[0], False)
+        self.assertEqual(res_err[1], "Something went wrong")
+        self.assertEqual(res_err.success, False)
+        self.assertEqual(res_err.message, "Something went wrong")
+
+        # Unpacking
+        s, m = res_ok
+        self.assertIs(s, True)
+        self.assertEqual(m, "All good")
+
+        s0, m0 = res_err
+        self.assertIs(s0, False)
+        self.assertEqual(m0, "Something went wrong")
 
 
 class MockHttpServerHelper:

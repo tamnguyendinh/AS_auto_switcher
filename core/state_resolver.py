@@ -18,8 +18,47 @@ from scanner.chrome_scanner import (
 from core.credential_manager import read_antigravity_token, write_antigravity_token
 from core.jwt_helper import extract_email_from_token_data
 from core.account_store import AccountStore
-from core.session_reloader import reload_antigravity_window
-from core.api_connector import find_language_server_process, get_user_status
+from core.session_reloader import reload_antigravity_window, reload_antigravity_session
+from core.api_connector import (
+    find_language_server_process,
+    get_user_status,
+    auth_logout,
+    LanguageServerInfo,
+)
+
+
+class SwitchResult(tuple):
+    """
+    Result of an account switch operation.
+    Acts simultaneously as a 2-tuple `(success: bool, message: str)` for unpacking,
+    and as a boolean (`bool(res) == res.success`, `res == True/False`) for direct boolean checks.
+    """
+    def __new__(cls, success: bool, message: str = ""):
+        return super().__new__(cls, (bool(success), str(message)))
+
+    @property
+    def success(self) -> bool:
+        return self[0]
+
+    @property
+    def message(self) -> str:
+        return self[1]
+
+    def __bool__(self) -> bool:
+        return self[0]
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, bool):
+            return self[0] == other
+        return super().__eq__(other)
+
+    def __ne__(self, other: Any) -> bool:
+        if isinstance(other, bool):
+            return self[0] != other
+        return super().__ne__(other)
+
+    def __repr__(self) -> str:
+        return f"SwitchResult(success={self[0]}, message={self[1]!r})"
 
 
 @dataclass
@@ -43,11 +82,21 @@ class AccountManager:
         user_status_provider: Optional[Callable[[], Optional[str]]] = None,
         chrome_accounts_provider: Optional[Callable[[], Union[List[str], List[ChromeAccountInfo]]]] = None,
         credential_reader: Optional[Callable[[], Optional[Dict[str, Any]]]] = None,
+        logout_fn: Optional[Callable[[Any], bool]] = None,
+        reloader_fn: Optional[Callable[..., bool]] = None,
+        token_writer: Optional[Callable[[Dict[str, Any]], bool]] = None,
+        process_finder: Optional[Callable[[], Any]] = None,
+        status_getter: Optional[Callable[[Any], Optional[Dict[str, Any]]]] = None,
     ):
         self.store = store or AccountStore()
         self.user_status_provider = user_status_provider
         self.chrome_accounts_provider = chrome_accounts_provider
         self.credential_reader = credential_reader
+        self.logout_fn = logout_fn
+        self.reloader_fn = reloader_fn
+        self.token_writer = token_writer
+        self.process_finder = process_finder
+        self.status_getter = status_getter
 
     def get_current_active_email(
         self,
@@ -72,11 +121,15 @@ class AccountManager:
                 ram_email = None
         else:
             try:
-                ls_info = find_language_server_process()
+                finder = self.process_finder or find_language_server_process
+                ls_info = finder()
                 if ls_info is not None:
-                    status_dict = get_user_status(ls_info)
+                    getter = self.status_getter or get_user_status
+                    status_dict = getter(ls_info)
                     if status_dict and isinstance(status_dict, dict):
                         ram_email = status_dict.get("email")
+                    elif isinstance(status_dict, str):
+                        ram_email = status_dict
             except Exception:
                 ram_email = None
 
@@ -200,25 +253,124 @@ class AccountManager:
 
         return active_email, account_list
 
-    def switch_account(self, target_email: str) -> Tuple[bool, str]:
+    def switch_account(
+        self,
+        target_email: str,
+        logout_fn: Optional[Callable[[Any], bool]] = None,
+        reloader_fn: Optional[Callable[..., bool]] = None,
+        token_writer: Optional[Callable[[Dict[str, Any]], bool]] = None,
+        process_finder: Optional[Callable[[], Any]] = None,
+        status_getter: Optional[Callable[[Any], Optional[Dict[str, Any]]]] = None,
+    ) -> SwitchResult:
         """
-        Switches Antigravity session to the target email.
-        Writes token from accounts_store/<email>.json to Windows Credential Manager and triggers reload.
+        Executes the Owner's Mandated 4-Step Closed-Loop Hot-Swap Coordinator:
+          Step 1 (GetUserStatus): Discover running language_server.exe and query current active email in RAM.
+                                  If already active on target_email, return True (idempotent / no-op).
+          Step 2 (AuthLogout): If language_server.exe is running, flush old credentials from RAM.
+          Step 3 (Swap Token): Load target token from store. If missing or invalid, return False.
+                               Write target token to Windows Credential Manager.
+          Step 4 (Re-Auth Trigger): Signal Antigravity to reload credentials into RAM.
         """
-        norm_email = target_email.strip().lower()
+        if not target_email or not isinstance(target_email, str):
+            return SwitchResult(False, "Email tài khoản không hợp lệ.")
 
-        # Save current session first before switching
+        norm_email = target_email.strip().lower()
+        if not norm_email:
+            return SwitchResult(False, "Email tài khoản không hợp lệ.")
+
+        # Resolve providers (method parameter override > instance attribute > default)
+        finder = process_finder or self.process_finder or find_language_server_process
+        getter = status_getter or self.status_getter or get_user_status
+
+        # Step 1 (GetUserStatus): Discover running language_server.exe and query active email
+        info: Optional[LanguageServerInfo] = None
+        current_active_email: Optional[str] = None
+
+        try:
+            info = finder()
+        except Exception:
+            info = None
+
+        if info is not None:
+            try:
+                status_res = getter(info)
+                if isinstance(status_res, dict):
+                    current_active_email = status_res.get("email")
+                elif isinstance(status_res, str):
+                    current_active_email = status_res
+            except Exception:
+                current_active_email = None
+
+        # Fallback to user_status_provider if set and info query returned nothing
+        if current_active_email is None and self.user_status_provider is not None:
+            try:
+                res = self.user_status_provider()
+                if isinstance(res, dict):
+                    current_active_email = res.get("email")
+                elif isinstance(res, str):
+                    current_active_email = res
+            except Exception:
+                pass
+
+        if current_active_email and isinstance(current_active_email, str):
+            if current_active_email.strip().lower() == norm_email:
+                return SwitchResult(True, f"Tài khoản {norm_email} hiện đã đang hoạt động.")
+
+        # Ensure current active session is captured into accounts_store before switching
         self.auto_capture_active_session()
 
-        target_token = self.store.get_account_token(norm_email)
-        if not target_token:
-            return False, f"Chưa có file JSON của {norm_email} trong accounts_store/!"
+        # Step 3 pre-check: Load target token from store.
+        # If missing or invalid, abort safely before logging out or touching credentials.
+        get_acc_fn = getattr(self.store, "get_account", None) or getattr(self.store, "get_account_token", None)
+        target_token = None
+        if callable(get_acc_fn):
+            try:
+                target_token = get_acc_fn(norm_email)
+            except Exception:
+                target_token = None
 
-        success = write_antigravity_token(target_token)
-        if not success:
-            return False, "Không thể ghi Token vào Windows Credential Manager!"
+        if isinstance(target_token, dict) and "token_data" in target_token and isinstance(target_token["token_data"], dict):
+            target_token = target_token["token_data"]
 
-        # Trigger soft reload
-        reload_antigravity_window()
+        if not target_token or not isinstance(target_token, dict):
+            return SwitchResult(False, f"Chưa có file JSON của {norm_email} trong accounts_store/!")
 
-        return True, f"Đã chuyển đổi thành công sang: {norm_email}"
+        # Step 2 (AuthLogout): Flush old credentials from RAM if language_server.exe is running
+        if info is not None:
+            logout = logout_fn or self.logout_fn or auth_logout
+            try:
+                logout(info)
+            except Exception:
+                pass
+
+        # Step 3 (Swap Token): Write target token to Windows Credential Manager
+        writer = token_writer or self.token_writer or write_antigravity_token
+        write_ok = False
+        try:
+            write_ok = bool(writer(target_token))
+        except Exception:
+            write_ok = False
+
+        if not write_ok:
+            return SwitchResult(False, "Không thể ghi Token vào Windows Credential Manager!")
+
+        # Step 4 (Re-Auth Trigger): Signal Antigravity to reload credentials into RAM
+        reloader = reloader_fn or self.reloader_fn or reload_antigravity_session
+        try:
+            import inspect
+            sig = inspect.signature(reloader)
+            if "info" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+                reloader(info=info)
+            elif len(sig.parameters) >= 1:
+                reloader(info)
+            else:
+                reloader()
+        except TypeError:
+            try:
+                reloader(info)
+            except TypeError:
+                reloader()
+        except Exception:
+            pass
+
+        return SwitchResult(True, f"Đã chuyển đổi thành công sang: {norm_email}")

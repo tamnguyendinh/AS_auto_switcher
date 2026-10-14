@@ -472,11 +472,35 @@ Matching plan item(s): `P3-A`, `P3-B`, `P3-C`
     Results: [0, 0, 0, 0, 0]
     ```
 
+### P3-C Execution Evidence
+
+- `E3-P3C-SW1`: 4-Step Closed-Loop Hot-Swap Coordinator in `core/state_resolver.py`:
+  - Implemented `AccountManager.switch_account(self, target_email: str, ...)` executing the complete 4-step closed-loop coordinator:
+    * Step 1 (`GetUserStatus`): Discovers running `language_server.exe` (`find_language_server_process`) and queries active email via `get_user_status(info)`. If target account is already active, returns immediately with `SwitchResult(True, ...)` (idempotent / no-op). Automatically captures current active session before switching.
+    * Step 2 (`AuthLogout`): If `language_server.exe` is running, executes `auth_logout(info)` to flush old session credentials from RAM. If language server is not running, gracefully skips this step.
+    * Step 3 (`Swap Token`): Loads target token from store (`self.store.get_account` / `self.store.get_account_token`). If missing or invalid, immediately aborts with `SwitchResult(False, ...)` without touching credentials or logging out the active session. Writes validated target token to Windows Credential Manager via `write_antigravity_token(target_token)`.
+    * Step 4 (`Re-Auth Trigger`): Signals Antigravity to reload credentials into RAM via `reload_antigravity_session(info=info)` (coordinating backend Re-Auth with frontend Electron window refresh).
+  - Dependency Injection Support: `AccountManager` accepts optional DI hooks (`logout_fn`, `reloader_fn`, `token_writer`, `process_finder`, `status_getter`) in both constructor and `switch_account` keyword arguments for 100% deterministic, hermetic unit testing without touching live host processes.
+  - Dual Semantic Result: `SwitchResult` class inherits from `tuple` providing seamless tuple unpacking `success, msg = manager.switch_account(target_email)` for UI compatibility, while implementing `__bool__` and `__eq__` so it behaves directly as a boolean (`if res:`, `res == True`, `res == False`).
+  - Unit Test Suite Validation in `tests/test_all.py` (43 passing tests):
+    * `test_switch_account_full_4step_sequence`: verifies exact ordered execution of all 4 steps (`step1_finder` -> `step1_getter` -> `step2_logout` -> `step3_writer` -> `step4_reloader`), correct token propagation to Credential Manager writer, and correct process info propagation to logout and reloader.
+    * `test_switch_account_idempotent_when_already_active`: verifies no-op when target account is already active in RAM; Steps 2-4 skipped.
+    * `test_switch_account_target_missing_from_store`: verifies safe abort when target token is absent from store; existing session is preserved and no logout/credential write occurs.
+    * `test_switch_account_language_server_not_running_fallback`: verifies graceful handling when language server is offline (skips Step 2 logout, completes Step 3 credential write and Step 4 reload trigger).
+    * `test_switch_account_writer_failure_handling`: verifies failure when token writer returns False; Step 4 reload trigger is aborted.
+    * `test_switch_account_invalid_target_email_inputs`: verifies rejection of None, empty, whitespace, and non-string inputs.
+    * `test_switch_account_method_kwarg_overrides`: verifies method-level keyword arguments override instance defaults.
+    * `test_switch_result_tuple_and_boolean_semantics`: verifies unpacking, boolean truthiness, equality, and indexing of `SwitchResult`.
+  - Multi-run batch verification (5 sequential runs of 43 tests):
+    ```text
+    Results: [0, 0, 0, 0, 0]
+    ```
+
 Planned Evidence Targets:
 - `E3-P3A-SCAN1`: Multi-profile Chrome discovery output with truthful 7-account detection (Achieved).
 - `E3-P3B-STATE1`: State machine output matrix resolving 🟢 ACTIVE, 🟢 READY, 🟡 UNAUTH (Achieved).
 - `E3-P3-CLEAN1`: Elimination of blacklist filtering and truthful discovery of `hokinhdoanh.anvien.sales@gmail.com` (Achieved).
-- `E3-P3C-SW1`: Execution of full 4-step hot-swap loop (GetUserStatus -> AuthLogout -> Credential write -> ReAuth trigger).
+- `E3-P3C-SW1`: Execution of full 4-step hot-swap loop (GetUserStatus -> AuthLogout -> Credential write -> ReAuth trigger) (Achieved).
 
 ## E4 - P4 Evidence
 
