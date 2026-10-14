@@ -996,7 +996,7 @@ Re-architect and implement the Antigravity Multi-Account Switcher to provide sea
   - Implementation Gate: All planned implementation phases (P1 through P5) must be completed or explicitly blocked.
   - Acceptance: Supervisor review passes, or plan records a blocker with evidence.
 
-- [ ] Pn-B: Remove dead work created during this plan.
+- [x] Pn-B: Remove dead work created during this plan.
   - Goal: Ensure final diff contains only artifacts that serve the accepted plan.
   - Work Steps:
     1. Review files, sections, temp files, and plan artifacts created or modified during this plan.

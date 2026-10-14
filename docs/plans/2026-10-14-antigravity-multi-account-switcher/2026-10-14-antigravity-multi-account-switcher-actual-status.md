@@ -109,6 +109,7 @@ Out of scope:
 | R12 | 2026-10-14 | commit 4673f40 (Slice P5-A) | `tests/test_all.py` | P5-A complete: expanded comprehensive unit and integration test suite (API connector, 4-step switching flow, store, credential manager) verified | `E5-P5A-UNIT1` | Proceed to Slice P5-B (End-to-End Switching Cycle & Robustness Verification) |
 | R13 | 2026-10-14 | Slice P5-B | `core/session_reloader.py`, `core/state_resolver.py`, `tests/test_all.py` | P5-B complete: PID-based window discovery and smooth zero-chrome hot-swap implemented; 68/68 tests passing across 5 consecutive runs | `E5-P5B-REG1` | Proceed to Supervisor loop (Pn-A) |
 | R14 | 2026-10-14 | commit a34a6f8 (Slice Pn-A) | `docs/plans/` | Supervisor verification loop PASS on commit a34a6f8 | `E-PNA-VERIFY1` | Proceed to Slice Pn-B (Remove dead work created during this plan) |
+| R15 | 2026-10-14 | commit 9c9d862 (Slice Pn-B) | `core/`, `scanner/`, `tests/` | Dead code purge verified by Supervisor PASS on commit 9c9d862 | `E-PNB-CLEAN1` | Proceed to Slice Pn-C (Close the plan) |
 
 ## Phase Touch Map
 

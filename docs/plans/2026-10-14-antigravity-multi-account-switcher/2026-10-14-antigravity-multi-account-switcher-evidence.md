@@ -733,6 +733,15 @@ Matching plan item(s): `Pn-A`, `Pn-B`, `Pn-C`
   - Batch Stability: `Batch Results: [0, 0, 0, 0, 0]`
   - Verdict: `[VERDICT: PASS]`
 
+### Pn-B Execution Evidence
+
+- `E-PNB-CLEAN1`: Dead code cleanup verification proof:
+  - Target Commit: `9c9d8627ba13de9d481a994a154c58375354e6f3`
+  - Supervisor Report: `reports/supervisor/2026-10-15-pnb-dead-code-verification-report.md`
+  - Dead Code Purged: 5 unused imports removed, obsolete `core/vault.py` deleted.
+  - Verification: Compilation 0 errors, 68/68 unit tests passed, 5 sequential batch runs `[0, 0, 0, 0, 0]`.
+  - Verdict: `[VERDICT: PASS]`
+
 ## Closure Evidence
 
 Use this section for final detect-changes, commit hash, and closure evidence when the plan reaches completion.
