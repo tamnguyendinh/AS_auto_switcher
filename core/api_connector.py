@@ -224,3 +224,144 @@ def find_language_server_process(
             return LanguageServerInfo(pid=pid, csrf_token=token, port=port)
 
     return None
+
+
+DEFAULT_USER_STATUS_ENDPOINTS = [
+    "/exa.language_server_pb.LanguageServerService/GetUserStatus",
+    "/GetUserStatus",
+    "/user_status",
+]
+
+DEFAULT_AUTH_LOGOUT_ENDPOINTS = [
+    "/exa.language_server_pb.LanguageServerService/AuthLogout",
+    "/AuthLogout",
+    "/logout",
+]
+
+
+def get_user_status(
+    info: Optional[LanguageServerInfo],
+    timeout: float = 2.0,
+    endpoint: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Query active user status from Antigravity Language Server RAM.
+    Connects to loopback base URL (http://127.0.0.1:<port>) and passes CSRF token headers.
+    Returns dict containing 'email', 'name', 'display_name', 'status', or None on failure/timeout.
+    """
+    if not info or not isinstance(info, LanguageServerInfo):
+        return None
+    if info.port <= 0 or not info.csrf_token:
+        return None
+
+    endpoints = [endpoint] if endpoint else DEFAULT_USER_STATUS_ENDPOINTS
+    headers = {
+        "Content-Type": "application/json",
+        "X-Csrf-Token": info.csrf_token,
+        "x-codeium-csrf-token": info.csrf_token,
+    }
+
+    for ep in endpoints:
+        url = f"{info.base_url}{ep}"
+        req = urllib.request.Request(
+            url,
+            data=b"{}",
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status != 200:
+                    continue
+                content = resp.read().decode("utf-8")
+                try:
+                    data = json.loads(content)
+                except Exception:
+                    # Received non-JSON (e.g. HTML fallback page)
+                    continue
+                if not isinstance(data, dict):
+                    continue
+
+                user_obj = data.get("userStatus") or data.get("user_status")
+                if not isinstance(user_obj, dict):
+                    user_obj = data
+
+                email = user_obj.get("email") or data.get("email")
+                name = (
+                    user_obj.get("name")
+                    or user_obj.get("display_name")
+                    or data.get("name")
+                    or data.get("display_name")
+                )
+                status = (
+                    user_obj.get("planStatus")
+                    or user_obj.get("status")
+                    or data.get("status")
+                    or "ACTIVE"
+                )
+
+                return {
+                    "email": email,
+                    "name": name,
+                    "display_name": name,
+                    "status": status,
+                    "user_status": user_obj,
+                    "raw": data,
+                }
+        except urllib.error.HTTPError as err:
+            logger.debug("get_user_status HTTP error on %s: %s", ep, err.code)
+            if err.code in (404, 405):
+                continue
+            return None
+        except Exception as exc:
+            logger.debug("get_user_status request failed on %s: %s", ep, exc)
+            continue
+
+    return None
+
+
+def auth_logout(
+    info: Optional[LanguageServerInfo],
+    timeout: float = 2.0,
+    endpoint: Optional[str] = None,
+) -> bool:
+    """
+    Issue AuthLogout request to Antigravity Language Server to purge active session from RAM.
+    Connects to loopback base URL (http://127.0.0.1:<port>) and passes CSRF token headers.
+    Returns True on HTTP 200/204 response, False on failure/error/timeout.
+    """
+    if not info or not isinstance(info, LanguageServerInfo):
+        return False
+    if info.port <= 0 or not info.csrf_token:
+        return False
+
+    endpoints = [endpoint] if endpoint else DEFAULT_AUTH_LOGOUT_ENDPOINTS
+    headers = {
+        "Content-Type": "application/json",
+        "X-Csrf-Token": info.csrf_token,
+        "x-codeium-csrf-token": info.csrf_token,
+    }
+
+    for ep in endpoints:
+        url = f"{info.base_url}{ep}"
+        req = urllib.request.Request(
+            url,
+            data=b"{}",
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status in (200, 204):
+                    return True
+        except urllib.error.HTTPError as err:
+            logger.debug("auth_logout HTTP error on %s: %s", ep, err.code)
+            if err.code in (404, 405):
+                continue
+            return False
+        except Exception as exc:
+            logger.debug("auth_logout request failed on %s: %s", ep, exc)
+            continue
+
+    return False
+

@@ -24,7 +24,12 @@ from core.api_connector import (
     discover_listening_port,
     discover_listening_ports,
     find_language_server_process,
+    get_user_status,
+    auth_logout,
 )
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 
 
 class TestAntigravitySwitcher(unittest.TestCase):
@@ -406,7 +411,222 @@ class TestAntigravitySwitcher(unittest.TestCase):
             self.assertGreater(info.port, 1024)
             self.assertTrue(info.base_url.startswith("http://127.0.0.1:"))
 
+    def test_get_user_status_mock_success(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=1234, csrf_token="test-token-uuid-111", port=server.port)
+
+            # Case 1: Standard Connect-RPC response structure
+            server.response_status = 200
+            server.response_body = json.dumps({
+                "userStatus": {
+                    "email": "alice@example.com",
+                    "name": "Alice Dev",
+                    "planStatus": "PRO"
+                }
+            }).encode("utf-8")
+
+            res1 = get_user_status(info)
+            self.assertIsNotNone(res1)
+            self.assertEqual(res1["email"], "alice@example.com")
+            self.assertEqual(res1["name"], "Alice Dev")
+            self.assertEqual(res1["display_name"], "Alice Dev")
+            self.assertEqual(res1["status"], "PRO")
+            self.assertEqual(server.last_headers.get("x-csrf-token"), info.csrf_token)
+            self.assertEqual(server.last_headers.get("x-codeium-csrf-token"), info.csrf_token)
+            self.assertIn("application/json", server.last_headers.get("content-type", ""))
+
+            # Case 2: Snake_case response structure
+            server.response_body = json.dumps({
+                "user_status": {
+                    "email": "bob@example.com",
+                    "display_name": "Bob Builder",
+                    "status": "ACTIVE"
+                }
+            }).encode("utf-8")
+
+            res2 = get_user_status(info)
+            self.assertIsNotNone(res2)
+            self.assertEqual(res2["email"], "bob@example.com")
+            self.assertEqual(res2["display_name"], "Bob Builder")
+            self.assertEqual(res2["status"], "ACTIVE")
+
+            # Case 3: Flat dictionary response structure
+            server.response_body = json.dumps({
+                "email": "carol@example.com",
+                "name": "Carol Danvers",
+                "status": "ONLINE"
+            }).encode("utf-8")
+
+            res3 = get_user_status(info)
+            self.assertIsNotNone(res3)
+            self.assertEqual(res3["email"], "carol@example.com")
+            self.assertEqual(res3["name"], "Carol Danvers")
+            self.assertEqual(res3["status"], "ONLINE")
+        finally:
+            server.stop()
+
+    def test_get_user_status_mock_errors_and_timeout(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=1234, csrf_token="test-token-uuid-222", port=server.port)
+
+            # 401 Unauthorized
+            server.response_status = 401
+            server.response_body = json.dumps({"error": "unauthenticated"}).encode("utf-8")
+            self.assertIsNone(get_user_status(info))
+
+            # 403 Forbidden
+            server.response_status = 403
+            server.response_body = json.dumps({"error": "forbidden"}).encode("utf-8")
+            self.assertIsNone(get_user_status(info))
+
+            # 500 Internal Server Error
+            server.response_status = 500
+            server.response_body = json.dumps({"error": "internal error"}).encode("utf-8")
+            self.assertIsNone(get_user_status(info))
+
+            # 200 with non-JSON HTML error page
+            server.response_status = 200
+            server.response_body = b"<html><head><title>502 Bad Gateway</title></head><body>Error</body></html>"
+            self.assertIsNone(get_user_status(info))
+
+            # Network timeout
+            server.delay = 0.25
+            self.assertIsNone(get_user_status(info, timeout=0.03))
+            server.delay = 0.0
+
+            # Unreachable closed port
+            closed_info = LanguageServerInfo(pid=1234, csrf_token="test-token", port=65534)
+            self.assertIsNone(get_user_status(closed_info, timeout=0.1))
+        finally:
+            server.stop()
+
+    def test_auth_logout_mock_success(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=1234, csrf_token="test-token-uuid-333", port=server.port)
+
+            # 200 OK
+            server.response_status = 200
+            server.response_body = b"{}"
+            self.assertTrue(auth_logout(info))
+            self.assertEqual(server.last_headers.get("x-csrf-token"), info.csrf_token)
+            self.assertEqual(server.last_headers.get("x-codeium-csrf-token"), info.csrf_token)
+
+            # 204 No Content
+            server.response_status = 204
+            server.response_body = b""
+            self.assertTrue(auth_logout(info))
+        finally:
+            server.stop()
+
+    def test_auth_logout_mock_errors_and_timeout(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=1234, csrf_token="test-token-uuid-444", port=server.port)
+
+            # 500 Internal Server Error
+            server.response_status = 500
+            server.response_body = b"{\"error\": \"internal error\"}"
+            self.assertFalse(auth_logout(info))
+
+            # 401 Unauthorized
+            server.response_status = 401
+            self.assertFalse(auth_logout(info))
+
+            # Network timeout
+            server.delay = 0.25
+            self.assertFalse(auth_logout(info, timeout=0.03))
+            server.delay = 0.0
+
+            # Unreachable closed port
+            closed_info = LanguageServerInfo(pid=1234, csrf_token="test-token", port=65534)
+            self.assertFalse(auth_logout(closed_info, timeout=0.1))
+        finally:
+            server.stop()
+
+    def test_api_connector_invalid_info_graceful_handling(self):
+        # get_user_status invalid arguments
+        self.assertIsNone(get_user_status(None))
+        self.assertIsNone(get_user_status("not-an-info-object"))  # type: ignore
+        self.assertIsNone(get_user_status(LanguageServerInfo(pid=0, csrf_token="", port=0)))
+        self.assertIsNone(get_user_status(LanguageServerInfo(pid=123, csrf_token="token", port=-1)))
+        self.assertIsNone(get_user_status(LanguageServerInfo(pid=123, csrf_token="", port=8080)))
+
+        # auth_logout invalid arguments
+        self.assertFalse(auth_logout(None))
+        self.assertFalse(auth_logout("not-an-info-object"))  # type: ignore
+        self.assertFalse(auth_logout(LanguageServerInfo(pid=0, csrf_token="", port=0)))
+        self.assertFalse(auth_logout(LanguageServerInfo(pid=123, csrf_token="token", port=-1)))
+        self.assertFalse(auth_logout(LanguageServerInfo(pid=123, csrf_token="", port=8080)))
+
+    def test_live_get_user_status(self):
+        info = find_language_server_process()
+        if info is not None:
+            status = get_user_status(info)
+            self.assertIsNotNone(status)
+            self.assertIn("email", status)
+            self.assertTrue("@" in status["email"])
+            self.assertIsNotNone(status.get("status"))
+
+
+class MockHttpServerHelper:
+    """Helper to spin up an in-process loopback HTTP server on an ephemeral port for testing."""
+
+    def __init__(self):
+        self.server = None
+        self.thread = None
+        self.port = 0
+        self.last_headers = {}
+        self.last_path = ""
+        self.response_status = 200
+        self.response_body = b"{}"
+        self.response_headers = {"Content-Type": "application/json"}
+        self.delay = 0.0
+
+    def start(self):
+        helper = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass  # suppress stderr log spam
+
+            def do_POST(self):
+                if helper.delay > 0:
+                    time.sleep(helper.delay)
+                helper.last_path = self.path
+                helper.last_headers = {k.lower(): v for k, v in self.headers.items()}
+                self.send_response(helper.response_status)
+                for k, v in helper.response_headers.items():
+                    self.send_header(k, v)
+                self.end_headers()
+                try:
+                    self.wfile.write(helper.response_body)
+                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                    pass
+
+            def do_GET(self):
+                self.do_POST()
+
+        self.server = HTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_port
+        self.thread = threading.Thread(target=self.server.serve_forever)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def stop(self):
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
+            self.thread.join(timeout=1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

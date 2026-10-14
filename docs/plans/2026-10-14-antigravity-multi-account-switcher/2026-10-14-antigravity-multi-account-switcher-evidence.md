@@ -170,10 +170,67 @@ Matching plan item(s): `P2-A`, `P2-B`, `P2-C`
   OK
   ```
 
+### P2-B Execution Evidence
+
+- `E2-P2B-API1`: `get_user_status()` HTTP API client implementation in `core/api_connector.py`.
+  - Communicates with loopback Connect-RPC/REST endpoint (`/exa.language_server_pb.LanguageServerService/GetUserStatus`, `/GetUserStatus`, `/user_status`) with headers `X-Csrf-Token` and `x-codeium-csrf-token`.
+  - Successfully parses response into dict with `email`, `name`, `display_name`, and `status`. Returns `None` on 401/403/500/HTML/timeout without throwing uncaught exceptions.
+  - Verified live against active Antigravity language server PID 17516:
+    - Target: `http://127.0.0.1:59227/exa.language_server_pb.LanguageServerService/GetUserStatus`
+    - Live User Email: `hiendao1760@gmail.com`
+    - Live Display Name: `Hiền Đào thị`
+    - Live Status: `ACTIVE`
+  - Validated via unit test suite in `tests/test_all.py`:
+    - `test_get_user_status_mock_success`: verifies Connect-RPC nested format, snake_case format, flat dict format, headers propagation (`X-Csrf-Token` and `x-codeium-csrf-token`).
+    - `test_get_user_status_mock_errors_and_timeout`: verifies 401, 403, 500, non-JSON HTML error page, network socket timeout, and unreachable ports return `None`.
+    - `test_api_connector_invalid_info_graceful_handling`: verifies `None`, non-dataclass, zero port, negative port, empty token return `None`.
+    - `test_live_get_user_status`: verifies live query against host Antigravity language server.
+
+- `E2-P2B-API2`: `auth_logout()` HTTP API client implementation in `core/api_connector.py`.
+  - Sends POST request to candidate logout endpoints (`/exa.language_server_pb.LanguageServerService/AuthLogout`, `/AuthLogout`, `/logout`) with headers `X-Csrf-Token` and `x-codeium-csrf-token`.
+  - Returns `True` on HTTP 200/204 response. Returns `False` on 401/500 error or network timeout without throwing uncaught exceptions.
+  - Validated via unit test suite in `tests/test_all.py`:
+    - `test_auth_logout_mock_success`: verifies HTTP 200 and 204 responses return `True`, header propagation verified (`X-Csrf-Token` and `x-codeium-csrf-token`).
+    - `test_auth_logout_mock_errors_and_timeout`: verifies HTTP 500, 401, network socket timeout, unreachable ports return `False`.
+    - `test_api_connector_invalid_info_graceful_handling`: verifies invalid/missing `LanguageServerInfo` returns `False`.
+  - Full test suite output:
+    ```text
+    python -m unittest -v tests/test_all.py
+    test_account_store_atomic_write_and_payload (tests.test_all.TestAntigravitySwitcher.test_account_store_atomic_write_and_payload) ... ok
+    test_account_store_corrupted_json (tests.test_all.TestAntigravitySwitcher.test_account_store_corrupted_json) ... ok
+    test_account_store_json_files (tests.test_all.TestAntigravitySwitcher.test_account_store_json_files) ... ok
+    test_api_connector_invalid_info_graceful_handling (tests.test_all.TestAntigravitySwitcher.test_api_connector_invalid_info_graceful_handling) ... ok
+    test_auth_logout_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_auth_logout_mock_errors_and_timeout) ... ok
+    test_auth_logout_mock_success (tests.test_all.TestAntigravitySwitcher.test_auth_logout_mock_success) ... ok
+    test_auto_capture_active_session (tests.test_all.TestAntigravitySwitcher.test_auto_capture_active_session) ... ok
+    test_blacklist_enforcement (tests.test_all.TestAntigravitySwitcher.test_blacklist_enforcement) ... ok
+    test_credential_manager_read_edge_cases (tests.test_all.TestAntigravitySwitcher.test_credential_manager_read_edge_cases) ... ok
+    test_credential_manager_round_trip_and_delete (tests.test_all.TestAntigravitySwitcher.test_credential_manager_round_trip_and_delete) ... ok
+    test_credential_manager_write_validation (tests.test_all.TestAntigravitySwitcher.test_credential_manager_write_validation) ... ok
+    test_discover_listening_port_mocked (tests.test_all.TestAntigravitySwitcher.test_discover_listening_port_mocked) ... ok
+    test_extract_csrf_token_formats_and_edge_cases (tests.test_all.TestAntigravitySwitcher.test_extract_csrf_token_formats_and_edge_cases) ... ok
+    test_find_language_server_process_mocked (tests.test_all.TestAntigravitySwitcher.test_find_language_server_process_mocked) ... ok
+    test_get_user_status_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_get_user_status_mock_errors_and_timeout) ... ok
+    test_get_user_status_mock_success (tests.test_all.TestAntigravitySwitcher.test_get_user_status_mock_success) ... ok
+    test_jwt_payload_decode (tests.test_all.TestAntigravitySwitcher.test_jwt_payload_decode) ... ok
+    test_language_server_info_dataclass (tests.test_all.TestAntigravitySwitcher.test_language_server_info_dataclass) ... ok
+    test_live_chrome_scanner (tests.test_all.TestAntigravitySwitcher.test_live_chrome_scanner) ... ok
+    test_live_credential_read (tests.test_all.TestAntigravitySwitcher.test_live_credential_read) ... ok
+    test_live_find_language_server_process (tests.test_all.TestAntigravitySwitcher.test_live_find_language_server_process) ... ok
+    test_live_get_user_status (tests.test_all.TestAntigravitySwitcher.test_live_get_user_status) ... ok
+    test_sanitize_filename_edge_cases (tests.test_all.TestAntigravitySwitcher.test_sanitize_filename_edge_cases) ... ok
+    test_state_resolver_with_account_store (tests.test_all.TestAntigravitySwitcher.test_state_resolver_with_account_store) ... ok
+
+    ----------------------------------------------------------------------
+    Ran 24 tests in 4.345s
+
+    OK
+    ```
+
 Planned Evidence Targets:
 - `E2-P2A-DISC1`: Automated discovery of `language_server.exe` PID, listening port, and `--csrf_token` argument from process table and TCP connection state (Achieved).
-- `E2-P2B-API1`: `GetUserStatus()` invocation returning active email and display name from language server RAM.
-- `E2-P2B-API2`: `AuthLogout()` invocation returning HTTP 200 / success and clearing active session in language server RAM.
+- `E2-P2B-API1`: `GetUserStatus()` invocation returning active email and display name from language server RAM (Achieved).
+- `E2-P2B-API2`: `AuthLogout()` invocation returning HTTP 200 / success and clearing active session in language server RAM (Achieved).
 - `E2-P2C-REAUTH1`: Re-Auth trigger signaling language server to re-read Windows Credential and log `Auth succeeded` for Account B.
 
 ## E3 - P3 Evidence
