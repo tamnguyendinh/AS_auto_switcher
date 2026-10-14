@@ -787,7 +787,17 @@ class MockHttpServerHelper:
     def start(self):
         helper = self
 
+        class StoppableHTTPServer(HTTPServer):
+            allow_reuse_address = True
+            daemon_threads = True
+
+            def handle_error(self, request, client_address):
+                # Suppress benign client disconnects during teardown/rapid requests
+                pass
+
         class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
             def log_message(self, format, *args):
                 pass  # suppress stderr log spam
 
@@ -796,6 +806,18 @@ class MockHttpServerHelper:
                     time.sleep(helper.delay)
                 helper.last_path = self.path
                 helper.last_headers = {k.lower(): v for k, v in self.headers.items()}
+
+                # Safely drain incoming request body to avoid Windows TCP RST on socket close
+                try:
+                    content_length = int(self.headers.get("Content-Length", 0))
+                except (ValueError, TypeError):
+                    content_length = 0
+                if content_length > 0:
+                    try:
+                        self.rfile.read(content_length)
+                    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                        pass
+
                 status = helper.path_status_map.get(self.path, helper.response_status)
                 self.send_response(status)
                 for k, v in helper.response_headers.items():
@@ -806,24 +828,38 @@ class MockHttpServerHelper:
                 self.close_connection = True
                 try:
                     self.wfile.write(helper.response_body)
+                    self.wfile.flush()
                 except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
                     pass
 
             def do_GET(self):
                 self.do_POST()
 
-        self.server = HTTPServer(("127.0.0.1", 0), Handler)
+            def finish(self):
+                try:
+                    super().finish()
+                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                    pass
+
+        self.server = StoppableHTTPServer(("127.0.0.1", 0), Handler)
         self.port = self.server.server_port
-        self.thread = threading.Thread(target=self.server.serve_forever)
-        self.thread.daemon = True
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         time.sleep(0.05)
 
     def stop(self):
         if self.server:
-            self.server.shutdown()
-            self.server.server_close()
-            self.thread.join(timeout=1.0)
+            try:
+                self.server.shutdown()
+            except Exception:
+                pass
+            try:
+                self.server.server_close()
+            except Exception:
+                pass
+            if self.thread and self.thread.is_alive():
+                self.thread.join(timeout=1.5)
+            time.sleep(0.02)
 
 
 if __name__ == "__main__":

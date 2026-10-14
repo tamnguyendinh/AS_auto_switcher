@@ -282,6 +282,25 @@ Matching plan item(s): `P2-A`, `P2-B`, `P2-C`
     OK
     ```
 
+- `E2-P2C-STAB1`: Socket lifecycle and `MockHttpServerHelper` stabilization on Windows:
+  - Remediated intermittent `[WinError 10053]` connection aborted errors during rapid sequential HTTP calls on ephemeral ports:
+    - Set `protocol_version = "HTTP/1.1"` in handler.
+    - Drained incoming request body (`self.rfile.read(content_length)`) to prevent Winsock from sending TCP RST on socket close.
+    - Added explicit output stream flushing (`self.wfile.flush()`) before socket teardown.
+    - Created `StoppableHTTPServer` with `allow_reuse_address = True`, `daemon_threads = True`, and suppressed benign disconnect errors during shutdown.
+    - Handled socket errors safely in `finish()` and improved `stop()` with thread join timeout and port release settling delay.
+  - Multi-run batch validation:
+    - 5-consecutive-run verification:
+      ```text
+      python -c "import subprocess, sys; res = [subprocess.run([sys.executable, '-m', 'unittest', 'tests/test_all.py'], capture_output=True).returncode for _ in range(5)]; print('Results:', res); assert all(r == 0 for r in res)"
+      Results: [0, 0, 0, 0, 0]
+      ```
+    - 10-consecutive-run verification:
+      ```text
+      python -c "import subprocess, sys; res = [subprocess.run([sys.executable, '-m', 'unittest', 'tests/test_all.py'], capture_output=True).returncode for _ in range(10)]; print('Results:', res); assert all(r == 0 for r in res)"
+      Results: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ```
+
 Planned Evidence Targets:
 - `E2-P2A-DISC1`: Automated discovery of `language_server.exe` PID, listening port, and `--csrf_token` argument from process table and TCP connection state (Achieved).
 - `E2-P2B-API1`: `GetUserStatus()` invocation returning active email and display name from language server RAM (Achieved).
