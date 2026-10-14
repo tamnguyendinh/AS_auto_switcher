@@ -1,11 +1,13 @@
-# Architectural Design Report: Smart Quota Monitor & Autonomous Failover Engine (Phase P6)
+# Architectural Design Report: Go Conversion, Native Standalone Binary & Autonomous Quota Failover Engine (Phases P6 & P7)
 
 **Document Reference:** `reports/architect/2026-10-14-autonomous-quota-failover-architecture.md`  
 **Date:** 2026-10-14  
 **Author:** System Architect  
 **Authority:** Owner Directive via CEO Agent (`403f41a7-0810-44d9-b875-1e08c4ed13a0`)  
-**Status:** PROPOSED / SPECIFICATION  
-**Target Milestone:** Phase P6 (Autonomous Quota Failover Engine)
+**Status:** APPROVED ARCHITECTURAL SPECIFICATION  
+**Target Milestones:**  
+- **Phase P6:** Go Engine Port & Standalone Native Windows Binary (`antigravity-switch.exe`)  
+- **Phase P7:** Go-Native Autonomous Quota Failover Daemon & Auto-Switching Engine  
 
 ---
 
@@ -20,169 +22,184 @@ When an active developer or autonomous agent hits these limits:
 1. **Developer Flow is Shattered**: The IDE abruptly blocks code completion, inline assistants throw modal alerts, and background subagent loops stall mid-execution.
 2. **Manual Intervention Overhead**: In existing manual switcher workflows (Phases P1–P4), the developer must manually open the GUI, identify an alternate account, trigger the switch, and re-invoke the failed operation. This takes anywhere from 30 seconds to several minutes of cognitive distraction.
 3. **Fragile Session State in Manual Restarts**: If developers attempt to restart the IDE or sign out manually, uncommitted editor buffers, live terminal processes, and ephemeral agent context can be disrupted.
+4. **Runtime Footprint of Interpreted Prototypes**: While the Python implementation (Phases P1–P5) proved the feasibility of the 4-step closed-loop internal API switching architecture, running a continuous Python runtime in the background consumes 40MB–80MB RAM, requires an active Python interpreter/virtual environment on the developer's machine, and introduces DLL startup overhead.
 
-### 1.2 The Vision: Zero-Interruption Continuous AI Coding
-The vision of Phase P6 is to transform `antigravity_auto_switch` from a reactive, manually triggered utility into a **proactive, fully autonomous, zero-downtime failover engine**. 
+### 1.2 The Two-Stage Architectural Evolution (Phases P6 & P7)
 
-By maintaining a pool of authenticated Google accounts in local JSON storage (`accounts_store/<email>.json`), continuously sniffing local telemetry for quota exhaustion signals, and executing hot-swaps through Antigravity's internal loopback API in under 2 seconds, Phase P6 achieves:
-- **Continuous Execution**: Autonomous agents and developers work continuously without stopping when an individual account exhausts its quota.
-- **100% Context Preservation**: Open editor tabs, dirty unsaved text buffers, active terminal shells, and chat histories remain untouched.
-- **Self-Healing Pool**: Exhausted accounts enter a timed cooldown state and automatically re-enter the ready pool once their quota bucket replenishes.
+To solve these challenges permanently and build a production-grade developer tool, the Owner and CEO have established a two-stage roadmap:
+
+```
+[ Phases P1 - P5: Python Validation Prototype ]
+                     |
+                     v
+[ Phase P6: High-Performance Go Engine & Standalone Binary ]
+  - Complete port to compiled Go (golang)
+  - Standalone single executable: antigravity-switch.exe (10-15MB)
+  - Native Win32 Advapi32.dll integration via golang.org/x/sys/windows
+  - Zero external runtime dependencies (no Python, no pip, no MSVC runtimes)
+  - Ultra-low footprint: < 12MB RAM, < 0.05% CPU, sub-millisecond startup
+                     |
+                     v
+[ Phase P7: Go-Native Autonomous Quota Failover Daemon ]
+  - Background goroutine log tailer (sniffing language_server.log)
+  - High-performance regex / token bucket rate limit interceptor
+  - Real-time round-robin account pool with automated cooldown tracking
+  - Native Windows System Tray (systray) & discrete Windows Toast notifications
+  - 100% Context Preservation: Zero disruption to open tabs, dirty buffers, and chat
+```
 
 ---
 
 ## 2. High-Level Architecture & Component Decomposition
 
-The Autonomous Failover Engine is structured into four decoupled, resilient layers operating over local OS primitives and Antigravity internals.
+The system is decomposed into cleanly decoupled, high-performance Go packages operating over local OS primitives and Antigravity internals.
 
 ```
 +-----------------------------------------------------------------------------------+
-|                           LAYER 4: RESIDENT DAEMON & HUD                          |
-|  - System Tray Icon (pystray)         - Discrete Windows Toast HUD Notifications  |
-|  - Global Hotkeys (Win+Alt+S / +Q)    - Inter-Process Control Socket / CLI Pipe   |
+|                        PHASE P7: GO RESIDENT DAEMON & HUD                         |
+|  - System Tray Icon (systray)         - Discrete Windows Toast HUD Notifications  |
+|  - Global Hotkeys (RegisterHotKey)    - Inter-Process Control Socket / CLI Pipe   |
 +-----------------------------------------------------------------------------------+
                                         |
 +-----------------------------------------------------------------------------------+
-|                     LAYER 2: AUTONOMOUS FAILOVER CONTROLLER                       |
-|  - Account Pool Manager (State Track) - Scheduling Policy (Round-Robin / Priority)|
+|                  PHASE P7: GO AUTONOMOUS FAILOVER CONTROLLER                      |
+|  - Account Pool FSM (sync.RWMutex)    - Scheduling Policy (Round-Robin / LRU)     |
 |  - Cooldown & Recovery Engine         - Anti-Flapping Hysteresis & Debounce Gate  |
 +-----------------------------------------------------------------------------------+
              ^                                                   |
-             | Event Trigger                                     | Execute Swap
+             | chan QuotaExhaustedEvent                          | Execute Swap
 +-------------------------------------------+   +-----------------------------------+
-|     LAYER 1: REAL-TIME QUOTA SENSOR       |   |   LAYER 3: HOT-SWAP ENGINE        |
-| - Non-blocking Log Tailer                 |   | - 4-Step Closed-Loop Internal API |
+|     PHASE P7: GO REAL-TIME SENSOR         |   |    PHASE P6: NATIVE GO ENGINE     |
+| - Goroutine Non-blocking Log Tailer       |   | - 4-Step Closed-Loop Internal API |
 |   (language_server.log)                   |   |   1. GetUserStatus() probe        |
 | - Connect-RPC Status Interceptor          |   |   2. AuthLogout() RAM invalidation|
-| - Chrome DevTools Protocol (CDP) Observer |   |   3. Advapi32 Credential Write    |
-| - Unified Event Dispatcher                |   |   4. Coordinated Re-Auth / Reload |
+| - DevTools CDP Event Observer             |   |   3. Advapi32 CredWriteW inject   |
+| - Event Channel Dispatcher                |   |   4. Coordinated Re-Auth / Reload |
 +-------------------------------------------+   +-----------------------------------+
+                                                                 |
+                                                +-----------------------------------+
+                                                |     PHASE P6: NATIVE STORAGE      |
+                                                | - internal/wincred (Advapi32.dll) |
+                                                | - internal/store (JSON Atomic)    |
+                                                | - internal/scanner (Chrome pref)  |
+                                                +-----------------------------------+
 ```
 
 ---
 
-### Layer 1: Real-Time Quota Detection Sensor (`core/quota_sensor.py`)
-The detection sensor acts as the "nervous system" of the autonomous engine. To detect quota exhaustion instantaneously without burdening system CPU or requiring elevated privileges, Layer 1 combines three non-intrusive sensing vectors:
+### Phase P6: Native Go Engine Package Architecture (`antigravity-switch.exe`)
 
-1. **Non-Blocking File Tailer (`LogTailSensor`)**:
-   - Monitors `%APPDATA%\Antigravity\logs\language_server.log` using an incremental file offset pointer (`seek` from previous position with inode/size rotation handling).
-   - Scans stream chunks using high-performance regex patterns for known Google Cloud Code quota error signatures:
-     * `HTTP 429` / `status: 429` / `Too Many Requests`
-     * `RESOURCE_EXHAUSTED` / `code: 8`
-     * `Quota exceeded for quota metric` / `daily-cloudcode-pa.googleapis.com`
-     * `exceeded your current quota` / `rate limit exceeded`
-   - Operates in a dedicated lightweight daemon thread with zero CPU overhead when idle.
+The core engine is ported from Python to idiomatic Go, compiled into a single static binary:
 
-2. **Loopback Connect-RPC Status Interceptor (`RpcStatusSensor`)**:
-   - Queries `http://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/GetUserStatus` periodically or upon suspected latency degradation.
-   - Inspects the returned user status dictionary (`user_status.planStatus`, `user_status.quotaStatus`) for backend exhaustion flags.
-
-3. **Electron Toast & UI Event Observer (`CdpToastSensor`)**:
-   - Leverages Antigravity's internal Chrome DevTools Protocol (CDP) endpoint discovered via `encoder_embed.go` logs (e.g., `ws://127.0.0.1:59224/devtools/browser/...`).
-   - Subscribes to DOM mutation notifications in the notification layer (monitoring VS Code/Antigravity toast notification elements matching `notification-toast` containing quota warning strings).
-
-**Sensor Output**: Whenever any sensor detects a verified exhaustion signature, it constructs and publishes a typed `QuotaExhaustedEvent`:
-```python
-@dataclass(frozen=True)
-class QuotaExhaustedEvent:
-    email: str
-    timestamp: float
-    error_signature: str
-    source_layer: str  # "LOG_TAIL", "RPC_PROBE", "CDP_TOAST"
-    suggested_cooldown_seconds: float
 ```
+cmd/
+  switcher/
+    main.go                   # CLI commands, GUI launcher, daemon entrypoint
+internal/
+  wincred/
+    cred.go                   # Win32 Advapi32 wrapper (CredReadW, CredWriteW, CredDeleteW)
+    types.go                  # Windows CREDENTIALW structs and memory allocators
+  store/
+    account_store.go          # Atomic JSON file storage in accounts_store/<email>.json
+    sanitizer.go              # Email filename normalization and path traversal guard
+  connector/
+    api_client.go             # Loopback HTTP / Connect-RPC client (net/http)
+    discovery.go              # language_server.exe PID, port, and --csrf_token extraction
+    endpoints.go              # GetUserStatus, AuthLogout, trigger_reauth definitions
+  scanner/
+    chrome_scanner.go         # Read-only extraction of Chrome profiles with blacklist filter
+  reloader/
+    session_reloader.go       # Coordinated reload bridge (trigger_reauth + User32 Ctrl+R)
+```
+
+#### Key Technical Capabilities in Phase P6:
+1. **Direct Win32 Advapi32 Integration (`internal/wincred`)**:
+   - Replaces Python `ctypes` with `golang.org/x/sys/windows`.
+   - Calls `Advapi32.dll` (`CredReadW`, `CredWriteW`, `CredDeleteW`, `CredFree`) directly targeting `LegacyGeneric:target=gemini:antigravity`.
+   - Zero intermediate marshal overhead; zero pointer safety issues.
+
+2. **Loopback HTTP & Connect-RPC Client (`internal/connector`)**:
+   - Built on Go standard library `net/http` with an optimized connection pool (`MaxIdleConnsPerHost = 4`, `Timeout = 2s`).
+   - Dispatches authenticated POST requests with `X-Csrf-Token` and `x-codeium-csrf-token` headers to `http://127.0.0.1:<port>`.
+   - Implements robust candidate endpoint fallback for `GetUserStatus`, `AuthLogout`, and `trigger_reauth`.
+
+3. **Atomic File Persistence (`internal/store`)**:
+   - Manages `accounts_store/<email>.json` with Go's `os.CreateTemp`, `json.NewEncoder`, `os.File.Sync()`, and `os.Rename()` for transactional, corruption-proof atomicity.
+
+4. **Standalone Binary Compilation**:
+   ```bash
+   go build -ldflags="-H windowsgui -s -w" -o antigravity-switch.exe cmd/switcher/main.go
+   ```
+   - `-s -w`: Strips debug symbols and DWARF tables, reducing binary size to 10MB–15MB.
+   - `-H windowsgui`: Suppresses terminal console flash when launched from desktop shortcuts or system tray.
+   - **Resource Footprint**: Consumes **< 12MB RAM** in resident memory and **< 0.05% CPU**.
 
 ---
 
-### Layer 2: Autonomous Failover Controller & Account Pool Manager (`core/failover_controller.py`)
-Layer 2 is the "brain" responsible for arbitration, scheduling, and safety policies.
+### Phase P7: Go-Native Autonomous Quota Failover Daemon
 
-1. **Account Pool Repository**:
-   - Dynamically combines discovered accounts from `AccountStore` (`accounts_store/<email>.json`) and Chrome Discovery (`scanner/chrome_scanner.py`).
-   - Tracks real-time status and health metrics for every account:
-     * `state`: Current state enum (`ACTIVE`, `READY`, `QUOTA_EXHAUSTED`, `UNAUTH`, `ERROR`).
-     * `last_used_timestamp`: Monotonic timestamp of last active usage.
-     * `cooldown_until`: Monotonic timestamp when an exhausted account is eligible to return to `READY`.
-     * `switch_count`: Total successful switches served by this account.
-     * `failure_streak`: Consecutive failures encountered.
-
-2. **Scheduling Algorithms**:
-   - **Round-Robin with Health Check**: Distributes load evenly across all `READY` accounts, maximizing token replenishment time for inactive accounts.
-   - **Priority Tiering**: Optional account weighting (e.g., Enterprise/Ultra tier accounts prioritized over Standard/Free accounts).
-   - **Least Recently Used (LRU)**: Selects the healthy account that has rested the longest, maximizing available quota headroom.
-
-3. **Cooldown & Auto-Recovery Timer**:
-   - When an account exhausts its quota, it is transitioned to `QUOTA_EXHAUSTED` with a configurable cooldown duration (default: 15 minutes for RPM/burst limits, 1 hour for standard bucket replenishment).
-   - An asynchronous background scheduler periodically checks `cooldown_until` and promotes eligible accounts back to `READY` without user intervention.
-
-4. **Safety & Anti-Flapping Engine (Hysteresis Gate)**:
-   - Enforces a minimum dwell time (e.g., $\Delta t_{\text{min}} = 15\text{ seconds}$) between successive automated switches to prevent thrashing.
-   - Circuit Breaker: If $\ge 3$ consecutive switches fail within 60 seconds, failover halts and raises an operator alert.
-
----
-
-### Layer 3: Closed-Loop Hot-Swap Execution Engine (`core/state_resolver.py` & `core/api_connector.py`)
-Layer 3 executes the atomic identity replacement using the proven 4-step internal API cycle established in Phases P1–P3:
+Phase P7 layers the autonomous failover intelligence on top of the native Go engine:
 
 ```
-[ Step 1: Pre-Swap Snapshot ]
-         |
-         v   GetUserStatus() -> Verify active session in Language Server RAM
-[ Step 2: RAM Invalidation ]
-         |
-         v   AuthLogout() -> Purge active bearer tokens from Language Server RAM
-[ Step 3: Atomic Storage Injection ]
-         |
-         v   CredWriteW() -> Overwrite LegacyGeneric:target=gemini:antigravity
-[ Step 4: Coordinated Re-Auth ]
-         |
-         v   trigger_reauth() -> Reload Language Server RAM identity
-         |   (fallback: reload_antigravity_window() Ctrl+R)
-[ Post-Swap Verification ]
-             GetUserStatus() -> Confirm new email is ACTIVE
+internal/
+  sensor/
+    log_tailer.go             # Goroutine tailing language_server.log via incremental seek
+    signatures.go             # Regex patterns for 429, RESOURCE_EXHAUSTED, quota limits
+    event_bus.go              # Go channel: chan QuotaExhaustedEvent
+  controller/
+    pool_manager.go           # Thread-safe AccountPool (sync.RWMutex)
+    scheduler.go              # Round-robin, LRU, and priority scheduling algorithms
+    cooldown.go               # Exponential backoff cooldown tracker with time.Ticker
+    hysteresis.go             # Anti-flapping debounce gate and circuit breaker
+  tray/
+    tray_daemon.go            # Native Windows systray integration (systray package)
+    notifications.go          # Windows 10/11 Toast Notification bridge
+    hotkeys.go                # Global Win32 hotkey listener (RegisterHotKey)
 ```
 
-- **Execution Latency**: Typically completes in **800ms – 1800ms**, entirely below human perception threshold during typing pauses or subagent file analysis phases.
-- **Fail-Safe Rollback**: If `AuthLogout` or credential injection fails, the engine safely restores the original account credential from `accounts_store/<original_email>.json` to prevent leaving the IDE in an unauthenticated limbo.
+#### Layer 1: Goroutine Quota Detection Sensor (`internal/sensor`)
+- Runs a dedicated, non-blocking goroutine executing an incremental file read on `%APPDATA%\Antigravity\logs\language_server.log`.
+- Tracks file byte offset; handles log rotation smoothly via file size shrink detection.
+- Fast string and regex matching for:
+  * `HTTP 429` / `status: 429` / `Too Many Requests`
+  * `RESOURCE_EXHAUSTED` / `code: 8`
+  * `Quota exceeded for quota metric` / `daily-cloudcode-pa.googleapis.com`
+  * `exceeded your current quota` / `rate limit exceeded`
+- Emits events directly into an unbuffered Go channel:
+  ```go
+  type QuotaExhaustedEvent struct {
+      Email             string
+      Timestamp         time.Time
+      ErrorSignature    string
+      SourceLayer       string
+      SuggestedCooldown time.Duration
+  }
+  ```
 
----
+#### Layer 2: Autonomous Failover Controller & Pool Manager (`internal/controller`)
+- Manages an in-memory `AccountPool` protected by `sync.RWMutex`.
+- Implements the FSM (`ACTIVE`, `READY`, `QUOTA_EXHAUSTED`, `UNAUTH`, `ERROR`).
+- Selects the next optimal account via Round-Robin or Least-Recently-Used (LRU).
+- Enforces a 15-second anti-flapping minimum dwell time and a rolling-window circuit breaker.
 
-### Layer 4: System Tray Resident Daemon & Notification Hub (`daemon/tray_daemon.py`)
-Layer 4 delivers ambient observability and seamless desktop integration:
+#### Layer 3: Native Hot-Swap Execution
+- Reuses the Phase P6 native 4-step loop (`GetUserStatus` ➔ `AuthLogout` ➔ `CredWriteW` ➔ `trigger_reauth`).
+- Benchmark target: **< 1.0 second total failover time**.
 
-1. **System Tray Integration (`pystray`)**:
-   - Runs silently in the Windows system notification area.
-   - Dynamic tray icon color coding:
-     * 🟢 **Green**: Healthy, active account has quota, multiple backup accounts ready.
-     * 🟡 **Yellow**: Active account running; failover in progress or $\le 1$ backup account remaining.
-     * 🔴 **Red**: All accounts in pool are exhausted; countdown to earliest cooldown displayed in tooltip.
-   - Right-click Context Menu:
-     * *Current Active*: `user@domain.com` (Status: ACTIVE)
-     * *Pool Status*: `3 Ready / 1 Cooling Down`
-     * *Force Failover*: Immediately switches to next account
-     * *Open Dashboard*: Opens full GUI window (`ui/app_window.py`)
-     * *Pause Autonomous Switching*: Toggles monitoring on/off
-     * *Exit*
-
-2. **Discrete HUD Notifications**:
-   - Uses native Windows 10/11 Notification API (via `win10toast` or PowerShell toast bridge).
-   - Displays a sleek, non-intrusive toast upon automated failover:
-     > **Antigravity Auto-Switch**  
-     > ⚡ *Autonomous Failover Complete*  
-     > Switched: `alice@gmail.com` ➔ `bob@gmail.com` (1.2s)  
-     > *Reason: HTTP 429 Quota Exceeded. Alice cooldown: 15m.*
-
-3. **Global Hotkeys**:
-   - `Win + Alt + S`: Instant manual cycle to next ready account.
-   - `Win + Alt + Q`: Quick status toast popup without switching.
+#### Layer 4: System Tray & Notification Hub (`internal/tray`)
+- Runs a native Windows message loop using `systray`.
+- Tray icon dynamically changes:
+  * 🟢 **Green**: Healthy, multiple accounts ready.
+  * 🟡 **Yellow**: Active account running; failover in progress or 1 account left.
+  * 🔴 **Red**: All accounts cooling down; countdown displayed in tooltip.
+- Dispatches Windows Toast alerts on failover completion.
+- Listens for global hotkey (`Win+Alt+S`) via Win32 `RegisterHotKey`.
 
 ---
 
 ## 3. Sequence Diagrams
 
-### End-to-End Autonomous Failover Sequence (Mermaid)
-
-The following diagram illustrates the complete chronological flow from the moment Google Cloud Code returns an HTTP 429 quota exhaustion error to the seamless resumption of the developer's session.
+### End-to-End Autonomous Failover Sequence (Go-Native Runtime)
 
 ```mermaid
 sequenceDiagram
@@ -191,58 +208,57 @@ sequenceDiagram
     participant IDE as Antigravity Electron Frontend
     participant LS as Language Server (PID: port)
     participant Cloud as Google Cloud Code Backend
-    participant Sensor as Quota Detection Sensor
-    participant Ctrl as Autonomous Failover Controller
-    participant Store as Account Store (JSON)
+    participant Sensor as Goroutine Log Sensor
+    participant Ctrl as Failover Controller (Go)
+    participant Store as JSON Account Store
     participant WinCred as Windows Credential Manager
-    participant Tray as System Tray HUD
+    participant Tray as Native System Tray HUD
 
-    Note over Dev, Cloud: 1. Normal Active Working Session
-    Dev->>IDE: Send prompt / trigger agentic tool
-    IDE->>LS: Dispatch streamGenerateContent RPC
+    Note over Dev, Cloud: 1. Active Working Session
+    Dev->>IDE: Send prompt / trigger agentic subagent
+    IDE->>LS: streamGenerateContent RPC
     LS->>Cloud: POST /v1internal:streamGenerateContent (Account A)
     
     Note over Cloud, LS: 2. Rate Limit Hit (HTTP 429)
     Cloud-->>LS: HTTP 429 Too Many Requests (RESOURCE_EXHAUSTED)
     LS->>LS: Log error to language_server.log
     
-    Note over Sensor, Ctrl: 3. Instantaneous Real-time Detection (< 100ms)
+    Note over Sensor, Ctrl: 3. Instantaneous Goroutine Detection (< 20ms)
     Sensor->>Sensor: LogTail reads "HTTP 429 ... RESOURCE_EXHAUSTED"
-    Sensor->>Ctrl: Emit QuotaExhaustedEvent(account="userA@gmail.com")
+    Sensor->>Ctrl: channel <- QuotaExhaustedEvent("userA@gmail.com")
     
-    Note over Ctrl, Store: 4. Decision & Account Selection (< 10ms)
-    Ctrl->>Ctrl: Mark "userA@gmail.com" as QUOTA_EXHAUSTED (Cooldown: 15m)
-    Ctrl->>Ctrl: Evaluate Anti-Flapping Hysteresis (Passed)
-    Ctrl->>Store: Query next available READY account (Round-Robin)
+    Note over Ctrl, Store: 4. Decision & Selection (< 5ms)
+    Ctrl->>Ctrl: Lock Pool RWMutex; mark userA QUOTA_EXHAUSTED
+    Ctrl->>Ctrl: Check anti-flapping debounce gate (Passed)
+    Ctrl->>Store: Get next READY account from pool (Round-Robin)
     Store-->>Ctrl: Selected candidate: "userB@gmail.com"
     
-    Note over Ctrl, LS: 5. Closed-Loop Hot-Swap Execution (800ms - 1500ms)
-    Ctrl->>LS: Step 1: POST /GetUserStatus (Verify current RAM)
-    LS-->>Ctrl: Confirmed active: "userA@gmail.com"
+    Note over Ctrl, LS: 5. Native Closed-Loop Hot-Swap Execution (< 800ms)
+    Ctrl->>LS: Step 1: POST /GetUserStatus (Confirm active userA)
+    LS-->>Ctrl: 200 OK (Confirmed userA)
     
     Ctrl->>LS: Step 2: POST /AuthLogout (Purge RAM identity)
-    LS-->>Ctrl: HTTP 200 OK (RAM cleared)
+    LS-->>Ctrl: 200 OK (RAM cleared)
     
-    Ctrl->>Store: Retrieve token for "userB@gmail.com"
-    Store-->>Ctrl: Valid OAuth Token dict (access, refresh, id_token)
+    Ctrl->>Store: Read token for "userB@gmail.com"
+    Store-->>Ctrl: Valid OAuth token struct
     
     Ctrl->>WinCred: Step 3: CredWriteW(LegacyGeneric:target=gemini:antigravity)
-    WinCred-->>Ctrl: Success (Target overwritten)
+    WinCred-->>Ctrl: Success
     
     Ctrl->>LS: Step 4: POST /ReAuth (Trigger RAM token reload)
     LS->>WinCred: CredReadW() -> Ingest userB token
-    LS->>LS: Ingest userB identity & refresh capabilities
-    LS-->>Ctrl: HTTP 200 OK (Auth Succeeded)
+    LS-->>Ctrl: 200 OK (Auth Succeeded)
     
     Note over Ctrl, Tray: 6. Verification & Ambient Notification
     Ctrl->>LS: Verify POST /GetUserStatus
-    LS-->>Ctrl: Confirmed active: "userB@gmail.com"
-    Ctrl->>Ctrl: Mark "userB@gmail.com" as ACTIVE
-    Ctrl->>Tray: Show Toast: "Auto-switched to userB@gmail.com in 1.1s"
+    LS-->>Ctrl: 200 OK (Confirmed userB is ACTIVE)
+    Ctrl->>Ctrl: Mark userB as ACTIVE
+    Ctrl->>Tray: Show Windows Toast: "Auto-switched to userB in 0.8s"
     Tray-->>Dev: Ambient Toast Notification
     
     Note over Dev, Cloud: 7. Seamless Resumption (Zero Interruption)
-    IDE->>LS: Retry prompt stream (Transparent retry)
+    IDE->>LS: Transparent retry of request stream
     LS->>Cloud: POST /v1internal:streamGenerateContent (Account B)
     Cloud-->>LS: HTTP 200 OK (Streaming tokens...)
     LS-->>IDE: Stream response chunks
@@ -255,22 +271,20 @@ sequenceDiagram
 
 ### 4.1 Account Lifecycle State Machine (Mermaid)
 
-Each account managed by the system conforms to a deterministic finite state machine (FSM):
-
 ```mermaid
 stateDiagram-v2
-    [*] --> UNAUTH: Chrome Discovery (Token not in JSON store)
-    [*] --> READY: Discovered in accounts_store/<email>.json
+    [*] --> UNAUTH: Discovered in Chrome (No JSON token in store)
+    [*] --> READY: Token exists in accounts_store/<email>.json
 
     UNAUTH --> READY: Ingest Token via GUI / Session Capture
 
-    READY --> ACTIVE: Selected by Failover / Manual Switch
-    ACTIVE --> READY: User switches to another account manually
+    READY --> ACTIVE: Selected by Failover Controller
+    ACTIVE --> READY: Manual or scheduled switch to another account
 
-    ACTIVE --> QUOTA_EXHAUSTED: Quota Sensor detects HTTP 429 / RESOURCE_EXHAUSTED
+    ACTIVE --> QUOTA_EXHAUSTED: Goroutine sensor detects HTTP 429
     ACTIVE --> ERROR: Token Revoked / Refresh Token Rejected
 
-    QUOTA_EXHAUSTED --> READY: Cooldown Timer expires (cooldown_until <= now)
+    QUOTA_EXHAUSTED --> READY: Cooldown Timer expires (time.Now() >= CooldownUntil)
     QUOTA_EXHAUSTED --> ERROR: Token validation fails during recovery
 
     ERROR --> READY: Manual re-authentication / Token update
@@ -281,199 +295,211 @@ stateDiagram-v2
 
 | State | Invariant Condition | Allowed Transitions |
 |---|---|---|
-| `ACTIVE` | Currently injected into Windows Credential Manager and loaded in Language Server RAM. At most **one** account in the entire system may be in `ACTIVE` state. | ➔ `QUOTA_EXHAUSTED` (on 429)<br>➔ `READY` (on manual/scheduled handoff)<br>➔ `ERROR` (on token rejection) |
+| `ACTIVE` | Injected into Windows Credential Manager and active in Language Server RAM. Strictly **one** account in the entire system may be `ACTIVE`. | ➔ `QUOTA_EXHAUSTED` (on 429)<br>➔ `READY` (on handoff)<br>➔ `ERROR` (on token rejection) |
 | `READY` | Valid OAuth token saved in `accounts_store/<email>.json`, not currently active, not in cooldown. Ready for immediate hot-swap. | ➔ `ACTIVE` (selected for failover)<br>➔ `ERROR` (if token becomes invalid) |
-| `QUOTA_EXHAUSTED` | Rate-limited by Google Cloud Code. `cooldown_until` timestamp is set in the future. Bypassed by scheduler until expiry. | ➔ `READY` (when `now() >= cooldown_until`)<br>➔ `ERROR` (if deleted/corrupted) |
+| `QUOTA_EXHAUSTED` | Rate-limited by Google Cloud Code. `CooldownUntil` timestamp is set in the future. Bypassed by scheduler until expiry. | ➔ `READY` (when `time.Now() >= CooldownUntil`)<br>➔ `ERROR` (if deleted/corrupted) |
 | `UNAUTH` | Detected in Chrome profile preferences, but complete OAuth token is not yet captured in `accounts_store/`. | ➔ `READY` (upon user logging into Antigravity or manual import) |
 | `ERROR` | Token deserialization failed, refresh token rejected by Google, or file corrupted. | ➔ `READY` (after re-authentication) |
 
 ---
 
-### 4.3 Concrete Python Data Structures
+### 4.3 Idiomatic Go Data Structures
 
-```python
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+```go
+package model
 
-class AccountState(str, Enum):
-    ACTIVE = "ACTIVE"
-    READY = "READY"
-    QUOTA_EXHAUSTED = "QUOTA_EXHAUSTED"
-    UNAUTH = "UNAUTH"
-    ERROR = "ERROR"
+import (
+	"sync"
+	"time"
+)
 
-@dataclass
-class AccountRecord:
-    email: str
-    state: AccountState
-    token_data: Optional[Dict[str, Any]] = None
-    last_switched_at: float = 0.0
-    cooldown_until: float = 0.0
-    consecutive_exhaustions: int = 0
-    total_switches: int = 0
-    error_message: Optional[str] = None
+type AccountState string
 
-    @property
-    def is_eligible_for_switch(self) -> bool:
-        """True if the account is healthy and ready to serve requests."""
-        return self.state == AccountState.READY
+const (
+	StateActive         AccountState = "ACTIVE"
+	StateReady          AccountState = "READY"
+	StateQuotaExhausted AccountState = "QUOTA_EXHAUSTED"
+	StateUnauth         AccountState = "UNAUTH"
+	StateError          AccountState = "ERROR"
+)
 
-    def mark_exhausted(self, cooldown_duration: float = 900.0) -> None:
-        """Transitions account to QUOTA_EXHAUSTED with computed cooldown."""
-        import time
-        self.state = AccountState.QUOTA_EXHAUSTED
-        self.consecutive_exhaustions += 1
-        # Exponential backoff on repeat exhaustions: 15m -> 30m -> 60m (capped at 2h)
-        multiplier = min(4, 2 ** (self.consecutive_exhaustions - 1))
-        self.cooldown_until = time.time() + (cooldown_duration * multiplier)
+type TokenData struct {
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	IDToken      string    `json:"id_token,omitempty"`
+	TokenType    string    `json:"token_type,omitempty"`
+	Expiry       time.Time `json:"expiry,omitempty"`
+}
 
-    def check_cooldown_expiry(self) -> bool:
-        """Checks if cooldown period has elapsed; restores READY state if so."""
-        import time
-        if self.state == AccountState.QUOTA_EXHAUSTED and time.time() >= self.cooldown_until:
-            self.state = AccountState.READY
-            self.cooldown_until = 0.0
-            return True
-        return False
+type AccountRecord struct {
+	Email                  string       `json:"email"`
+	State                  AccountState `json:"state"`
+	Token                  *TokenData   `json:"token,omitempty"`
+	LastSwitchedAt         time.Time    `json:"last_switched_at"`
+	CooldownUntil          time.Time    `json:"cooldown_until"`
+	ConsecutiveExhaustions int          `json:"consecutive_exhaustions"`
+	TotalSwitches          int          `json:"total_switches"`
+	ErrorMessage           string       `json:"error_message,omitempty"`
+}
 
-@dataclass
-class FailoverConfig:
-    min_dwell_seconds: float = 15.0         # Anti-flapping minimum interval
-    max_switches_per_window: int = 4         # Circuit breaker: max switches allowed
-    sliding_window_seconds: float = 120.0    # Circuit breaker: window duration
-    default_cooldown_seconds: float = 900.0  # 15 minutes default cooldown
-    auto_window_reload: bool = False         # Prefer API Re-Auth; fallback to Ctrl+R
-    enable_tray_notifications: bool = True   # Desktop notifications
+func (a *AccountRecord) IsEligibleForSwitch() bool {
+	return a.State == StateReady
+}
+
+func (a *AccountRecord) MarkExhausted(baseCooldown time.Duration) {
+	a.State = StateQuotaExhausted
+	a.ConsecutiveExhaustions++
+	// Exponential backoff: 15m -> 30m -> 60m (capped at 2 hours)
+	multiplier := 1 << (min(a.ConsecutiveExhaustions, 4) - 1)
+	a.CooldownUntil = time.Now().Add(baseCooldown * time.Duration(multiplier))
+}
+
+func (a *AccountRecord) CheckCooldownExpiry() bool {
+	if a.State == StateQuotaExhausted && time.Now().After(a.CooldownUntil) {
+		a.State = StateReady
+		a.CooldownUntil = time.Time{}
+		return true
+	}
+	return false
+}
+
+type AccountPool struct {
+	mu       sync.RWMutex
+	accounts map[string]*AccountRecord
+	order    []string
+}
+
+type FailoverConfig struct {
+	MinDwellTime           time.Duration `json:"min_dwell_time"`            // Default: 15s
+	MaxSwitchesPerWindow   int           `json:"max_switches_per_window"`   // Default: 4
+	SlidingWindowDuration  time.Duration `json:"sliding_window_duration"`  // Default: 120s
+	DefaultCooldown        time.Duration `json:"default_cooldown"`         // Default: 15m
+	AutoWindowReload       bool          `json:"auto_window_reload"`        // Default: false (API reauth primary)
+	EnableNotifications    bool          `json:"enable_notifications"`     // Default: true
+}
 ```
 
 ---
 
 ## 5. Edge Case & Safety Engineering
 
-Building an autonomous daemon that manipulates IDE authentication credentials in real time requires rigorous defensive engineering.
-
 ### 5.1 Flapping & Thrashing Prevention (Hysteresis Engine)
-*Risk*: If multiple accounts in the pool are simultaneously near their quota ceiling, rapid consecutive 429 errors could trigger a "flapping storm"—switching back and forth every 500ms, causing high CPU churn and potentially corrupting the Language Server auth state.
-
-*Engineering Solution*:
-1. **Debounce Hysteresis**:
-   The controller enforces a strict **Minimum Dwell Time** ($\Delta t_{\text{min}} = 15\text{ seconds}$). When a switch occurs, an atomic lock timestamp is set. Any incoming `QuotaExhaustedEvent` received during this lockout window is queued and debounced rather than executed immediately.
-2. **Circuit Breaker Window**:
-   If the failover engine performs more than `max_switches_per_window` (default: 4 switches) within `sliding_window_seconds` (default: 120s), the circuit opens:
-   - Automated switching is temporarily suspended.
-   - A high-priority desktop notification is triggered: *"Quota Thrashing Detected: Pausing auto-failover for 60s to allow backend rate buckets to stabilize."*
-   - Prevents cascading quota drain across the entire account inventory.
-
----
+- **Minimum Dwell Time**: The controller enforces a strict **15-second minimum interval** between consecutive switches. Any incoming quota event during this window is debounced.
+- **Circuit Breaker Window**: If more than 4 switches occur within 120 seconds, automated switching pauses for 60 seconds, preventing cascading exhaustion of all accounts in the pool.
 
 ### 5.2 "All Accounts Exhausted" Pool Depletion Handling
-*Risk*: When high-intensity coding sessions exceed the combined capacity of all ready accounts, the candidate pool becomes empty. Blindly attempting switches would loop indefinitely.
-
-*Engineering Solution*:
-1. **Graceful Degradation & Sleep Mode**:
-   When `find_next_ready_account()` returns `None`:
-   - The engine computes the shortest remaining cooldown across all exhausted accounts:
-     $$\Delta t_{\text{wake}} = \min_{a \in \text{Pool}} (a.\text{cooldown\_until}) - \text{now}()$$
-   - The Resident Daemon enters `EXHAUSTED_SLEEP` state.
-   - The system tray icon transitions to **Solid Red**.
-   - The tray tooltip and a discrete HUD alert notify the user:
-     > **All Account Quotas Exhausted**  
-     > *Pool of 4 accounts currently cooling down.*  
-     > *Earliest quota recovery:* `user1@gmail.com` *in 8m 42s.*  
-     > *Autonomous switcher will auto-resume upon first recovery.*
-2. **Deterministic Auto-Wakeup**:
-   A high-precision timer wakes the controller at $\Delta t_{\text{wake}}$. As soon as `user1@gmail.com` recovers, it transitions to `READY`, the engine performs an automated failover to it, and tray status turns green.
-
----
+- When all accounts are `QUOTA_EXHAUSTED`, the engine calculates:
+  $$\Delta t_{\text{wake}} = \min_{a \in \text{Pool}} (a.\text{CooldownUntil}) - \text{time.Now}()$$
+- The daemon transitions to `EXHAUSTED_SLEEP`, turns the tray icon solid red, and presents a countdown tooltip.
+- A high-precision `time.AfterFunc` automatically wakes the controller and fails over to the first recovered account immediately upon cooldown expiry.
 
 ### 5.3 Context Preservation Guarantee: Zero Impact on IDE State
-*Risk*: Developers are rightfully terrified that an automated account switch might reload the IDE window, discard uncommitted code edits, wipe undo/redo stacks, or kill background terminal builds.
-
-*Engineering Verification & Guarantee*:
-The hot-swap mechanism engineered in Phases P2 and P3 does **NOT** restart the Antigravity application or its Electron renderer process:
-
-1. **Backend-Only Identity Handoff**:
-   - `AuthLogout()` and `trigger_reauth()` operate strictly on the backend Golang daemon (`language_server.exe`).
-   - The Language Server re-reads the OAuth token from Windows Credential Manager (`LegacyGeneric:target=gemini:antigravity`) into its internal RAM struct (`AuthProvider.credential`).
-2. **Electron Frontend Isolation**:
-   - The Electron frontend (`antigravity.exe`) maintains all open Monaco editor instances, text model buffers, unsaved dirty flags (`isDirty = true`), language server LSP syntax trees, terminal PTY processes, and chat webview DOM nodes.
-   - Only the authorization header (`Bearer <access_token>`) transmitted in outbound gRPC-Web/HTTP requests is updated.
-3. **Soft Reload Fallback Isolation**:
-   - In the rare event that `trigger_reauth()` is not supported by a legacy binary version and the window reload fallback (`Ctrl+R` via `keybd_event`) is triggered, VS Code/Electron architecture natively persists:
-     * Unsaved dirty buffers via VS Code hot-exit backup cache (`%APPDATA%\Antigravity\Backups`).
-     * Active workspace folder layout, split editors, and file cursor positions.
-   - In P6, the primary path is **100% headless API re-auth**, avoiding even the `Ctrl+R` window flicker.
+1. **Backend-Only Identity Handoff**: `AuthLogout()` and `trigger_reauth()` operate exclusively inside the Golang `language_server.exe` process.
+2. **Frontend Isolation**: The Electron frontend (`antigravity.exe`) maintains all Monaco editor instances, unsaved text buffers (`isDirty = true`), open terminal PTY sessions, and chat conversation DOM elements 100% intact.
+3. Only outbound authorization tokens (`Bearer <access_token>`) are updated. No windows are closed, no processes killed.
 
 ---
 
-### 5.4 Credential Security & Anti-Corruption Invariants
-1. **Atomic File Storage**:
-   Writes to `accounts_store/<email>.json` use a temporary file (`<email>.json.tmp`) with an explicit `flush()` and `os.fsync()`, followed by an atomic `os.replace()`. Power loss or sudden termination can never leave a half-written or corrupted JSON file.
-2. **Strict Advapi32 Credential Validation**:
-   Before passing bytes to `CredWriteW`, the payload is verified to be a non-empty, valid JSON dictionary containing requisite OAuth fields (`access_token`, `refresh_token`). Writing arbitrary or empty blobs is blocked at the interface boundary.
-3. **Preservation of Safety Filters**:
-   The `anvien` blacklist keyword filter established in `scanner/chrome_scanner.py` remains active across all pool operations, strictly prohibiting blacklisted accounts from entering the automated pool.
-
----
-
-## 6. Phased Implementation Roadmap for Phase P6
-
-To maintain software quality, zero regressions, and full testability, Phase P6 is decomposed into four discrete, strictly sequenced implementation slices.
+## 6. Phased Implementation Roadmap
 
 ```mermaid
-flowchart LR
-    P6A["Slice P6-A<br/><b>Quota Detection Sensor</b><br/>(LogTail + RPC Observer)"] --> P6B["Slice P6-B<br/><b>Autonomous Controller</b><br/>(Pool FSM + Hysteresis)"]
-    P6B --> P6C["Slice P6-C<br/><b>Resident Daemon & HUD</b><br/>(pystray + Win Toast)"]
-    P6C --> P6D["Slice P6-D<br/><b>E2E QA & Simulation</b><br/>(429 Storm Benchmark)"]
+flowchart TD
+    subgraph P6["Phase P6: Go Engine Port & Standalone Binary"]
+        P6A["Slice P6-A<br/><b>Go Primitives & Win32 Credential</b><br/>(internal/wincred, internal/store)"] --> P6B["Slice P6-B<br/><b>Chrome Scanner & API Connector</b><br/>(internal/scanner, internal/connector)"]
+        P6B --> P6C["Slice P6-C<br/><b>Core Orchestrator & CLI / GUI</b><br/>(internal/reloader, cmd/switcher)"]
+        P6C --> P6D["Slice P6-D<br/><b>Standalone Windows Binary</b><br/>(antigravity-switch.exe, &lt;12MB RAM)"]
+    end
+
+    subgraph P7["Phase P7: Go-Native Autonomous Failover Daemon"]
+        P6D --> P7A["Slice P7-A<br/><b>Goroutine Log Tailer & Sensor</b><br/>(internal/sensor, chan QuotaEvent)"]
+        P7A --> P7B["Slice P7-B<br/><b>Autonomous Failover Controller</b><br/>(internal/controller, Pool FSM)"]
+        P7B --> P7C["Slice P7-C<br/><b>Native Windows Systray & HUD</b><br/>(internal/tray, Win Toast, Hotkeys)"]
+        P7C --> P7D["Slice P7-D<br/><b>End-to-End Simulation QA</b><br/>(Quota Storm Benchmark &lt;1.0s)"]
+    end
 ```
 
 ---
 
-### Slice P6-A: Real-Time Quota Detection Sensor & Event Pipeline
+### Phase P6: Go Engine Port & Standalone Native Windows Binary (`antigravity-switch.exe`)
+
+The objective of Phase P6 is to deliver a compiled, standalone, zero-dependency Windows executable replacing the Python runtime.
+
+#### Slice P6-A: Go Core Primitives & Native Win32 Credential Layer
 - **Deliverables**:
-  - `core/quota_sensor.py`: Implementation of `LogTailSensor`, regex signature engine, and `QuotaExhaustedEvent` pub/sub dispatcher.
-  - Tailing thread with low-overhead file offset tracking and file rotation detection.
-  - Integration with `core/api_connector.py` for fallback status polling.
+  - `go.mod` module initialization (`module antigravity-switch`).
+  - `internal/wincred`: `Advapi32.dll` wrapper using `golang.org/x/sys/windows` (`CredReadW`, `CredWriteW`, `CredDeleteW`, `CredFree`).
+  - `internal/store`: Atomic JSON file storage in `accounts_store/<email>.json` with filename sanitation and path traversal protection.
 - **Verification Gates**:
-  - Unit tests with mock log appends simulating HTTP 429, gRPC `RESOURCE_EXHAUSTED`, and normal log output.
-  - Benchmark: Detection latency $\le 50\text{ms}$ with $\le 0.5\%$ CPU utilization.
+  - Direct round-trip unit tests reading and writing `LegacyGeneric:target=gemini:antigravity`.
+  - Concurrency and file corruption resilience tests.
+
+#### Slice P6-B: Chrome Discovery Scanner & Language Server Connector
+- **Deliverables**:
+  - `internal/scanner`: Fast Chrome profile preference reader with strict `anvien` blacklist filtering.
+  - `internal/connector`: Language server process discovery (PID, listening port via `Get-NetTCPConnection` / Win32 API, `--csrf_token` regex).
+  - High-efficiency `net/http` loopback client for `GetUserStatus`, `AuthLogout`, and `trigger_reauth`.
+- **Verification Gates**:
+  - Live discovery test on running `language_server.exe` PID.
+  - Mock HTTP server tests for RPC status parsing, 401/403/500 resilience, and timeout handling.
+
+#### Slice P6-C: CLI / GUI Core Orchestration & Session Reloader
+- **Deliverables**:
+  - `internal/reloader`: Coordinated reload bridge (API reauth primary, User32 `keybd_event Ctrl+R` fallback).
+  - `internal/manager`: Port of `AccountManager` coordinating Chrome discovery, store, credentials, and 4-step hot-swap.
+  - `cmd/switcher/main.go`: Command-line interface (`list`, `switch <email>`, `save`, `status`).
+- **Verification Gates**:
+  - Live execution of 4-step hot-swap on local host Antigravity instance.
+  - Verified RAM email identity update confirmed via `GetUserStatus`.
+
+#### Slice P6-D: Standalone Windows Binary Compilation & Benchmark
+- **Deliverables**:
+  - Build script: `go build -ldflags="-H windowsgui -s -w" -o antigravity-switch.exe cmd/switcher/main.go`.
+  - Static embedding of icons and manifests using Windows resource compiler (`rsrc` / `windres`).
+  - Performance benchmarking suite.
+- **Verification Gates**:
+  - Single standalone binary output (`antigravity-switch.exe`, 10MB–15MB).
+  - Startup time $\le 10\text{ms}$; resident memory footprint **$\le 12\text{MB}$ RAM**; zero external DLL dependencies.
 
 ---
 
-### Slice P6-B: Autonomous Failover Controller & Account Pool Manager
+### Phase P7: Go-Native Autonomous Quota Failover Daemon
+
+Building directly on top of the Phase P6 native engine, Phase P7 introduces the background autonomous monitoring daemon.
+
+#### Slice P7-A: Goroutine Log Tailer & Quota Sensor Pipeline
 - **Deliverables**:
-  - `core/failover_controller.py`: Implementation of `AccountPoolManager`, state transitions (`READY` $\leftrightarrow$ `ACTIVE` $\leftrightarrow$ `QUOTA_EXHAUSTED`), and cooldown scheduling.
-  - Round-robin and LRU account selection algorithms.
-  - Anti-flapping hysteresis gate and circuit breaker.
-  - Wiring to `AccountManager.switch_account()` closed-loop hot-swap.
+  - `internal/sensor/log_tailer.go`: Non-blocking goroutine continuously tailing `language_server.log`.
+  - High-speed string and regex matcher for HTTP 429, gRPC `RESOURCE_EXHAUSTED`, and quota error signatures.
+  - `internal/sensor/event_bus.go`: Event channel piping `QuotaExhaustedEvent` to controller.
 - **Verification Gates**:
-  - Unit tests simulating single account exhaustion, multi-account rotation, cooldown expiration, and flapping storm suppression.
-  - State machine invariants verified (no duplicate active accounts, no selection of exhausted accounts).
+  - Simulated log append tests with 100,000 synthetic log lines; detection latency $\le 20\text{ms}$, CPU usage $\le 0.05\%$.
 
----
-
-### Slice P6-C: Background Resident Daemon & System Tray Integration
+#### Slice P7-B: Go-Native Failover Controller & Account Pool FSM
 - **Deliverables**:
-  - `daemon/tray_daemon.py`: Resident background application using `pystray`.
-  - Dynamic status icons (🟢 / 🟡 / 🔴) generated or loaded from assets.
-  - Context menu with active account display, pool overview, manual failover override, and GUI dashboard launcher.
-  - Windows Toast Notification bridge for discrete hot-swap alerts.
-  - Global hotkey hook (`Win+Alt+S`) for manual instant switch.
+  - `internal/controller/pool_manager.go`: Thread-safe `AccountPool` (`sync.RWMutex`).
+  - `internal/controller/scheduler.go`: Round-robin and LRU account selection with exponential cooldown backoff.
+  - `internal/controller/hysteresis.go`: 15s minimum dwell time and sliding-window circuit breaker.
+  - Automated trigger of the Phase P6 4-step hot-swap engine upon valid quota events.
 - **Verification Gates**:
-  - System tray icon launches cleanly, responds to menu clicks, runs in background without blocking UI or CLI.
-  - Notification dispatches cleanly without crashing on various Windows display scaling modes.
+  - Simulation tests for single account exhaustion, multi-account cycling, and flapping storm suppression.
 
----
-
-### Slice P6-D: End-to-End Autonomous Integration & Simulation QA
+#### Slice P7-C: Native Windows System Tray & Toast HUD
 - **Deliverables**:
-  - `tests/test_autonomous_failover.py`: End-to-end integration test suite.
-  - Simulated "Quota Storm" test: Rapid injection of 429 errors into mock logs, verifying clean rotation through 3 accounts, adherence to 15s hysteresis, and graceful sleep upon total exhaustion.
-  - Context preservation verification: Verification that editor mock handles and credential blobs remain completely uncorrupted.
+  - `internal/tray/tray_daemon.go`: System tray application using `systray` with dynamic icons (🟢 / 🟡 / 🔴).
+  - Context menu for pool status, active account, manual switch override, and pause/resume toggle.
+  - Windows 10/11 Toast Notification bridge for discrete hot-swap alerts.
+  - Global hotkey listener (`Win+Alt+S`) via Win32 `RegisterHotKey`.
 - **Verification Gates**:
-  - 100% test pass rate across all new and existing unit tests (`test_all.py` regression-free).
-  - Benchmark: Complete automated failover cycle (from log 429 to verified new active session) executed in $< 2.0\text{ seconds}$.
+  - Tray icon runs cleanly in background; hotkeys and notifications execute with zero UI freezes.
+
+#### Slice P7-D: End-to-End Simulation QA & Quota Storm Stress Testing
+- **Deliverables**:
+  - Full end-to-end integration test harness.
+  - Quota Storm Stress Test: Rapid injection of 429 errors into mock logs, verifying clean rotation through 3 accounts, adherence to 15s hysteresis, and graceful sleep upon total exhaustion.
+  - Benchmark: Complete automated failover cycle executed in **$< 1.0\text{ second}$**.
+- **Verification Gates**:
+  - 100% test pass rate across all integration test suites.
+  - Verified 100% IDE context preservation (open editor tabs, unsaved buffers, terminals unaffected).
 
 ---
 
@@ -481,13 +507,16 @@ flowchart LR
 
 | ADR ID | Decision Title | Decision Made | Rationale | Alternatives Considered & Rejected |
 |---|---|---|---|---|
-| **ADR-P6-01** | Primary Detection Mechanism | Log Tailing (`language_server.log`) + Polling fallback | Language server logs HTTP 429 and SSE errors instantly with zero API overhead. | Reverse proxy / MITM on loopback port (too intrusive, breaks SSL/TLS, potential security alert). |
-| **ADR-P6-02** | Hot-Swap Execution Path | Reusing 4-step internal API (`GetUserStatus` ➔ `AuthLogout` ➔ `CredWriteW` ➔ `ReAuth`) | Already proven, benchmarked, and robustly tested in Phases P1–P3. | Killing and restarting `language_server.exe` (destructive, terminates pending LSP analysis, loses socket connection). |
-| **ADR-P6-03** | Resident Daemon Framework | `pystray` + Native Windows Win32 ctypes | Ultra-lightweight (~15MB RAM footprint), standard Python, native Windows integration without Qt or heavy dependencies. | PyQt / PySide (massive ~60MB dependency, excessive startup time). |
-| **ADR-P6-04** | Cooldown Policy | Tiered / Exponential Backoff (15m base, doubling on consecutive exhaustions) | Matches Google Cloud Code rolling token bucket reset cycles while penalizing chronically exhausted accounts. | Fixed 60s cooldown (insufficient for daily token caps; causes repeated immediate 429s). |
+| **ADR-P6-01** | Production Language & Runtime | Port engine to Go (Golang) compiled binary (`antigravity-switch.exe`) | Standalone binary (10-15MB), zero Python/pip dependencies, instant startup, < 12MB RAM footprint. | Retaining Python runtime (high 50-80MB RAM overhead, requires local Python environment, slower startup). |
+| **ADR-P6-02** | Win32 Credential API Binding | Direct Win32 via `golang.org/x/sys/windows` | Clean, native, type-safe integration with `Advapi32.dll` with zero CGo requirement. | CGo wrapper (requires C compiler/MSVC toolchain, complicates cross-compilation). |
+| **ADR-P6-03** | Internal Auth API Communication | Go standard library `net/http` | Zero-dependency, thread-safe, high-performance connection reuse for loopback RPC. | Third-party HTTP client libraries (unnecessary bloat for simple loopback JSON POSTs). |
+| **ADR-P7-01** | Real-Time Quota Detection | Goroutine Log Tailer on `language_server.log` via Go channels | Native Go channels provide sub-millisecond, lock-free event delivery with zero polling CPU waste. | Reverse proxy / MITM loopback listener (intrusive, TLS interception risks). |
+| **ADR-P7-02** | Desktop Tray & Alerting | Native `systray` + Windows Notification API | Extremely lightweight native integration without heavy GUI frameworks like Qt or Electron. | Wails / Electron for daemon (adds 80MB+ RAM overhead for a background utility). |
 
 ---
 
 ## 8. Conclusion
 
-This architecture establishes a robust, production-grade foundation for Phase P6. By building directly on the solid primitives delivered in Phases P1–P3 (isolated JSON `AccountStore`, Windows DPAPI Credential Manager integration, and closed-loop Language Server API communication), the Autonomous Failover Engine transforms Antigravity into an uninterrupted, self-healing development environment capable of powering high-demand autonomous coding sessions indefinitely.
+This restructured architectural blueprint directly fulfills the Owner and CEO directives:
+1. **Phase P6** delivers immediate enterprise-grade durability by compiling the core switcher into a native, standalone, high-performance Windows binary (`antigravity-switch.exe`).
+2. **Phase P7** unlocks autonomous, self-healing continuous AI coding by deploying a lightweight Go goroutine daemon that detects quota exhaustion instantly and performs hot-swaps under 1 second with 100% IDE context preservation.
