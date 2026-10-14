@@ -10,7 +10,12 @@ import json
 import time
 from core.jwt_helper import decode_jwt_payload, extract_email_from_token_data
 from core.account_store import AccountStore, sanitize_filename
-from scanner.chrome_scanner import is_blacklisted, get_chrome_signed_in_accounts
+from scanner.chrome_scanner import (
+    is_blacklisted,
+    get_chrome_signed_in_accounts,
+    get_chrome_account_details,
+    ChromeAccountInfo,
+)
 from core.credential_manager import (
     read_antigravity_token,
     write_antigravity_token,
@@ -64,10 +69,24 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertEqual(email, "testuser@gmail.com")
 
     def test_blacklist_enforcement(self):
+        # Case variations and substrings
         self.assertTrue(is_blacklisted("hokinhdoanh.anvien.sales@gmail.com"))
         self.assertTrue(is_blacklisted("anvien@gmail.com"))
+        self.assertTrue(is_blacklisted("ANVIEN@company.com"))
+        self.assertTrue(is_blacklisted("Test.Anvien@Domain.Org"))
+        self.assertTrue(is_blacklisted("user@sub.anvien.net"))
+        self.assertTrue(is_blacklisted("anvien"))
+        self.assertTrue(is_blacklisted("  anvien@gmail.com  "))
+
+        # Clean non-blacklisted emails
         self.assertFalse(is_blacklisted("hiendao1760@gmail.com"))
         self.assertFalse(is_blacklisted("mydev@gmail.com"))
+        self.assertFalse(is_blacklisted("alice@example.com"))
+
+        # Non-string / empty edge cases
+        self.assertFalse(is_blacklisted(""))
+        self.assertFalse(is_blacklisted(None))
+        self.assertFalse(is_blacklisted("   "))
 
     def test_account_store_json_files(self):
         test_email = "developer_b@gmail.com"
@@ -268,6 +287,191 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertGreater(len(accounts), 0)
         for acc in accounts:
             self.assertFalse(is_blacklisted(acc))
+            self.assertNotIn("anvien", acc.lower())
+
+    def test_live_chrome_account_details(self):
+        details = get_chrome_account_details()
+        self.assertIsInstance(details, list)
+        self.assertGreater(len(details), 0)
+        for acc in details:
+            self.assertIsInstance(acc, ChromeAccountInfo)
+            self.assertIsInstance(acc.email, str)
+            self.assertTrue("@" in acc.email)
+            self.assertFalse(is_blacklisted(acc.email))
+            self.assertNotIn("anvien", acc.email.lower())
+            self.assertIsInstance(acc.name, str)
+            self.assertIsInstance(acc.profile_dir, str)
+
+    def test_chrome_scanner_mock_profiles(self):
+        mock_user_data = os.path.join(self.test_store_dir, "mock_chrome_user_data")
+        os.makedirs(mock_user_data, exist_ok=True)
+
+        # 1. Mock Local State with multiple profiles and one blacklisted
+        local_state = {
+            "profile": {
+                "info_cache": {
+                    "Default": {
+                        "user_name": "alice@gmail.com",
+                        "name": "Alice Work",
+                        "gaia_name": "Alice Wonderland",
+                        "last_downloaded_gaia_picture_url_with_size": "https://avatar.example.com/alice.png"
+                    },
+                    "Profile 1": {
+                        "user_name": "bob@example.com",
+                        "name": "Bob Dev",
+                        "gaia_name": "Bob Builder",
+                        "picture_url": "https://avatar.example.com/bob.png"
+                    },
+                    "Profile 2": {
+                        "user_name": "blocked.anvien@company.com",
+                        "name": "Blocked Anvien",
+                        "gaia_name": "Anvien User"
+                    }
+                }
+            }
+        }
+        with open(os.path.join(mock_user_data, "Local State"), "w", encoding="utf-8") as f:
+            json.dump(local_state, f)
+
+        # 2. Mock Default profile Preferences with modern account_info list
+        default_dir = os.path.join(mock_user_data, "Default")
+        os.makedirs(default_dir, exist_ok=True)
+        default_pref = {
+            "account_info": [
+                {
+                    "email": "alice@gmail.com",
+                    "full_name": "Alice Wonderland",
+                    "given_name": "Alice",
+                    "picture_url": "https://avatar.example.com/alice.png"
+                },
+                {
+                    "email": "secondary@gmail.com",
+                    "full_name": "Secondary User",
+                    "picture_url": "https://avatar.example.com/sec.png"
+                },
+                {
+                    "email": "nested.anvien.user@gmail.com",
+                    "full_name": "Nested Anvien"
+                }
+            ]
+        }
+        with open(os.path.join(default_dir, "Preferences"), "w", encoding="utf-8") as f:
+            json.dump(default_pref, f)
+
+        # 3. Mock Profile 1 Preferences with legacy account_tracker_service_last_update dict
+        prof1_dir = os.path.join(mock_user_data, "Profile 1")
+        os.makedirs(prof1_dir, exist_ok=True)
+        prof1_pref = {
+            "account_tracker_service_last_update": {
+                "acc_bob": {
+                    "email": "bob@example.com",
+                    "full_name": "Bob Builder",
+                    "picture_url": "https://avatar.example.com/bob.png"
+                },
+                "acc_legacy": {
+                    "email": "legacy.user@example.org",
+                    "full_name": "Legacy User",
+                    "picture_url": None
+                },
+                "acc_blacklisted": {
+                    "email": "tracker.anvien@example.com",
+                    "full_name": "Tracker Anvien"
+                }
+            }
+        }
+        with open(os.path.join(prof1_dir, "Preferences"), "w", encoding="utf-8") as f:
+            json.dump(prof1_pref, f)
+
+        # 4. Mock Profile 3 with regex unstructured email discovery
+        prof3_dir = os.path.join(mock_user_data, "Profile 3")
+        os.makedirs(prof3_dir, exist_ok=True)
+        with open(os.path.join(prof3_dir, "Preferences"), "w", encoding="utf-8") as f:
+            f.write('{"unstructured": "contact regex.user@domain.com or anvien.sub@evil.org for help"}')
+
+        # Test get_chrome_signed_in_accounts with user_data_path
+        accounts = get_chrome_signed_in_accounts(user_data_path=mock_user_data)
+        expected_accounts = [
+            "alice@gmail.com",
+            "bob@example.com",
+            "legacy.user@example.org",
+            "regex.user@domain.com",
+            "secondary@gmail.com",
+        ]
+        self.assertEqual(accounts, expected_accounts)
+
+        # Verify absolutely zero blacklisted accounts present
+        for acc in accounts:
+            self.assertFalse(is_blacklisted(acc))
+            self.assertNotIn("anvien", acc.lower())
+
+        # Test get_chrome_account_details with user_data_path
+        details = get_chrome_account_details(user_data_path=mock_user_data)
+        self.assertEqual(len(details), len(expected_accounts))
+        details_by_email = {d.email: d for d in details}
+
+        # Verify rich metadata on alice
+        alice_info = details_by_email.get("alice@gmail.com")
+        self.assertIsNotNone(alice_info)
+        self.assertEqual(alice_info.name, "Alice Wonderland")
+        self.assertEqual(alice_info.profile_dir, "Default")
+        self.assertEqual(alice_info.avatar_url, "https://avatar.example.com/alice.png")
+
+        # Verify rich metadata on bob
+        bob_info = details_by_email.get("bob@example.com")
+        self.assertIsNotNone(bob_info)
+        self.assertEqual(bob_info.name, "Bob Builder")
+        self.assertEqual(bob_info.profile_dir, "Profile 1")
+        self.assertEqual(bob_info.avatar_url, "https://avatar.example.com/bob.png")
+
+        # Verify secondary user
+        sec_info = details_by_email.get("secondary@gmail.com")
+        self.assertIsNotNone(sec_info)
+        self.assertEqual(sec_info.name, "Secondary User")
+        self.assertEqual(sec_info.profile_dir, "Default")
+
+        # Verify regex user fallback
+        regex_info = details_by_email.get("regex.user@domain.com")
+        self.assertIsNotNone(regex_info)
+        self.assertEqual(regex_info.profile_dir, "Profile 3")
+
+        # Verify none of the details contain anvien
+        for d in details:
+            self.assertFalse(is_blacklisted(d.email))
+            self.assertNotIn("anvien", d.email.lower())
+
+    def test_chrome_scanner_corrupted_and_empty_dirs(self):
+        # 1. Non-existent path returns empty list
+        non_existent = os.path.join(self.test_store_dir, "does_not_exist_chrome_dir")
+        self.assertEqual(get_chrome_signed_in_accounts(user_data_path=non_existent), [])
+        self.assertEqual(get_chrome_account_details(user_data_path=non_existent), [])
+
+        # 2. Empty directory returns empty list
+        empty_dir = os.path.join(self.test_store_dir, "empty_chrome_dir")
+        os.makedirs(empty_dir, exist_ok=True)
+        self.assertEqual(get_chrome_signed_in_accounts(user_data_path=empty_dir), [])
+        self.assertEqual(get_chrome_account_details(user_data_path=empty_dir), [])
+
+        # 3. Corrupted Local State (syntax error)
+        corrupted_dir = os.path.join(self.test_store_dir, "corrupted_chrome_dir")
+        os.makedirs(corrupted_dir, exist_ok=True)
+        with open(os.path.join(corrupted_dir, "Local State"), "w", encoding="utf-8") as f:
+            f.write("{ invalid json corrupted content ...")
+
+        # Profile with empty / corrupted Preferences
+        prof_dir = os.path.join(corrupted_dir, "Default")
+        os.makedirs(prof_dir, exist_ok=True)
+        with open(os.path.join(prof_dir, "Preferences"), "w", encoding="utf-8") as f:
+            f.write("")
+
+        # Should execute safely without raising exceptions and return empty
+        self.assertEqual(get_chrome_signed_in_accounts(user_data_path=corrupted_dir), [])
+        self.assertEqual(get_chrome_account_details(user_data_path=corrupted_dir), [])
+
+        # 4. Non-dict JSON in Local State (e.g. array)
+        with open(os.path.join(corrupted_dir, "Local State"), "w", encoding="utf-8") as f:
+            f.write('["not", "a", "dict"]')
+        self.assertEqual(get_chrome_signed_in_accounts(user_data_path=corrupted_dir), [])
+        self.assertEqual(get_chrome_account_details(user_data_path=corrupted_dir), [])
 
     def test_state_resolver_with_account_store(self):
         manager = AccountManager(self.store)

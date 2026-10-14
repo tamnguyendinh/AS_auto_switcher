@@ -311,8 +311,74 @@ Planned Evidence Targets:
 
 Matching plan item(s): `P3-A`, `P3-B`, `P3-C`
 
+### P3-A Execution Evidence
+
+- `E3-P3A-SCAN1`: Multi-profile Chrome discovery and strict blacklist filter verification in `scanner/chrome_scanner.py`:
+  - `ChromeAccountInfo` dataclass defined with attributes: `email: str`, `name: str = ""`, `profile_dir: str = ""`, `avatar_url: Optional[str] = None`.
+  - `get_chrome_signed_in_accounts(user_data_path: Optional[str] = None) -> List[str]`:
+    - Backward-compatible signature supporting custom/mock user data directories for isolated unit testing.
+    - Successfully returns unique, sorted list of valid Google accounts while strictly excluding blacklisted emails.
+  - `get_chrome_account_details(user_data_path: Optional[str] = None) -> List[ChromeAccountInfo]`:
+    - Traverses `Local State` (`info_cache` / `profiles_attributes`) and profile directories (`Default`, `Profile *`, and discovered folders).
+    - Parses modern Chrome `account_info` list, legacy Chrome `account_tracker_service_last_update` dict, and fallback regex extraction.
+    - Merges and enriches display name, avatar URL, and profile directory metadata across sources.
+  - Blacklist enforcement & resilience:
+    - `BLACKLIST_KEYWORDS = ["anvien"]` strictly checked case-insensitively via `is_blacklisted()`.
+    - Filters substring variants (e.g. `test.anvien@gmail.com`, `ANVIEN@company.com`, `user@sub.anvien.net`, `hokinhdoanh.anvien.sales@gmail.com`).
+    - Handles missing files, non-existent directories, empty directories, syntax-corrupted JSON, non-dict payloads, and permission/OS errors gracefully without throwing unhandled exceptions.
+  - Validated via unit test suite in `tests/test_all.py` (31 tests passing cleanly):
+    - `test_blacklist_enforcement`: verifies case variations, substrings, and clean emails.
+    - `test_chrome_scanner_mock_profiles`: verifies multi-profile extraction (`Default`, `Profile 1`, `Profile 3`) with modern `account_info`, legacy tracker, and regex email discovery, confirming complete elimination of all 4 blacklisted test accounts and proper metadata population.
+    - `test_chrome_scanner_corrupted_and_empty_dirs`: verifies non-existent paths, empty directories, corrupted `Local State`, empty `Preferences`, and non-dict JSON return empty lists safely.
+    - `test_live_chrome_scanner` & `test_live_chrome_account_details`: validates live discovery on host machine returning 6 valid accounts with zero blacklisted items.
+  - Test run output:
+    ```text
+    python -m unittest -v tests/test_all.py
+    test_account_store_atomic_write_and_payload (tests.test_all.TestAntigravitySwitcher.test_account_store_atomic_write_and_payload) ... ok
+    test_account_store_corrupted_json (tests.test_all.TestAntigravitySwitcher.test_account_store_corrupted_json) ... ok
+    test_account_store_json_files (tests.test_all.TestAntigravitySwitcher.test_account_store_json_files) ... ok
+    test_api_connector_invalid_info_graceful_handling (tests.test_all.TestAntigravitySwitcher.test_api_connector_invalid_info_graceful_handling) ... ok
+    test_auth_logout_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_auth_logout_mock_errors_and_timeout) ... ok
+    test_auth_logout_mock_success (tests.test_all.TestAntigravitySwitcher.test_auth_logout_mock_success) ... ok
+    test_auto_capture_active_session (tests.test_all.TestAntigravitySwitcher.test_auto_capture_active_session) ... ok
+    test_blacklist_enforcement (tests.test_all.TestAntigravitySwitcher.test_blacklist_enforcement) ... ok
+    test_chrome_scanner_corrupted_and_empty_dirs (tests.test_all.TestAntigravitySwitcher.test_chrome_scanner_corrupted_and_empty_dirs) ... ok
+    test_chrome_scanner_mock_profiles (tests.test_all.TestAntigravitySwitcher.test_chrome_scanner_mock_profiles) ... ok
+    test_credential_manager_read_edge_cases (tests.test_all.TestAntigravitySwitcher.test_credential_manager_read_edge_cases) ... ok
+    test_credential_manager_round_trip_and_delete (tests.test_all.TestAntigravitySwitcher.test_credential_manager_round_trip_and_delete) ... ok
+    test_credential_manager_write_validation (tests.test_all.TestAntigravitySwitcher.test_credential_manager_write_validation) ... ok
+    test_discover_listening_port_mocked (tests.test_all.TestAntigravitySwitcher.test_discover_listening_port_mocked) ... ok
+    test_extract_csrf_token_formats_and_edge_cases (tests.test_all.TestAntigravitySwitcher.test_extract_csrf_token_formats_and_edge_cases) ... ok
+    test_find_language_server_process_mocked (tests.test_all.TestAntigravitySwitcher.test_find_language_server_process_mocked) ... ok
+    test_get_user_status_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_get_user_status_mock_errors_and_timeout) ... ok
+    test_get_user_status_mock_success (tests.test_all.TestAntigravitySwitcher.test_get_user_status_mock_success) ... ok
+    test_jwt_payload_decode (tests.test_all.TestAntigravitySwitcher.test_jwt_payload_decode) ... ok
+    test_language_server_info_dataclass (tests.test_all.TestAntigravitySwitcher.test_language_server_info_dataclass) ... ok
+    test_live_chrome_account_details (tests.test_all.TestAntigravitySwitcher.test_live_chrome_account_details) ... ok
+    test_live_chrome_scanner (tests.test_all.TestAntigravitySwitcher.test_live_chrome_scanner) ... ok
+    test_live_credential_read (tests.test_all.TestAntigravitySwitcher.test_live_credential_read) ... ok
+    test_live_find_language_server_process (tests.test_all.TestAntigravitySwitcher.test_live_find_language_server_process) ... ok
+    test_live_get_user_status (tests.test_all.TestAntigravitySwitcher.test_live_get_user_status) ... ok
+    test_live_session_reloader_safety (tests.test_all.TestAntigravitySwitcher.test_live_session_reloader_safety) ... ok
+    test_reload_antigravity_session_coordinated_flow (tests.test_all.TestAntigravitySwitcher.test_reload_antigravity_session_coordinated_flow) ... ok
+    test_sanitize_filename_edge_cases (tests.test_all.TestAntigravitySwitcher.test_sanitize_filename_edge_cases) ... ok
+    test_state_resolver_with_account_store (tests.test_all.TestAntigravitySwitcher.test_state_resolver_with_account_store) ... ok
+    test_trigger_reauth_mock_errors_and_timeout (tests.test_all.TestAntigravitySwitcher.test_trigger_reauth_mock_errors_and_timeout) ... ok
+    test_trigger_reauth_mock_success (tests.test_all.TestAntigravitySwitcher.test_trigger_reauth_mock_success) ... ok
+
+    ----------------------------------------------------------------------
+    Ran 31 tests in 5.714s
+
+    OK
+    ```
+  - Batch stability verification (5 consecutive runs):
+    ```text
+    python -c "import subprocess, sys; res = [subprocess.run([sys.executable, '-m', 'unittest', 'tests/test_all.py'], capture_output=True).returncode for _ in range(5)]; print('Results:', res); assert all(r == 0 for r in res)"
+    Results: [0, 0, 0, 0, 0]
+    ```
+
 Planned Evidence Targets:
-- `E3-P3A-SCAN1`: Multi-profile Chrome discovery output with zero blacklisted items.
+- `E3-P3A-SCAN1`: Multi-profile Chrome discovery output with zero blacklisted items (Achieved).
 - `E3-P3B-STATE1`: State machine output matrix resolving 🟢 ACTIVE, 🟢 READY, 🟡 UNAUTH.
 - `E3-P3C-SW1`: Execution of full 4-step hot-swap loop (GetUserStatus -> AuthLogout -> Credential write -> ReAuth trigger).
 
