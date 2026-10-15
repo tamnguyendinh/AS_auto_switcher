@@ -45,7 +45,6 @@ from core.session_reloader import (
     pre_patch_tos_acceptance,
     discover_most_recent_cascade_id,
     capture_active_threads_snapshot,
-    get_default_threads_history_dir,
 )
 from ui.app_window import AppWindow, SwitcherApp
 import threading
@@ -2141,7 +2140,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
             self.assertEqual(str(btn.cget("state")), tk.NORMAL)
 
             # Start switch in background thread
-            th = app._on_switch_click("ready@example.com", run_in_background=True)
+            app._on_switch_click("ready@example.com", run_in_background=True)
             self.assertTrue(switch_hold.wait(timeout=1.0))
 
             # While switch is executing, button should be DISABLED and display "Đang chuyển..."
@@ -2970,7 +2969,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
         os.makedirs(os.path.join(self.test_store_dir, "c-alpha-1"), exist_ok=True)
         os.makedirs(os.path.join(self.test_store_dir, "c-beta-2"), exist_ok=True)
 
-        snapshot_file, active_threads = capture_active_threads_snapshot(
+        snapshot_file, _ = capture_active_threads_snapshot(
             storage_path=temp_storage,
             brain_dir=self.test_store_dir,
             output_dir=temp_history,
@@ -3125,7 +3124,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
         # Create thread directory in brain_dir for active_thread
         os.makedirs(os.path.join(self.test_store_dir, active_thread), exist_ok=True)
 
-        snapshot_file, active_threads = capture_active_threads_snapshot(
+        _, active_threads = capture_active_threads_snapshot(
             storage_path=temp_storage,
             brain_dir=self.test_store_dir,
             output_dir=temp_history,
@@ -3196,7 +3195,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
         with open(temp_storage, "w", encoding="utf-8") as f:
             json.dump(mock_storage, f)
 
-        snapshot_file, active_threads = capture_active_threads_snapshot(
+        _, active_threads = capture_active_threads_snapshot(
             storage_path=temp_storage,
             brain_dir=temp_brain,
             output_dir=temp_history_dir,

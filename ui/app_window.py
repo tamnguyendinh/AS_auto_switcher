@@ -35,7 +35,6 @@ FG_MUTED = "#a6adc8"
 COLOR_GREEN = "#a6e3a1"
 COLOR_YELLOW = "#f9e2af"
 COLOR_BLUE = "#89b4fa"
-COLOR_RED = "#f38ba8"
 FONT_MAIN = ("Segoe UI", 10)
 FONT_BOLD = ("Segoe UI", 10, "bold")
 FONT_TITLE = ("Segoe UI", 12, "bold")

@@ -14,10 +14,7 @@ from core.session_reloader import (
     get_app_storage_path,
     pre_patch_tos_acceptance,
     recycle_language_server,
-    ensure_antigravity_foreground,
     is_tos_modal_present,
-    dismiss_tos_modal,
-    accept_tos_modal,
     dismiss_tos_modal_hardware_fallback,
     wait_and_dismiss_tos_modal,
     inject_continuation_prompt,
@@ -129,7 +126,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
 
         res = recycle_language_server(wait_seconds=0, process_killer=mock_killer)
         self.assertTrue(res)
-        self.assertEqual(len(killer_killer := killer_called), 1)
+        self.assertEqual(len(killer_called), 1)
 
     def test_recycle_language_server_default_wait_buffer_5s(self):
         """Verifies recycle_language_server defaults to 5.0s wait buffer."""
@@ -1003,7 +1000,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         os.makedirs(os.path.join(self.test_dir, "thread-main-alpha"), exist_ok=True)
         os.makedirs(os.path.join(self.test_dir, "thread-sec-beta"), exist_ok=True)
 
-        snapshot_file, active_threads = capture_active_threads_snapshot(
+        snapshot_file, _ = capture_active_threads_snapshot(
             storage_path=temp_storage,
             brain_dir=self.test_dir,
             output_dir=temp_history_dir
@@ -1077,7 +1074,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         with open(temp_storage, "w", encoding="utf-8") as f:
             json.dump(mock_storage_data, f)
 
-        snapshot_file, active_threads = capture_active_threads_snapshot(
+        _, active_threads = capture_active_threads_snapshot(
             storage_path=temp_storage,
             brain_dir=temp_brain,
             output_dir=temp_history_dir
@@ -1153,7 +1150,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         with open(temp_storage, "w", encoding="utf-8") as f:
             json.dump(mock_storage, f)
 
-        snapshot_file, active_threads = capture_active_threads_snapshot(
+        _, active_threads = capture_active_threads_snapshot(
             storage_path=temp_storage,
             brain_dir=temp_brain,
             output_dir=temp_history_dir,

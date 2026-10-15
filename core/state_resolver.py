@@ -20,16 +20,10 @@ from core.credential_manager import read_antigravity_token, write_antigravity_to
 from core.jwt_helper import extract_email_from_token_data
 from core.account_store import AccountStore
 from core.session_reloader import (
-    reload_antigravity_session,
     pre_patch_tos_acceptance,
     recycle_language_server,
     ensure_antigravity_foreground,
-    is_tos_modal_present,
-    dismiss_tos_modal_hardware_fallback,
     dismiss_tos_modal,
-    accept_tos_modal,
-    wait_and_dismiss_tos_modal,
-    inject_continuation_prompt,
     discover_most_recent_cascade_id,
     capture_active_threads_snapshot,
 )
@@ -41,7 +35,6 @@ from core.api_connector import (
     load_trajectory,
     smart_focus_conversation,
     send_user_cascade_message,
-    discover_active_agent_model,
 )
 
 logger = logging.getLogger(__name__)
@@ -489,7 +482,6 @@ class AccountManager:
         snapshot_capturer = custom_snap or (None if (custom_disc is not None or is_legacy_reloader) else capture_active_threads_snapshot)
 
         active_threads_list: List[Dict[str, Any]] = []
-        snapshot_file: Optional[str] = None
         if callable(snapshot_capturer):
             try:
                 import inspect
@@ -503,7 +495,7 @@ class AccountManager:
                     s_kwargs["output_dir"] = out_dir
                 res_snapshot = snapshot_capturer(**s_kwargs) if s_kwargs else snapshot_capturer()
                 if isinstance(res_snapshot, tuple) and len(res_snapshot) == 2:
-                    snapshot_file, active_threads_list = res_snapshot
+                    _, active_threads_list = res_snapshot
                 elif isinstance(res_snapshot, list):
                     active_threads_list = res_snapshot
             except Exception as exc:
