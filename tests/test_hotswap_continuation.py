@@ -23,10 +23,16 @@ from core.session_reloader import (
     inject_continuation_prompt,
     reload_session,
     reload_antigravity_session,
+    discover_most_recent_cascade_id,
 )
 from core.state_resolver import AccountManager, SwitchResult
 from core.account_store import AccountStore
-from core.api_connector import LanguageServerInfo
+from core.api_connector import (
+    LanguageServerInfo,
+    load_trajectory,
+    smart_focus_conversation,
+    send_user_cascade_message,
+)
 from ui.app_window import AppWindow
 
 
@@ -556,6 +562,326 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             self.assertIn("Language Server re-bound in RAM", app.status_bar_text)
             self.assertIn(target_email, app.status_bar_text)
 
+    # -------------------------------------------------------------------------
+    # 8. Thread ID Native Continuation Pipeline & Discovery Tests
+    # -------------------------------------------------------------------------
+    def test_discover_most_recent_cascade_id_nonexistent_and_empty(self):
+        """Verifies discover_most_recent_cascade_id handles non-existent or empty brain directories."""
+        self.assertIsNone(discover_most_recent_cascade_id(brain_dir=os.path.join(self.test_dir, "nonexistent")))
+
+        empty_brain = os.path.join(self.test_dir, "empty_brain")
+        os.makedirs(empty_brain, exist_ok=True)
+        self.assertIsNone(discover_most_recent_cascade_id(brain_dir=empty_brain))
+
+        # Subdirectory without transcript.jsonl should be ignored
+        no_transcript_dir = os.path.join(empty_brain, "dummy-cascade-id")
+        os.makedirs(no_transcript_dir, exist_ok=True)
+        self.assertIsNone(discover_most_recent_cascade_id(brain_dir=empty_brain))
+
+    def test_discover_most_recent_cascade_id_mtime_resolution(self):
+        """Verifies mtime resolution selects the most recent transcript across root and .system_generated/logs."""
+        brain_dir = os.path.join(self.test_dir, "mock_brain_1")
+        c1 = os.path.join(brain_dir, "uuid-alpha")
+        c2 = os.path.join(brain_dir, "uuid-beta", ".system_generated", "logs")
+        c3 = os.path.join(brain_dir, "uuid-gamma")
+        os.makedirs(c1, exist_ok=True)
+        os.makedirs(c2, exist_ok=True)
+        os.makedirs(c3, exist_ok=True)
+
+        t1 = os.path.join(c1, "transcript.jsonl")
+        t2 = os.path.join(c2, "transcript.jsonl")
+        t3 = os.path.join(c3, "transcript.jsonl")
+
+        with open(t1, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+        with open(t2, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+        with open(t3, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+
+        os.utime(t1, (1000, 1000))
+        os.utime(t2, (3000, 3000))  # Most recent
+        os.utime(t3, (2000, 2000))
+
+        discovered = discover_most_recent_cascade_id(brain_dir=brain_dir, storage_path=os.path.join(self.test_dir, "absent.json"))
+        self.assertEqual(discovered, "uuid-beta")
+
+    def test_discover_most_recent_cascade_id_cross_check_conversation_panes(self):
+        """Verifies cross-checking prioritizes cascade IDs listed in aux-pane-v2-session conversationPanes."""
+        brain_dir = os.path.join(self.test_dir, "mock_brain_2")
+        c_subagent = os.path.join(brain_dir, "subagent-child-uuid")
+        c_main_old = os.path.join(brain_dir, "main-thread-old")
+        c_main_active = os.path.join(brain_dir, "main-thread-active")
+
+        os.makedirs(c_subagent, exist_ok=True)
+        os.makedirs(c_main_old, exist_ok=True)
+        os.makedirs(c_main_active, exist_ok=True)
+
+        t_sub = os.path.join(c_subagent, "transcript.jsonl")
+        t_old = os.path.join(c_main_old, "transcript.jsonl")
+        t_act = os.path.join(c_main_active, "transcript.jsonl")
+
+        with open(t_sub, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+        with open(t_old, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+        with open(t_act, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+
+        # Subagent was touched most recently, but is NOT a main conversation pane
+        os.utime(t_old, (1000, 1000))
+        os.utime(t_act, (2000, 2000))
+        os.utime(t_sub, (3000, 3000))
+
+        # Storage contains conversationPanes with main-thread-active and main-thread-old
+        storage_file = os.path.join(self.test_dir, "app_storage_panes.json")
+        storage_content = {
+            "aux-pane-v2-session": json.dumps({
+                "version": 1,
+                "conversationPanes": {
+                    "main-thread-old": {"tabs": []},
+                    "main-thread-active": {"tabs": [{"childCascadeId": "subagent-child-uuid"}]}
+                }
+            })
+        }
+        with open(storage_file, "w", encoding="utf-8") as f:
+            json.dump(storage_content, f)
+
+        discovered = discover_most_recent_cascade_id(brain_dir=brain_dir, storage_path=storage_file)
+        # MUST select the active main conversation pane (main-thread-active), not the subagent
+        self.assertEqual(discovered, "main-thread-active")
+
+    def test_discover_most_recent_cascade_id_cross_check_layout_keys_priority(self):
+        """Verifies layout keys are prioritized if aux-pane-v2-session is absent or non-matching."""
+        brain_dir = os.path.join(self.test_dir, "mock_brain_3")
+        c1 = os.path.join(brain_dir, "layout-cand-1")
+        c2 = os.path.join(brain_dir, "layout-cand-2")
+        c3 = os.path.join(brain_dir, "other-cand")
+
+        for d in [c1, c2, c3]:
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, "transcript.jsonl"), "w", encoding="utf-8") as f:
+                f.write("{}\n")
+
+        os.utime(os.path.join(c1, "transcript.jsonl"), (100, 100))
+        os.utime(os.path.join(c2, "transcript.jsonl"), (200, 200))
+        os.utime(os.path.join(c3, "transcript.jsonl"), (300, 300))
+
+        storage_file = os.path.join(self.test_dir, "app_storage_layout.json")
+        storage_content = {
+            "antigravity-multi-conversation-layout-v3-layout-cand-1": {},
+            "antigravity-multi-conversation-layout-v3-layout-cand-2+_new": {},
+            "antigravity-multi-conversation-layout-v3-index": {}
+        }
+        with open(storage_file, "w", encoding="utf-8") as f:
+            json.dump(storage_content, f)
+
+        discovered = discover_most_recent_cascade_id(brain_dir=brain_dir, storage_path=storage_file)
+        self.assertEqual(discovered, "layout-cand-2")
+
+    def test_load_trajectory_mock_success_and_error(self):
+        """Verifies load_trajectory Connect-RPC request headers, payload, and response handling."""
+        mock_info = LanguageServerInfo(pid=1234, csrf_token="csrf-lt-1", port=55100)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+
+            res = load_trajectory(mock_info, "test-cascade-id-123")
+            self.assertTrue(res)
+
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.full_url, "http://127.0.0.1:55100/exa.language_server_pb.LanguageServerService/LoadTrajectory")
+            self.assertEqual(req.headers["X-csrf-token"], "csrf-lt-1")
+            self.assertEqual(req.headers["X-codeium-csrf-token"], "csrf-lt-1")
+            payload = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(payload, {"cascadeId": "test-cascade-id-123"})
+
+        # Error cases
+        with patch("urllib.request.urlopen", side_effect=RuntimeError("connection refused")):
+            self.assertFalse(load_trajectory(mock_info, "test-cascade-id-123"))
+
+        self.assertFalse(load_trajectory(None, "test-cascade-id-123"))
+        self.assertFalse(load_trajectory(mock_info, ""))
+        self.assertFalse(load_trajectory(LanguageServerInfo(pid=0, csrf_token="", port=0), "test-cascade-id-123"))
+
+    def test_smart_focus_conversation_mock_success_and_resilience(self):
+        """Verifies smart_focus_conversation Connect-RPC invocation and graceful exception handling."""
+        mock_info = LanguageServerInfo(pid=1234, csrf_token="csrf-sfc-1", port=55100)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+
+            res = smart_focus_conversation(mock_info, "cascade-sfc-target")
+            self.assertTrue(res)
+
+            req = mock_urlopen.call_args[0][0]
+            self.assertEqual(req.full_url, "http://127.0.0.1:55100/exa.language_server_pb.LanguageServerService/SmartFocusConversation")
+            payload = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(payload, {"cascadeId": "cascade-sfc-target"})
+
+        # Safe exception handling without crashing
+        with patch("urllib.request.urlopen", side_effect=Exception("Internal gRPC exception")):
+            self.assertFalse(smart_focus_conversation(mock_info, "cascade-sfc-target"))
+
+        self.assertFalse(smart_focus_conversation(None, "cascade-sfc-target"))
+        self.assertFalse(smart_focus_conversation(mock_info, "   "))
+
+    def test_send_user_cascade_message_mock_success_and_custom_prompt(self):
+        """Verifies send_user_cascade_message Connect-RPC payload with default and custom prompts."""
+        mock_info = LanguageServerInfo(pid=1234, csrf_token="csrf-msg-1", port=55100)
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            mock_resp.__enter__.return_value = mock_resp
+            mock_urlopen.return_value = mock_resp
+
+            # Default prompt
+            res1 = send_user_cascade_message(mock_info, "cascade-msg-target")
+            self.assertTrue(res1)
+            req1 = mock_urlopen.call_args[0][0]
+            payload1 = json.loads(req1.data.decode("utf-8"))
+            self.assertEqual(payload1, {"cascadeId": "cascade-msg-target", "items": [{"text": "continue"}]})
+
+            # Custom prompt
+            res2 = send_user_cascade_message(mock_info, "cascade-msg-target", prompt_text="execute test step")
+            self.assertTrue(res2)
+            req2 = mock_urlopen.call_args[0][0]
+            payload2 = json.loads(req2.data.decode("utf-8"))
+            self.assertEqual(payload2, {"cascadeId": "cascade-msg-target", "items": [{"text": "execute test step"}]})
+
+        # Error handling
+        with patch("urllib.request.urlopen", side_effect=Exception("Timeout")):
+            self.assertFalse(send_user_cascade_message(mock_info, "cascade-msg-target"))
+        self.assertFalse(send_user_cascade_message(None, "cascade-msg-target"))
+
+    def test_switch_account_native_rpc_continuation_pipeline_success(self):
+        """
+        Verifies switch_account executes 3-step native continuation pipeline in order:
+        1. smart_focus_conversation(info, cascade_id)
+        2. load_trajectory(info, cascade_id)
+        3. send_user_cascade_message(info, cascade_id, prompt_text)
+        and strictly bypasses Win32 keyboard prompt_injector when RPC succeeds.
+        """
+        target_email = "rpc_native@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_native"})
+
+        mock_info = LanguageServerInfo(pid=8888, csrf_token="csrf-native", port=59000)
+        target_cascade_id = "cascade-native-thread-uuid"
+        rpc_call_log = []
+
+        def mock_focuser(info, cid):
+            rpc_call_log.append(("smart_focus", info.pid, cid))
+            return True
+
+        def mock_loader(info, cid):
+            rpc_call_log.append(("load_trajectory", info.pid, cid))
+            return True
+
+        def mock_sender(info, cid, prompt_text="continue"):
+            rpc_call_log.append(("send_cascade_message", info.pid, cid, prompt_text))
+            return True
+
+        keyboard_injector_called = []
+        def mock_injector(prompt_text="continue", sleep_fn=None):
+            keyboard_injector_called.append(prompt_text)
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: mock_info,
+            status_getter=lambda info: {"email": "old_user@gmail.com"},
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda: True,
+            cascade_discoverer=lambda: target_cascade_id,
+            smart_focuser=mock_focuser,
+            trajectory_loader=mock_loader,
+            cascade_sender=mock_sender,
+            prompt_injector=mock_injector,
+            auto_continue=True,
+            dom_settle_delay=0.0,
+        )
+
+        res = manager.switch_account(target_email, prompt_text="continue pipeline")
+        self.assertTrue(res.success)
+
+        # 1. Verify 3-step native RPC pipeline called in exact order
+        self.assertEqual(len(rpc_call_log), 3)
+        self.assertEqual(rpc_call_log[0], ("smart_focus", 8888, target_cascade_id))
+        self.assertEqual(rpc_call_log[1], ("load_trajectory", 8888, target_cascade_id))
+        self.assertEqual(rpc_call_log[2], ("send_cascade_message", 8888, target_cascade_id, "continue pipeline"))
+
+        # 2. CRITICAL INVARIANT: Win32 keyboard emulation was strictly bypassed!
+        self.assertEqual(keyboard_injector_called, [])
+
+    def test_switch_account_native_rpc_fallback_when_rpc_fails(self):
+        """Verifies switch_account falls back to Win32 keyboard prompt_injector if send_user_cascade_message fails."""
+        target_email = "rpc_fail@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_fail"})
+        mock_info = LanguageServerInfo(pid=8888, csrf_token="csrf-fail", port=59000)
+
+        keyboard_injector_called = []
+        def mock_injector(prompt_text="continue", sleep_fn=None):
+            keyboard_injector_called.append(prompt_text)
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: mock_info,
+            status_getter=lambda info: {"email": "old_user@gmail.com"},
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda: True,
+            cascade_discoverer=lambda: "failed-cascade-uuid",
+            smart_focuser=lambda info, cid: True,
+            trajectory_loader=lambda info, cid: True,
+            cascade_sender=lambda info, cid, prompt_text="continue": False,  # RPC failed
+            prompt_injector=mock_injector,
+            auto_continue=True,
+            dom_settle_delay=0.0,
+        )
+
+        res = manager.switch_account(target_email, prompt_text="fallback-continue")
+        self.assertTrue(res.success)
+        # Keyboard emulation invoked as fallback
+        self.assertEqual(keyboard_injector_called, ["fallback-continue"])
+
+    def test_switch_account_native_rpc_fallback_when_no_cascade_id(self):
+        """Verifies switch_account falls back to Win32 keyboard prompt_injector if no cascade_id is discoverable."""
+        target_email = "no_cascade@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_nocascade"})
+        mock_info = LanguageServerInfo(pid=8888, csrf_token="csrf-nocascade", port=59000)
+
+        keyboard_injector_called = []
+        def mock_injector(prompt_text="continue", sleep_fn=None):
+            keyboard_injector_called.append(prompt_text)
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: mock_info,
+            status_getter=lambda info: {"email": "old_user@gmail.com"},
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda: True,
+            cascade_discoverer=lambda: None,  # No cascade discovered
+            prompt_injector=mock_injector,
+            auto_continue=True,
+            dom_settle_delay=0.0,
+        )
+
+        res = manager.switch_account(target_email, prompt_text="fallback-nocascade")
+        self.assertTrue(res.success)
+        self.assertEqual(keyboard_injector_called, ["fallback-nocascade"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

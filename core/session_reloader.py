@@ -550,3 +550,106 @@ def inject_continuation_prompt(
         logger.debug("inject_continuation_prompt error: %s", exc)
         return False
 
+
+def discover_most_recent_cascade_id(
+    brain_dir: Optional[str] = None,
+    storage_path: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Discovers the most recent active main conversation ID (cascade_id).
+    Scans %USERPROFILE%/.gemini/antigravity/brain/ for subdirectories with transcript.jsonl,
+    reads mtime, and cross-checks with app_storage.json (aux-pane-v2-session / layout keys)
+    to target the active main user session.
+    """
+    b_dir = brain_dir
+    if b_dir is None:
+        user_profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+        b_dir = os.path.join(user_profile, ".gemini", "antigravity", "brain")
+
+    if not b_dir or not os.path.isdir(b_dir):
+        return None
+
+    # Step 1: Scan brain_dir for subdirectories containing transcript.jsonl
+    candidates: List[tuple[str, float]] = []
+    try:
+        for entry in os.listdir(b_dir):
+            entry_path = os.path.join(b_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+
+            t1 = os.path.join(entry_path, "transcript.jsonl")
+            t2 = os.path.join(entry_path, ".system_generated", "logs", "transcript.jsonl")
+
+            mtime: Optional[float] = None
+            if os.path.isfile(t1):
+                try:
+                    mtime = os.path.getmtime(t1)
+                except Exception:
+                    pass
+            elif os.path.isfile(t2):
+                try:
+                    mtime = os.path.getmtime(t2)
+                except Exception:
+                    pass
+
+            if mtime is not None:
+                candidates.append((entry, mtime))
+    except Exception as exc:
+        logger.debug("discover_most_recent_cascade_id error scanning brain: %s", exc)
+        return None
+
+    if not candidates:
+        return None
+
+    # Step 2: Extract active main conversation IDs from app_storage.json
+    s_path = storage_path if storage_path is not None else get_app_storage_path()
+    main_panes: List[str] = []
+    layout_ids: List[str] = []
+
+    if s_path and os.path.isfile(s_path):
+        try:
+            with open(s_path, "r", encoding="utf-8") as f:
+                sdata = json.load(f)
+            if isinstance(sdata, dict):
+                # Check aux-pane-v2-session for main conversationPanes
+                aux = sdata.get("aux-pane-v2-session")
+                if isinstance(aux, str):
+                    try:
+                        aux = json.loads(aux)
+                    except Exception:
+                        aux = None
+                if isinstance(aux, dict):
+                    panes = aux.get("conversationPanes")
+                    if isinstance(panes, dict):
+                        main_panes = [p for p in panes.keys() if p and isinstance(p, str)]
+
+                # Check layout keys
+                for k in sdata.keys():
+                    if k.startswith("antigravity-multi-conversation-layout-v3-"):
+                        cid = k[len("antigravity-multi-conversation-layout-v3-"):]
+                        if cid.endswith("+_new"):
+                            cid = cid[:-5]
+                        if cid and cid != "index":
+                            layout_ids.append(cid)
+        except Exception as exc:
+            logger.debug("discover_most_recent_cascade_id error reading app_storage: %s", exc)
+
+    # Step 3: Cross-check candidates with app_storage.json
+    # Priority 1: Match against main conversationPanes
+    if main_panes:
+        matching_panes = [c for c in candidates if c[0] in main_panes]
+        if matching_panes:
+            matching_panes.sort(key=lambda x: x[1], reverse=True)
+            return matching_panes[0][0]
+
+    # Priority 2: Match against layout keys
+    if layout_ids:
+        matching_layouts = [c for c in candidates if c[0] in layout_ids]
+        if matching_layouts:
+            matching_layouts.sort(key=lambda x: x[1], reverse=True)
+            return matching_layouts[0][0]
+
+    # Priority 3: Fallback to most recent candidate in brain directory
+    candidates.sort(key=lambda x: x[1], reverse=True)
+    return candidates[0][0]
+

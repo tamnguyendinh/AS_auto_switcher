@@ -424,3 +424,127 @@ def trigger_reauth(
 
     return False
 
+
+def load_trajectory(
+    info: Optional[LanguageServerInfo],
+    cascade_id: str,
+    timeout: float = 2.0,
+) -> bool:
+    """
+    Sends Connect-RPC POST to /exa.language_server_pb.LanguageServerService/LoadTrajectory
+    with {"cascadeId": cascade_id} and CSRF headers (X-Csrf-Token and x-codeium-csrf-token).
+    Returns True on status 200.
+    """
+    if not info or not isinstance(info, LanguageServerInfo):
+        return False
+    if info.port <= 0 or not info.csrf_token:
+        return False
+    if not cascade_id or not isinstance(cascade_id, str) or not cascade_id.strip():
+        return False
+
+    url = f"{info.base_url}/exa.language_server_pb.LanguageServerService/LoadTrajectory"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Csrf-Token": info.csrf_token,
+        "x-codeium-csrf-token": info.csrf_token,
+    }
+    payload = json.dumps({"cascadeId": cascade_id.strip()}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as err:
+        logger.debug("load_trajectory HTTP error: %s", err.code)
+        try:
+            err.close()
+        except Exception:
+            pass
+        return False
+    except Exception as exc:
+        logger.debug("load_trajectory request failed: %s", exc)
+        return False
+
+
+def smart_focus_conversation(
+    info: Optional[LanguageServerInfo],
+    cascade_id: str,
+    timeout: float = 2.0,
+) -> bool:
+    """
+    Sends Connect-RPC POST to /exa.language_server_pb.LanguageServerService/SmartFocusConversation
+    with {"cascadeId": cascade_id} and CSRF headers.
+    Handles 200 or catches errors safely (returning False without crashing).
+    """
+    if not info or not isinstance(info, LanguageServerInfo):
+        return False
+    if info.port <= 0 or not info.csrf_token:
+        return False
+    if not cascade_id or not isinstance(cascade_id, str) or not cascade_id.strip():
+        return False
+
+    url = f"{info.base_url}/exa.language_server_pb.LanguageServerService/SmartFocusConversation"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Csrf-Token": info.csrf_token,
+        "x-codeium-csrf-token": info.csrf_token,
+    }
+    payload = json.dumps({"cascadeId": cascade_id.strip()}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as err:
+        logger.debug("smart_focus_conversation HTTP error: %s", err.code)
+        try:
+            err.close()
+        except Exception:
+            pass
+        return False
+    except Exception as exc:
+        logger.debug("smart_focus_conversation request failed: %s", exc)
+        return False
+
+
+def send_user_cascade_message(
+    info: Optional[LanguageServerInfo],
+    cascade_id: str,
+    prompt_text: str = "continue",
+    timeout: float = 5.0,
+) -> bool:
+    """
+    Sends Connect-RPC POST to /exa.language_server_pb.LanguageServerService/SendUserCascadeMessage
+    with {"cascadeId": cascade_id, "items": [{"text": prompt_text}]} and CSRF headers.
+    Returns True on status 200.
+    """
+    if not info or not isinstance(info, LanguageServerInfo):
+        return False
+    if info.port <= 0 or not info.csrf_token:
+        return False
+    if not cascade_id or not isinstance(cascade_id, str) or not cascade_id.strip():
+        return False
+
+    url = f"{info.base_url}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Csrf-Token": info.csrf_token,
+        "x-codeium-csrf-token": info.csrf_token,
+    }
+    payload = json.dumps({
+        "cascadeId": cascade_id.strip(),
+        "items": [{"text": prompt_text}],
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as err:
+        logger.debug("send_user_cascade_message HTTP error: %s", err.code)
+        try:
+            err.close()
+        except Exception:
+            pass
+        return False
+    except Exception as exc:
+        logger.debug("send_user_cascade_message request failed: %s", exc)
+        return False
+

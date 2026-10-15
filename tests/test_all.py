@@ -32,6 +32,9 @@ from core.api_connector import (
     auth_logout,
     trigger_reauth,
     DEFAULT_REAUTH_ENDPOINTS,
+    load_trajectory,
+    smart_focus_conversation,
+    send_user_cascade_message,
 )
 from core.session_reloader import (
     find_antigravity_pids,
@@ -39,6 +42,7 @@ from core.session_reloader import (
     reload_antigravity_window,
     reload_antigravity_session,
     pre_patch_tos_acceptance,
+    discover_most_recent_cascade_id,
 )
 from ui.app_window import AppWindow, SwitcherApp
 import threading
@@ -2761,6 +2765,132 @@ class TestAntigravitySwitcher(unittest.TestCase):
         res_rfail = manager_reloader_fail.switch_account(target_email, force_logout=True)
         self.assertTrue(res_rfail)
         self.assertIn("step4_reloader_fail", chronological_log)
+
+    def test_load_trajectory_mock_http_server(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=4321, csrf_token="csrf-load-traj", port=server.port)
+            server.response_status = 200
+            server.response_body = b"{}"
+
+            self.assertTrue(load_trajectory(info, "mock-cascade-uuid-1"))
+            self.assertEqual(server.last_path, "/exa.language_server_pb.LanguageServerService/LoadTrajectory")
+            self.assertEqual(server.last_headers.get("x-csrf-token"), info.csrf_token)
+            self.assertEqual(server.last_headers.get("x-codeium-csrf-token"), info.csrf_token)
+
+            server.response_status = 500
+            self.assertFalse(load_trajectory(info, "mock-cascade-uuid-1"))
+        finally:
+            server.stop()
+
+    def test_smart_focus_conversation_mock_http_server(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=4321, csrf_token="csrf-smart-focus", port=server.port)
+            server.response_status = 200
+            server.response_body = b"{}"
+
+            self.assertTrue(smart_focus_conversation(info, "mock-cascade-uuid-2"))
+            self.assertEqual(server.last_path, "/exa.language_server_pb.LanguageServerService/SmartFocusConversation")
+            self.assertEqual(server.last_headers.get("x-csrf-token"), info.csrf_token)
+
+            server.response_status = 404
+            self.assertFalse(smart_focus_conversation(info, "mock-cascade-uuid-2"))
+        finally:
+            server.stop()
+
+    def test_send_user_cascade_message_mock_http_server(self):
+        server = MockHttpServerHelper()
+        server.start()
+        try:
+            info = LanguageServerInfo(pid=4321, csrf_token="csrf-send-cascade", port=server.port)
+            server.response_status = 200
+            server.response_body = b"{}"
+
+            self.assertTrue(send_user_cascade_message(info, "mock-cascade-uuid-3", prompt_text="custom prompt test"))
+            self.assertEqual(server.last_path, "/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage")
+            self.assertEqual(server.last_headers.get("x-csrf-token"), info.csrf_token)
+
+            server.response_status = 503
+            self.assertFalse(send_user_cascade_message(info, "mock-cascade-uuid-3"))
+        finally:
+            server.stop()
+
+    def test_discover_most_recent_cascade_id_isolated_env(self):
+        test_brain = os.path.join(self.test_store_dir, "test_brain_isolated")
+        os.makedirs(os.path.join(test_brain, "casc-1"), exist_ok=True)
+        os.makedirs(os.path.join(test_brain, "casc-2", ".system_generated", "logs"), exist_ok=True)
+
+        t1 = os.path.join(test_brain, "casc-1", "transcript.jsonl")
+        t2 = os.path.join(test_brain, "casc-2", ".system_generated", "logs", "transcript.jsonl")
+
+        with open(t1, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+        with open(t2, "w", encoding="utf-8") as f:
+            f.write("{}\n")
+
+        os.utime(t1, (5000, 5000))
+        os.utime(t2, (6000, 6000))
+
+        # Default fallback to most recent mtime
+        self.assertEqual(discover_most_recent_cascade_id(brain_dir=test_brain, storage_path="absent.json"), "casc-2")
+
+        # Storage cross-check prioritizes conversationPanes
+        storage_path = os.path.join(self.test_store_dir, "test_storage.json")
+        with open(storage_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "aux-pane-v2-session": json.dumps({
+                    "conversationPanes": {
+                        "casc-1": {"tabs": []}
+                    }
+                })
+            }, f)
+
+        self.assertEqual(discover_most_recent_cascade_id(brain_dir=test_brain, storage_path=storage_path), "casc-1")
+
+    def test_switch_account_native_rpc_continuation_flow(self):
+        target_email = "rpc_flow@gmail.com"
+        self.store.store_account(target_email, {"access_token": "flow_at"})
+
+        mock_info = LanguageServerInfo(pid=9999, csrf_token="csrf-flow", port=59001)
+        calls = []
+
+        def mock_focuser(info, cid):
+            calls.append(("focus", cid))
+            return True
+
+        def mock_loader(info, cid):
+            calls.append(("load", cid))
+            return True
+
+        def mock_sender(info, cid, prompt_text="continue"):
+            calls.append(("send", cid, prompt_text))
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: mock_info,
+            status_getter=lambda info: {"email": "old_flow@gmail.com"},
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda: True,
+            cascade_discoverer=lambda: "discovered-flow-cascade",
+            smart_focuser=mock_focuser,
+            trajectory_loader=mock_loader,
+            cascade_sender=mock_sender,
+            auto_continue=True,
+            dom_settle_delay=0.0,
+        )
+
+        res = manager.switch_account(target_email)
+        self.assertTrue(res.success)
+        self.assertEqual(calls, [
+            ("focus", "discovered-flow-cascade"),
+            ("load", "discovered-flow-cascade"),
+            ("send", "discovered-flow-cascade", "continue"),
+        ])
 
 
 class MockHttpServerHelper:

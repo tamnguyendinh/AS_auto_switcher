@@ -9,6 +9,7 @@ Resolves each account into:
 """
 
 import time
+import logging
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Set, Callable, Union, Dict, Any
 from scanner.chrome_scanner import (
@@ -29,13 +30,19 @@ from core.session_reloader import (
     accept_tos_modal,
     wait_and_dismiss_tos_modal,
     inject_continuation_prompt,
+    discover_most_recent_cascade_id,
 )
 from core.api_connector import (
     find_language_server_process,
     get_user_status,
     auth_logout,
     LanguageServerInfo,
+    load_trajectory,
+    smart_focus_conversation,
+    send_user_cascade_message,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SwitchResult(tuple):
@@ -113,6 +120,12 @@ class AccountManager:
         tos_poll_interval: Optional[float] = None,
         sleep_fn: Optional[Callable[[float], None]] = None,
         dismiss_tos: bool = False,
+        cascade_discoverer: Optional[Callable[..., Optional[str]]] = None,
+        smart_focuser: Optional[Callable[[LanguageServerInfo, str], bool]] = None,
+        trajectory_loader: Optional[Callable[[LanguageServerInfo, str], bool]] = None,
+        cascade_sender: Optional[Callable[..., bool]] = None,
+        brain_dir: Optional[str] = None,
+        storage_path: Optional[str] = None,
     ):
         self.store = store or AccountStore()
         self.user_status_provider = user_status_provider
@@ -138,6 +151,12 @@ class AccountManager:
         self.tos_poll_interval = tos_poll_interval
         self.sleep_fn = sleep_fn
         self.dismiss_tos = dismiss_tos
+        self.cascade_discoverer = cascade_discoverer
+        self.smart_focuser = smart_focuser
+        self.trajectory_loader = trajectory_loader
+        self.cascade_sender = cascade_sender
+        self.brain_dir = brain_dir
+        self.storage_path = storage_path
 
     def get_current_active_email(
         self,
@@ -318,6 +337,13 @@ class AccountManager:
         tos_poll_interval: Optional[float] = None,
         sleep_fn: Optional[Callable[[float], None]] = None,
         dismiss_tos: Optional[bool] = None,
+        cascade_id: Optional[str] = None,
+        cascade_discoverer: Optional[Callable[..., Optional[str]]] = None,
+        smart_focuser: Optional[Callable[[LanguageServerInfo, str], bool]] = None,
+        trajectory_loader: Optional[Callable[[LanguageServerInfo, str], bool]] = None,
+        cascade_sender: Optional[Callable[..., bool]] = None,
+        brain_dir: Optional[str] = None,
+        storage_path: Optional[str] = None,
         **kwargs: Any,
     ) -> SwitchResult:
         """
@@ -337,7 +363,9 @@ class AccountManager:
           Step 6 (Optional Fallback): Dismiss ToS modal dialog via Enter key press ONLY if explicitly requested.
                                       Pre-patching eliminates ToS modal completely, so Enter dispatch is bypassed by default
                                       to prevent accidentally clicking 'Resuming Previous Conversation'.
-          Step 7 (Prompt Continuation): Inject continuation prompt (default: "continue") to resume AI agent.
+          Step 7 (Prompt Continuation): 3-step active Thread ID native continuation pipeline
+                                        (SmartFocusConversation -> LoadTrajectory -> SendUserCascadeMessage),
+                                        falling back to Win32 keyboard emulation only if RPC fails or cascade_id not found.
         """
         if not target_email or not isinstance(target_email, str):
             return SwitchResult(False, "Email tài khoản không hợp lệ.")
@@ -450,6 +478,30 @@ class AccountManager:
         except Exception:
             pass
 
+        # Discover active cascade_id before recycling (or use explicit cascade_id)
+        b_dir = brain_dir or getattr(self, "brain_dir", None)
+        s_path = storage_path or getattr(self, "storage_path", None)
+        discoverer = (
+            cascade_discoverer
+            or getattr(self, "cascade_discoverer", None)
+            or discover_most_recent_cascade_id
+        )
+
+        target_cascade_id: Optional[str] = cascade_id
+        if target_cascade_id is None and discoverer is not None:
+            try:
+                import inspect
+                d_sig = inspect.signature(discoverer)
+                d_kwargs = {}
+                if "brain_dir" in d_sig.parameters and b_dir is not None:
+                    d_kwargs["brain_dir"] = b_dir
+                if "storage_path" in d_sig.parameters and s_path is not None:
+                    d_kwargs["storage_path"] = s_path
+                target_cascade_id = discoverer(**d_kwargs) if d_kwargs else discoverer()
+            except Exception as exc:
+                logger.debug("Failed discovering cascade_id before recycle: %s", exc)
+                target_cascade_id = None
+
         # Step 2: Recycle language_server.exe and wait a full 5.0 seconds
         # (do NOT press any keys; allow Antigravity to reload and let the Google ToS modal dialog completely appear on screen)
         recycler = (
@@ -532,25 +584,79 @@ class AccountManager:
             except Exception:
                 pass
 
-        # Step 5: Focus the existing in-flight chat session (Ctrl+L), wait 0.5s settling delay,
-        # inject "continue", wait 0.25s, and press Enter
+        # If cascade_id was not discovered prior to recycling, attempt discovery post-recycling
+        if target_cascade_id is None and discoverer is not None:
+            try:
+                import inspect
+                d_sig = inspect.signature(discoverer)
+                d_kwargs = {}
+                if "brain_dir" in d_sig.parameters and b_dir is not None:
+                    d_kwargs["brain_dir"] = b_dir
+                if "storage_path" in d_sig.parameters and s_path is not None:
+                    d_kwargs["storage_path"] = s_path
+                target_cascade_id = discoverer(**d_kwargs) if d_kwargs else discoverer()
+            except Exception as exc:
+                logger.debug("Failed discovering cascade_id after recycle: %s", exc)
+                target_cascade_id = None
+
+        # Step 7 (Prompt Continuation):
+        # 3-step active Thread ID native continuation pipeline:
+        # a. Discover active cascade_id (captured above)
+        # b. If auto_continue is True and cascade_id is found:
+        #    - smart_focus_conversation(ls_info, cascade_id)
+        #    - load_trajectory(ls_info, cascade_id)
+        #    - send_user_cascade_message(ls_info, cascade_id, prompt_text=p_text)
+        # c. Only fallback to Win32 keyboard emulation (inject_continuation_prompt) if API injection fails or no cascade_id was discoverable.
         should_auto_continue = self.auto_continue if auto_continue is None else bool(auto_continue)
         if should_auto_continue:
-            injector = prompt_injector or getattr(self, "prompt_injector", None) or inject_continuation_prompt
-            try:
-                p_text = prompt_text or getattr(self, "prompt_text", "continue") or "continue"
-                import inspect
-                i_sig = inspect.signature(injector)
-                i_kwargs = {}
-                if "prompt_text" in i_sig.parameters:
-                    i_kwargs["prompt_text"] = p_text
-                if "sleep_fn" in i_sig.parameters:
-                    i_kwargs["sleep_fn"] = s_fn
-                if i_kwargs:
-                    injector(**i_kwargs)
-                else:
-                    injector(p_text)
-            except Exception:
-                pass
+            p_text = prompt_text or getattr(self, "prompt_text", "continue") or "continue"
+            rpc_injected = False
+
+            if target_cascade_id:
+                current_info = info
+                if current_info is None and callable(finder):
+                    try:
+                        current_info = finder()
+                    except Exception:
+                        current_info = None
+
+                if current_info is not None:
+                    focuser = smart_focuser or getattr(self, "smart_focuser", None) or smart_focus_conversation
+                    loader = trajectory_loader or getattr(self, "trajectory_loader", None) or load_trajectory
+                    sender = cascade_sender or getattr(self, "cascade_sender", None) or send_user_cascade_message
+
+                    try:
+                        focuser(current_info, target_cascade_id)
+                    except Exception as exc:
+                        logger.debug("smart_focus_conversation error: %s", exc)
+
+                    try:
+                        loader(current_info, target_cascade_id)
+                    except Exception as exc:
+                        logger.debug("load_trajectory error: %s", exc)
+
+                    try:
+                        rpc_injected = bool(sender(current_info, target_cascade_id, prompt_text=p_text))
+                    except Exception as exc:
+                        logger.debug("send_user_cascade_message error: %s", exc)
+                        rpc_injected = False
+
+            # Fallback to Win32 keyboard emulation ONLY if API injection fails or no cascade_id was discoverable
+            if not rpc_injected:
+                injector = prompt_injector or getattr(self, "prompt_injector", None) or inject_continuation_prompt
+                try:
+                    import inspect
+                    i_sig = inspect.signature(injector)
+                    i_kwargs = {}
+                    if "prompt_text" in i_sig.parameters:
+                        i_kwargs["prompt_text"] = p_text
+                    if "sleep_fn" in i_sig.parameters:
+                        i_kwargs["sleep_fn"] = s_fn
+                    if i_kwargs:
+                        injector(**i_kwargs)
+                    else:
+                        injector(p_text)
+                except Exception:
+                    pass
 
         return SwitchResult(True, f"Đã chuyển đổi thành công sang: {norm_email}")
