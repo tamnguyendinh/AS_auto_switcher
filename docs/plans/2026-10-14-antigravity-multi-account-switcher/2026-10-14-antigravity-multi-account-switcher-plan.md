@@ -1022,7 +1022,7 @@ Following the completion of the Python prototype (Phases P0–P5), the project a
   - P6-C: Core Orchestrator & Fyne Native GUI
   - P6-D: Standalone Windows Binary Compilation & Benchmark
 
-- [ ] P6-A: Go Core Primitives & Native Win32 Credential Layer
+- [x] P6-A: Go Core Primitives & Native Win32 Credential Layer
   - Goal: Initialize Go module `antigravity-switch`, implement pure Win32 `Advapi32.dll` credential management via `golang.org/x/sys/windows` targeting `LegacyGeneric:target=gemini:antigravity`, define shared model structs, and create atomic JSON persistence in `accounts_store/<email>.json` with path traversal guards.
   - Scope Boundary:
     - Editable: `go.mod`, `go.sum`, `internal/wincred/cred.go`, `internal/wincred/types.go`, `internal/model/types.go`, `internal/store/account_store.go`, `internal/store/sanitizer.go`, `internal/wincred/cred_test.go`, `internal/store/account_store_test.go`.

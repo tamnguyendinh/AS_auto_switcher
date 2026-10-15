@@ -765,10 +765,73 @@ Matching plan item(s): `Pn-A`, `Pn-B`, `Pn-C`
 
 Matching plan item(s): `P6-A`, `P6-B`, `P6-C`, `P6-D`
 
+### P6-A Execution Evidence
+
+- `E6-P6A-WIN1`: Pure Go native Win32 Advapi32 wrapper verification (`internal/wincred/`):
+  - Directly interfaces with Windows `Advapi32.dll` (`CredReadW`, `CredWriteW`, `CredDeleteW`, `CredFree`) via `golang.org/x/sys/windows` with zero CGo.
+  - Targets default Antigravity credential `LegacyGeneric:target=gemini:antigravity` with user `antigravity`.
+  - Implements safe UTF-16 pointer conversions, memory safety deallocation (`defer procCredFree.Call`), and structured errors (`ErrNotFound`, `ErrInvalidPayload`).
+  - Unit test verification in `internal/wincred/cred_test.go`:
+    * `TestWincredRoundTripAndDelete`: isolated test target (`LegacyGeneric:target=gemini:antigravity_test_p6a`) verifying initial ErrNotFound, write valid token with Vietnamese Unicode diacritics, read back exact token fields, delete credential, verify non-existence, and idempotent deletion.
+    * `TestWincredWriteValidation`: verifies rejection of nil tokens, empty tokens, and empty targets.
+    * `TestWincredLiveAntigravityRead`: live query against active Antigravity credential on Windows host confirming valid token read without crash.
+    * Output:
+      ```text
+      === RUN   TestWincredRoundTripAndDelete
+      --- PASS: TestWincredRoundTripAndDelete (0.03s)
+      === RUN   TestWincredWriteValidation
+      --- PASS: TestWincredWriteValidation (0.00s)
+      === RUN   TestWincredLiveAntigravityRead
+      --- PASS: TestWincredLiveAntigravityRead (0.00s)
+      PASS
+      ok      antigravity-switch/internal/wincred    0.729s
+      ```
+
+- `E6-P6A-STORE1`: Atomic JSON file storage and path sanitizer verification (`internal/store/`):
+  - Implements thread-safe `AccountStore` reading, writing, checking, deleting, and listing JSON files in `accounts_store/<email>.json`.
+  - Transactional atomic rename pattern using `os.CreateTemp` + `json.NewEncoder` + `Sync()` + `os.Rename()` preventing file corruption during sudden terminations.
+  - Sanitizer guards (`internal/store/sanitizer.go`) enforcing:
+    * Character normalization `[^a-z0-9_.@+-] -> _`
+    * Multi-dot collapse `\.{2,} -> .`
+    * Windows reserved device name protection (`CON`, `PRN`, `AUX`, `NUL`, `COM1`..`COM9`, `LPT1`..`LPT9`)
+    * Traversal protection (`SafeAccountPath` verifying target path stays strictly inside `storeDir`).
+  - Unit test verification in `internal/store/account_store_test.go`:
+    * `TestAccountStoreRoundTrip`: save, get, has, delete, idempotent delete.
+    * `TestAccountStoreListAccounts`: sorted unique list of stored emails.
+    * `TestAccountStoreCorruptedJSONHandling`: corrupted JSON syntax, empty files, binary garbage, missing token fields - all handled safely without crashing.
+    * `TestSanitizeFilenameEdgeCases`: edge cases matching Python tests + Windows reserved device names.
+    * `TestSafeAccountPathTraversalGuards`: path traversal detection and empty email validation.
+    * `TestAccountStoreConcurrentAccess`: 20 concurrent goroutines executing 200 operations under `-race` flag with zero race conditions.
+    * Output:
+      ```text
+      === RUN   TestAccountStoreRoundTrip
+      --- PASS: TestAccountStoreRoundTrip (0.02s)
+      === RUN   TestAccountStoreListAccounts
+      --- PASS: TestAccountStoreListAccounts (0.04s)
+      === RUN   TestAccountStoreCorruptedJSONHandling
+      --- PASS: TestAccountStoreCorruptedJSONHandling (0.02s)
+      === RUN   TestSanitizeFilenameEdgeCases
+      --- PASS: TestSanitizeFilenameEdgeCases (0.00s)
+      === RUN   TestSafeAccountPathTraversalGuards
+      --- PASS: TestSafeAccountPathTraversalGuards (0.00s)
+      === RUN   TestAccountStoreConcurrentAccess
+      --- PASS: TestAccountStoreConcurrentAccess (3.61s)
+      === RUN   TestModelTokenDataDualSerialization
+      --- PASS: TestModelTokenDataDualSerialization (0.00s)
+      PASS
+      ok      antigravity-switch/internal/store    4.381s
+      ```
+
+- `E6-P6A-MOD1`: Strongly typed model definitions in `internal/model/types.go`:
+  - `TokenData` supporting dual serialization: parses both Antigravity nested format (`token: {...}`) and flat format, while preserving unmodified byte payload via `RawPayload`.
+  - `AccountRecord` with `IsEligibleForSwitch()`, `MarkExhausted(baseCooldown)` with exponential backoff (15m -> 30m -> 60m capped at 2h), and `CheckCooldownExpiry()`.
+  - `AccountPool` guarded by `sync.RWMutex` managing account records, state transitions, and thread-safe selection.
+  - `FailoverConfig` defining hysteresis gates (15s dwell time, 4 switches / 120s sliding window).
+
 Planned Evidence Targets:
-- `E6-P6A-WIN1`: Pure Go native Win32 Advapi32 wrapper unit test verification (Pending implementation in P6-A).
-- `E6-P6A-STORE1`: Atomic JSON file storage round-trip and corruption safety test (Pending implementation in P6-A).
-- `E6-P6A-MOD1`: Strongly typed model validation matching Architect specification Section 4.3 (Pending implementation in P6-A).
+- `E6-P6A-WIN1`: Pure Go native Win32 Advapi32 wrapper unit test verification (Achieved).
+- `E6-P6A-STORE1`: Atomic JSON file storage round-trip and corruption safety test (Achieved).
+- `E6-P6A-MOD1`: Strongly typed model validation matching Architect specification Section 4.3 (Achieved).
 - `E6-P6B-SCAN1`: Chrome profile scanner with strict `anvien` blacklist test (Pending implementation in P6-B).
 - `E6-P6B-CONN1`: Language server discovery and loopback HTTP RPC client test (Pending implementation in P6-B).
 - `E6-P6C-MGR1`: Multi-account orchestrator and 4-step hot-swap execution test (Pending implementation in P6-C).
