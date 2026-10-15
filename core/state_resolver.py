@@ -631,7 +631,7 @@ class AccountManager:
             if is_legacy_reloader:
                 settle = kwargs.get("dom_settle_delay", 0.0)
             else:
-                settle = kwargs.get("dom_settle_delay", 60.0)
+                settle = kwargs.get("dom_settle_delay", 15.0)
 
         if settle and settle > 0:
             try:
