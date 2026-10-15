@@ -761,6 +761,35 @@ Matching plan item(s): `Pn-A`, `Pn-B`, `Pn-C`
     - Official closure report authored at `reports/planner/2026-10-15-plan-closure-report.md`.
   - Verdict: `[VERDICT: PASS]`
 
+## E6 - P6 Evidence: Go Engine Port & Standalone Binary
+
+Matching plan item(s): `P6-A`, `P6-B`, `P6-C`, `P6-D`
+
+Planned Evidence Targets:
+- `E6-P6A-WIN1`: Pure Go native Win32 Advapi32 wrapper unit test verification (Pending implementation in P6-A).
+- `E6-P6A-STORE1`: Atomic JSON file storage round-trip and corruption safety test (Pending implementation in P6-A).
+- `E6-P6A-MOD1`: Strongly typed model validation matching Architect specification Section 4.3 (Pending implementation in P6-A).
+- `E6-P6B-SCAN1`: Chrome profile scanner with strict `anvien` blacklist test (Pending implementation in P6-B).
+- `E6-P6B-CONN1`: Language server discovery and loopback HTTP RPC client test (Pending implementation in P6-B).
+- `E6-P6C-MGR1`: Multi-account orchestrator and 4-step hot-swap execution test (Pending implementation in P6-C).
+- `E6-P6C-UI1`: Fyne native GUI startup (< 50ms) and dark theme render test (Pending implementation in P6-C).
+- `E6-P6D-BIN1`: Standalone static binary size $\le 15\text{MB}$ and zero-dependency audit (Pending implementation in P6-D).
+- `E6-P6D-PERF1`: Memory footprint ($\le 12\text{MB}$ CLI / $\le 20\text{MB}$ GUI) and startup latency ($\le 10\text{ms}$) (Pending implementation in P6-D).
+
+## E7 - P7 Evidence: Go-Native Autonomous Quota Failover Daemon
+
+Matching plan item(s): `P7-A`, `P7-B`, `P7-C`, `P7-D`
+
+Planned Evidence Targets:
+- `E7-P7A-TAIL1`: Non-blocking goroutine log tailer incremental read and rotation test (Pending implementation in P7-A).
+- `E7-P7A-SIG1`: HTTP 429 and `RESOURCE_EXHAUSTED` regex pattern matching test (Pending implementation in P7-A).
+- `E7-P7B-POOL1`: Thread-safe `AccountPool` FSM and scheduler rotation test (Pending implementation in P7-B).
+- `E7-P7B-HYST1`: 15-second minimum dwell time hysteresis and circuit breaker test (Pending implementation in P7-B).
+- `E7-P7C-TRAY1`: Native Windows System Tray resident daemon and hotkey test (Pending implementation in P7-C).
+- `E7-P7C-TOAST1`: Windows 10/11 discrete Action Center toast alert test (Pending implementation in P7-C).
+- `E7-P7D-STORM1`: Quota Storm stress simulation across 3+ accounts (Pending implementation in P7-D).
+- `E7-P7D-LAT1`: Sub-second ($< 1.0\text{s}$) total automated failover and 100% IDE context preservation test (Pending implementation in P7-D).
+
 ## Closure Evidence
 
 Use this section for final detect-changes, commit hash, and closure evidence when the plan reaches completion.

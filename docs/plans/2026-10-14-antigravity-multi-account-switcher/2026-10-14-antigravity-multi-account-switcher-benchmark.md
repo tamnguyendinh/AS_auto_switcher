@@ -93,6 +93,28 @@ Benchmark sections must follow the plan phases:
 | Pn | Dead code / obsolete modules purged | count | - | 6 | 6 | >= 1 | 0 | `E-PNB-CLEAN1` |
 | Pn | Worktree clean status | % | - | 100% | 100% | 100% | 0% | `EC-PNC-TREE1` |
 
+## B6 - P6 Benchmarks
+
+| Phase | Metric | Unit | Baseline | Latest | Final | Target | Delta | Evidence |
+|-------|--------|------|----------|--------|-------|--------|-------|----------|
+| P6 | Standalone binary size (`antigravity-switch.exe`) | MB | 50.0 (Python env) | - | - | <= 15.0 | - | `E6-P6D-BIN1` |
+| P6 | CLI cold startup latency | ms | 450 (Python) | - | - | <= 10 | - | `E6-P6D-PERF1` |
+| P6 | GUI cold start latency | ms | 1200 (Tkinter) | - | - | <= 50 | - | `E6-P6C-UI1` |
+| P6 | Resident memory footprint (daemon/CLI) | MB | 45.0 (Python) | - | - | <= 12.0 | - | `E6-P6D-PERF1` |
+| P6 | Resident memory footprint (Fyne GUI) | MB | 65.0 (Tkinter) | - | - | <= 20.0 | - | `E6-P6C-UI1` |
+| P6 | Idle CPU usage | % | 0.20% | - | - | < 0.05% | - | `E6-P6D-PERF1` |
+| P6 | External runtime dependencies (Python/MSVC) | count | 2 | - | - | 0 | - | `E6-P6D-BIN1` |
+
+## B7 - P7 Benchmarks
+
+| Phase | Metric | Unit | Baseline | Latest | Final | Target | Delta | Evidence |
+|-------|--------|------|----------|--------|-------|--------|-------|----------|
+| P7 | Quota error detection latency (goroutine sensor) | ms | - | - | - | <= 20 | - | `E7-P7A-TAIL1` |
+| P7 | Anti-flapping minimum dwell time gate | seconds | - | - | - | >= 15 | - | `E7-P7B-HYST1` |
+| P7 | Quota Storm stress rotation pass rate (3+ accounts)| % | - | - | - | 100% | - | `E7-P7D-STORM1` |
+| P7 | Total automated failover latency | seconds | - | - | - | < 1.0 | - | `E7-P7D-LAT1` |
+| P7 | IDE editor context preservation (tabs, buffers, PTY)| % | - | - | - | 100% | - | `E7-P7D-LAT1` |
+
 ## Non-Benchmarkable Notes
 
 - Windows Credential Manager storage capacity and DPAPI entropy are governed by OS policy and are not dynamically benchmarked.
