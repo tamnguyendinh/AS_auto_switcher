@@ -41,6 +41,7 @@ from core.api_connector import (
     load_trajectory,
     smart_focus_conversation,
     send_user_cascade_message,
+    discover_active_agent_model,
 )
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,8 @@ class AccountManager:
         storage_path: Optional[str] = None,
         threads_snapshot_capturer: Optional[Callable[..., Tuple[str, List[Dict[str, Any]]]]] = None,
         output_dir: Optional[str] = None,
+        model_name: Optional[str] = None,
+        cascade_config: Optional[Dict[str, Any]] = None,
     ):
         self.store = store or AccountStore()
         self.user_status_provider = user_status_provider
@@ -167,6 +170,8 @@ class AccountManager:
         self.storage_path = storage_path
         self.threads_snapshot_capturer = threads_snapshot_capturer
         self.output_dir = output_dir
+        self.model_name = model_name
+        self.cascade_config = cascade_config
 
     def get_current_active_email(
         self,
@@ -356,6 +361,8 @@ class AccountManager:
         storage_path: Optional[str] = None,
         threads_snapshot_capturer: Optional[Callable[..., Tuple[str, List[Dict[str, Any]]]]] = None,
         output_dir: Optional[str] = None,
+        model_name: Optional[str] = None,
+        cascade_config: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> SwitchResult:
         """
@@ -662,6 +669,17 @@ class AccountManager:
                 loader = trajectory_loader or getattr(self, "trajectory_loader", None) or load_trajectory
                 sender = cascade_sender or getattr(self, "cascade_sender", None) or send_user_cascade_message
 
+                m_name = (
+                    model_name
+                    if model_name is not None
+                    else kwargs.get("model_name", getattr(self, "model_name", None))
+                )
+                c_config = (
+                    cascade_config
+                    if cascade_config is not None
+                    else kwargs.get("cascade_config", getattr(self, "cascade_config", None))
+                )
+
                 threads_sent_count = 0
                 # For each thread in active_threads from the snapshot:
                 for thread_item in active_threads_list:
@@ -688,7 +706,19 @@ class AccountManager:
                         logger.debug("load_trajectory error on thread %s: %s", t_id, exc)
 
                     try:
-                        sender(new_info, t_id, prompt_text=p_text)
+                        import inspect
+                        s_sig = inspect.signature(sender)
+                        s_kwargs: Dict[str, Any] = {"prompt_text": p_text}
+                        if "model_name" in s_sig.parameters and m_name is not None:
+                            s_kwargs["model_name"] = m_name
+                        if "cascade_config" in s_sig.parameters and c_config is not None:
+                            s_kwargs["cascade_config"] = c_config
+                        sender(new_info, t_id, **s_kwargs)
+                    except TypeError:
+                        try:
+                            sender(new_info, t_id, prompt_text=p_text)
+                        except Exception as exc:
+                            logger.debug("send_user_cascade_message fallback error on thread %s: %s", t_id, exc)
                     except Exception as exc:
                         logger.debug("send_user_cascade_message error on thread %s: %s", t_id, exc)
 

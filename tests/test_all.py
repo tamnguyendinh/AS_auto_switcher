@@ -35,6 +35,7 @@ from core.api_connector import (
     load_trajectory,
     smart_focus_conversation,
     send_user_cascade_message,
+    discover_active_agent_model,
 )
 from core.session_reloader import (
     find_antigravity_pids,
@@ -2814,11 +2815,45 @@ class TestAntigravitySwitcher(unittest.TestCase):
             self.assertTrue(send_user_cascade_message(info, "mock-cascade-uuid-3", prompt_text="custom prompt test"))
             self.assertEqual(server.last_path, "/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage")
             self.assertEqual(server.last_headers.get("x-csrf-token"), info.csrf_token)
+            sent_data = json.loads(server.last_body.decode("utf-8"))
+            self.assertIn("cascadeConfig", sent_data)
+            self.assertIn("plannerConfig", sent_data["cascadeConfig"])
+            self.assertIn("planModel", sent_data["cascadeConfig"]["plannerConfig"])
+            self.assertIn("requestedModel", sent_data["cascadeConfig"]["plannerConfig"])
+            self.assertEqual(
+                sent_data["cascadeConfig"]["plannerConfig"]["planModel"],
+                sent_data["cascadeConfig"]["plannerConfig"]["requestedModel"]["model"]
+            )
+
+            # Test explicit model override
+            self.assertTrue(send_user_cascade_message(
+                info,
+                "mock-cascade-uuid-3",
+                prompt_text="explicit model",
+                model_name="MODEL_EXPLICIT_TEST"
+            ))
+            sent_data_2 = json.loads(server.last_body.decode("utf-8"))
+            self.assertEqual(
+                sent_data_2["cascadeConfig"]["plannerConfig"]["planModel"],
+                "MODEL_EXPLICIT_TEST"
+            )
 
             server.response_status = 503
             self.assertFalse(send_user_cascade_message(info, "mock-cascade-uuid-3"))
         finally:
             server.stop()
+
+    def test_discover_active_agent_model_pbtxt_and_fallback(self):
+        temp_pbtxt = os.path.join(self.test_store_dir, "test_agent_state.pbtxt")
+        with open(temp_pbtxt, "w", encoding="utf-8") as f:
+            f.write("last_selected_agent_model: MODEL_PLACEHOLDER_M421\n")
+
+        # Discovers from pbtxt
+        self.assertEqual(discover_active_agent_model(pbtxt_path=temp_pbtxt), "MODEL_PLACEHOLDER_M421")
+
+        # Fallback when file doesn't exist
+        nonexistent = os.path.join(self.test_store_dir, "nonexistent.pbtxt")
+        self.assertEqual(discover_active_agent_model(info=None, pbtxt_path=nonexistent), "MODEL_PLACEHOLDER_M318")
 
     def test_discover_most_recent_cascade_id_isolated_env(self):
         test_brain = os.path.join(self.test_store_dir, "test_brain_isolated")
@@ -3188,6 +3223,7 @@ class MockHttpServerHelper:
         self.port = 0
         self.last_headers = {}
         self.last_path = ""
+        self.last_body = b""
         self.response_status = 200
         self.response_body = b"{}"
         self.response_headers = {"Content-Type": "application/json"}
@@ -3238,9 +3274,11 @@ class MockHttpServerHelper:
                     content_length = 0
                 if content_length > 0:
                     try:
-                        self.rfile.read(content_length)
+                        helper.last_body = self.rfile.read(content_length)
                     except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
-                        pass
+                        helper.last_body = b""
+                else:
+                    helper.last_body = b""
 
                 status = helper.path_status_map.get(self.path, helper.response_status)
                 self.send_response(status)

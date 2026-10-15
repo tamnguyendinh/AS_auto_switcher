@@ -4,6 +4,7 @@ Handles process discovery, port detection, and CSRF token extraction.
 """
 
 import re
+import os
 import json
 import logging
 import subprocess
@@ -505,15 +506,90 @@ def smart_focus_conversation(
         return False
 
 
+DEFAULT_ACTIVE_AGENT_MODEL = "MODEL_PLACEHOLDER_M318"
+
+
+def discover_active_agent_model(
+    info: Optional[LanguageServerInfo] = None,
+    pbtxt_path: Optional[str] = None,
+) -> str:
+    """
+    Discovers the active agent model enum for Cascade.
+    1. Reads `last_selected_agent_model` from `pbtxt_path` or `~/.gemini/antigravity/antigravity_state.pbtxt`.
+    2. If not found and `info` is provided, queries GetCascadeModelConfigData Connect-RPC endpoint.
+    3. Fallback default to "MODEL_PLACEHOLDER_M318".
+    """
+    # 1. Attempt reading last_selected_agent_model from pbtxt
+    target_pbtxt = (
+        pbtxt_path
+        if pbtxt_path is not None
+        else os.path.expanduser("~/.gemini/antigravity/antigravity_state.pbtxt")
+    )
+    if target_pbtxt and os.path.exists(target_pbtxt):
+        try:
+            with open(target_pbtxt, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            match = re.search(r'last_selected_agent_model:\s*"?([a-zA-Z0-9_-]+)"?', content)
+            if match:
+                model_name = match.group(1).strip()
+                if model_name:
+                    return model_name
+        except Exception as exc:
+            logger.debug("Failed reading model from pbtxt (%s): %s", target_pbtxt, exc)
+
+    # 2. Attempt querying GetCascadeModelConfigData via Connect-RPC if info is provided
+    if info and isinstance(info, LanguageServerInfo) and info.port > 0 and info.csrf_token:
+        try:
+            url = f"{info.base_url}/exa.language_server_pb.LanguageServerService/GetCascadeModelConfigData"
+            headers = {
+                "Content-Type": "application/json",
+                "X-Csrf-Token": info.csrf_token,
+                "x-codeium-csrf-token": info.csrf_token,
+            }
+            req = urllib.request.Request(url, data=b"{}", headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=2.0) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if isinstance(data, dict):
+                        # Priority A: defaultOverrideModelConfig
+                        override = data.get("defaultOverrideModelConfig")
+                        if isinstance(override, dict):
+                            m = override.get("modelOrAlias", {}).get("model")
+                            if m and isinstance(m, str) and m.strip():
+                                return m.strip()
+
+                        # Priority B: explicitly selected in clientModelConfigs
+                        for cfg in data.get("clientModelConfigs", []):
+                            if isinstance(cfg, dict) and (cfg.get("isSelected") or cfg.get("selected")):
+                                m = cfg.get("modelOrAlias", {}).get("model")
+                                if m and isinstance(m, str) and m.strip():
+                                    return m.strip()
+
+                        # Priority C: first non-disabled model in clientModelConfigs
+                        for cfg in data.get("clientModelConfigs", []):
+                            if isinstance(cfg, dict) and not cfg.get("disabled", False):
+                                m = cfg.get("modelOrAlias", {}).get("model")
+                                if m and isinstance(m, str) and m.strip():
+                                    return m.strip()
+        except Exception as exc:
+            logger.debug("Failed querying GetCascadeModelConfigData: %s", exc)
+
+    # 3. Fallback default
+    return DEFAULT_ACTIVE_AGENT_MODEL
+
+
 def send_user_cascade_message(
     info: Optional[LanguageServerInfo],
     cascade_id: str,
     prompt_text: str = "continue",
     timeout: float = 5.0,
+    model_name: Optional[str] = None,
+    cascade_config: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
     Sends Connect-RPC POST to /exa.language_server_pb.LanguageServerService/SendUserCascadeMessage
-    with {"cascadeId": cascade_id, "items": [{"text": prompt_text}]} and CSRF headers.
+    with {"cascadeId": cascade_id, "items": [{"text": prompt_text}], "cascadeConfig": cascade_config}
+    and CSRF headers.
     Returns True on status 200.
     """
     if not info or not isinstance(info, LanguageServerInfo):
@@ -529,9 +605,25 @@ def send_user_cascade_message(
         "X-Csrf-Token": info.csrf_token,
         "x-codeium-csrf-token": info.csrf_token,
     }
+
+    resolved_config = cascade_config
+    if resolved_config is None:
+        model = (
+            model_name.strip()
+            if (model_name and isinstance(model_name, str) and model_name.strip())
+            else discover_active_agent_model(info=info)
+        )
+        resolved_config = {
+            "plannerConfig": {
+                "planModel": model,
+                "requestedModel": {"model": model},
+            }
+        }
+
     payload = json.dumps({
         "cascadeId": cascade_id.strip(),
         "items": [{"text": prompt_text}],
+        "cascadeConfig": resolved_config,
     }).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
     try:

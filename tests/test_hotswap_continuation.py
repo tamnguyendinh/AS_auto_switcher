@@ -33,6 +33,7 @@ from core.api_connector import (
     load_trajectory,
     smart_focus_conversation,
     send_user_cascade_message,
+    discover_active_agent_model,
 )
 from ui.app_window import AppWindow
 
@@ -817,14 +818,18 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             self.assertTrue(res1)
             req1 = mock_urlopen.call_args[0][0]
             payload1 = json.loads(req1.data.decode("utf-8"))
-            self.assertEqual(payload1, {"cascadeId": "cascade-msg-target", "items": [{"text": "continue"}]})
+            self.assertEqual(payload1["cascadeId"], "cascade-msg-target")
+            self.assertEqual(payload1["items"], [{"text": "continue"}])
+            self.assertIn("cascadeConfig", payload1)
 
             # Custom prompt
             res2 = send_user_cascade_message(mock_info, "cascade-msg-target", prompt_text="execute test step")
             self.assertTrue(res2)
             req2 = mock_urlopen.call_args[0][0]
             payload2 = json.loads(req2.data.decode("utf-8"))
-            self.assertEqual(payload2, {"cascadeId": "cascade-msg-target", "items": [{"text": "execute test step"}]})
+            self.assertEqual(payload2["cascadeId"], "cascade-msg-target")
+            self.assertEqual(payload2["items"], [{"text": "execute test step"}])
+            self.assertIn("cascadeConfig", payload2)
 
         # Error handling
         with patch("urllib.request.urlopen", side_effect=Exception("Timeout")):
@@ -1325,6 +1330,146 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         )
         manager = AccountManager(store=self.store)
         self.assertEqual(manager.prompt_text, DEFAULT_CONTINUATION_PROMPT)
+
+    # -------------------------------------------------------------------------
+    # 7. Model Discovery & Cascade Config RPC Tests
+    # -------------------------------------------------------------------------
+    def test_discover_active_agent_model_from_pbtxt(self):
+        """Verifies discover_active_agent_model parses unquoted last_selected_agent_model from pbtxt."""
+        temp_pbtxt = os.path.join(self.test_dir, "test_state.pbtxt")
+        with open(temp_pbtxt, "w", encoding="utf-8") as f:
+            f.write("agent_onboarding_completed: AGENT_ONBOARDING_STATE_COMPLETED\n")
+            f.write("last_selected_agent_model: MODEL_PLACEHOLDER_M35\n")
+
+        model = discover_active_agent_model(pbtxt_path=temp_pbtxt)
+        self.assertEqual(model, "MODEL_PLACEHOLDER_M35")
+
+    def test_discover_active_agent_model_from_pbtxt_with_quotes(self):
+        """Verifies discover_active_agent_model parses quoted last_selected_agent_model from pbtxt."""
+        temp_pbtxt = os.path.join(self.test_dir, "test_state_quoted.pbtxt")
+        with open(temp_pbtxt, "w", encoding="utf-8") as f:
+            f.write('last_selected_agent_model: "MODEL_OPENAI_GPT_OSS_120B_MEDIUM"\n')
+
+        model = discover_active_agent_model(pbtxt_path=temp_pbtxt)
+        self.assertEqual(model, "MODEL_OPENAI_GPT_OSS_120B_MEDIUM")
+
+    def test_discover_active_agent_model_from_rpc(self):
+        """Verifies discover_active_agent_model queries GetCascadeModelConfigData when pbtxt is missing."""
+        mock_info = LanguageServerInfo(pid=7777, csrf_token="csrf_rpc", port=57777)
+        nonexistent_pbtxt = os.path.join(self.test_dir, "nonexistent.pbtxt")
+
+        rpc_response = {
+            "defaultOverrideModelConfig": {
+                "modelOrAlias": {"model": "MODEL_FROM_RPC_OVERRIDE"}
+            },
+            "clientModelConfigs": []
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = json.dumps(rpc_response).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+            model = discover_active_agent_model(info=mock_info, pbtxt_path=nonexistent_pbtxt)
+            self.assertEqual(model, "MODEL_FROM_RPC_OVERRIDE")
+            mock_urlopen.assert_called_once()
+            req = mock_urlopen.call_args[0][0]
+            self.assertTrue(req.full_url.endswith("/GetCascadeModelConfigData"))
+            self.assertEqual(req.headers.get("X-csrf-token"), "csrf_rpc")
+
+    def test_discover_active_agent_model_fallback_default(self):
+        """Verifies discover_active_agent_model falls back to MODEL_PLACEHOLDER_M318 when all sources fail."""
+        nonexistent_pbtxt = os.path.join(self.test_dir, "nonexistent_fallback.pbtxt")
+        model = discover_active_agent_model(info=None, pbtxt_path=nonexistent_pbtxt)
+        self.assertEqual(model, "MODEL_PLACEHOLDER_M318")
+
+    def test_send_user_cascade_message_attaches_cascade_config(self):
+        """Verifies send_user_cascade_message constructs cascadeConfig with plannerConfig, planModel, and requestedModel."""
+        mock_info = LanguageServerInfo(pid=8888, csrf_token="csrf_send", port=58888)
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+            res = send_user_cascade_message(
+                mock_info,
+                "cascade-uuid-101",
+                prompt_text="continue working",
+                model_name="MODEL_TEST_EXPLICIT"
+            )
+            self.assertTrue(res)
+            mock_urlopen.assert_called_once()
+            req = mock_urlopen.call_args[0][0]
+            self.assertTrue(req.full_url.endswith("/SendUserCascadeMessage"))
+            body = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(body["cascadeId"], "cascade-uuid-101")
+            self.assertEqual(body["items"], [{"text": "continue working"}])
+            self.assertIn("cascadeConfig", body)
+            expected_cfg = {
+                "plannerConfig": {
+                    "planModel": "MODEL_TEST_EXPLICIT",
+                    "requestedModel": {"model": "MODEL_TEST_EXPLICIT"}
+                }
+            }
+            self.assertEqual(body["cascadeConfig"], expected_cfg)
+
+    def test_send_user_cascade_message_custom_cascade_config(self):
+        """Verifies send_user_cascade_message honors explicitly passed cascade_config."""
+        mock_info = LanguageServerInfo(pid=8888, csrf_token="csrf_send", port=58888)
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.__enter__.return_value = mock_resp
+
+        custom_cfg = {"customKey": "customValue"}
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+            res = send_user_cascade_message(
+                mock_info,
+                "cascade-uuid-102",
+                cascade_config=custom_cfg
+            )
+            self.assertTrue(res)
+            body = json.loads(mock_urlopen.call_args[0][0].data.decode("utf-8"))
+            self.assertEqual(body["cascadeConfig"], custom_cfg)
+
+    def test_switch_account_passes_model_name_and_cascade_config_to_sender(self):
+        """Verifies switch_account forwards model_name and cascade_config to cascade_sender."""
+        target_email = "modelswitch@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_modelswitch"})
+        fresh_info = LanguageServerInfo(pid=9999, csrf_token="csrf_switch_model", port=59999)
+
+        sender_calls = []
+        def mock_sender(info, cid, prompt_text="continue", model_name=None, cascade_config=None):
+            sender_calls.append({
+                "cid": cid,
+                "prompt_text": prompt_text,
+                "model_name": model_name,
+                "cascade_config": cascade_config
+            })
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: fresh_info,
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda **kw: None,
+            threads_snapshot_capturer=lambda: ("/path", [{"thread_id": "thread-model-1", "project": "", "is_main_pane": True}]),
+            smart_focuser=lambda info, cid: True,
+            trajectory_loader=lambda info, cid: True,
+            cascade_sender=mock_sender,
+            auto_continue=True,
+            dom_settle_delay=0.0,
+            model_name="MODEL_PARAM_TEST"
+        )
+
+        res = manager.switch_account(target_email)
+        self.assertTrue(res.success)
+        self.assertEqual(len(sender_calls), 1)
+        self.assertEqual(sender_calls[0]["cid"], "thread-model-1")
+        self.assertEqual(sender_calls[0]["model_name"], "MODEL_PARAM_TEST")
 
 
 if __name__ == "__main__":
