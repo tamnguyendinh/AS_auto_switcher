@@ -800,6 +800,21 @@ def _resolve_thread_project(
     return ""
 
 
+def _is_file_view_tab(tab: Dict[str, Any]) -> bool:
+    """Checks if a tab is a fileView tab rather than a conversation tab."""
+    if not isinstance(tab, dict):
+        return False
+    tab_id = str(tab.get("id") or tab.get("tabId") or "")
+    if tab_id.startswith("file__"):
+        return True
+    content = tab.get("content")
+    if isinstance(content, dict) and content.get("type") == "fileView":
+        return True
+    if tab.get("content.type") == "fileView" or tab.get("type") == "fileView":
+        return True
+    return False
+
+
 def capture_active_threads_snapshot(
     storage_path: Optional[str] = None,
     brain_dir: Optional[str] = None,
@@ -860,50 +875,75 @@ def capture_active_threads_snapshot(
 
     if isinstance(conv_panes, dict):
         for k_id, pane_info in conv_panes.items():
+            if str(k_id).startswith("file__"):
+                continue
             if not isinstance(pane_info, dict):
                 pane_info = {}
+            if _is_file_view_tab(pane_info):
+                continue
             is_main = ("main" in str(k_id).lower() or "main" in str(pane_info.get("paneId", "")).lower() or len(threads_map) == 0)
             thread_ids_in_pane = []
             for tab in pane_info.get("tabs", []):
                 if isinstance(tab, dict):
+                    if _is_file_view_tab(tab):
+                        continue
                     meta = tab.get("metadata", {}) if isinstance(tab.get("metadata"), dict) else {}
                     t_id = meta.get("cascadeId") or tab.get("cascadeId") or tab.get("childCascadeId")
                     if t_id and isinstance(t_id, str):
                         thread_ids_in_pane.append((t_id.strip(), tab))
             if thread_ids_in_pane:
                 for idx, (t_id, tab_obj) in enumerate(thread_ids_in_pane):
-                    if t_id not in threads_map:
-                        proj = _resolve_thread_project(t_id, tab_obj, b_dir, sdata) or _resolve_thread_project(t_id, pane_info, b_dir, sdata)
-                        threads_map[t_id] = {
-                            "thread_id": t_id,
+                    thread_id = t_id
+                    if b_dir and os.path.isdir(b_dir) and not os.path.isdir(os.path.join(b_dir, thread_id)):
+                        continue
+                    if thread_id not in threads_map:
+                        proj = _resolve_thread_project(thread_id, tab_obj, b_dir, sdata) or _resolve_thread_project(thread_id, pane_info, b_dir, sdata)
+                        threads_map[thread_id] = {
+                            "thread_id": thread_id,
                             "project": proj,
                             "is_main_pane": (idx == 0 and is_main),
                         }
             elif k_id and isinstance(k_id, str) and k_id.strip() and k_id != "index":
                 cid = pane_info.get("cascadeId") or pane_info.get("activeThreadId") or pane_info.get("threadId") or k_id.strip()
-                proj = _resolve_thread_project(cid, pane_info, b_dir, sdata)
-                threads_map[cid] = {
-                    "thread_id": cid,
-                    "project": proj,
-                    "is_main_pane": is_main,
-                }
+                if cid and isinstance(cid, str):
+                    thread_id = cid.strip()
+                    if thread_id.startswith("file__"):
+                        continue
+                    if b_dir and os.path.isdir(b_dir) and not os.path.isdir(os.path.join(b_dir, thread_id)):
+                        continue
+                    if thread_id not in threads_map:
+                        proj = _resolve_thread_project(thread_id, pane_info, b_dir, sdata)
+                        threads_map[thread_id] = {
+                            "thread_id": thread_id,
+                            "project": proj,
+                            "is_main_pane": is_main,
+                        }
     elif isinstance(conv_panes, list):
         for idx, pane_info in enumerate(conv_panes):
             if not isinstance(pane_info, dict):
                 continue
-            is_main = (idx == 0 or "main" in str(pane_info.get("paneId", "")).lower() or len(threads_map) == 0)
+            if _is_file_view_tab(pane_info):
+                continue
+            pane_id = str(pane_info.get("paneId", "") or pane_info.get("id", ""))
+            if pane_id.startswith("file__"):
+                continue
+            is_main = (idx == 0 or "main" in pane_id.lower() or len(threads_map) == 0)
             tabs = pane_info.get("tabs", [])
             tab_found = False
             for tab_idx, tab in enumerate(tabs):
                 if isinstance(tab, dict):
+                    if _is_file_view_tab(tab):
+                        continue
                     meta = tab.get("metadata", {}) if isinstance(tab.get("metadata"), dict) else {}
                     t_id = meta.get("cascadeId") or tab.get("cascadeId") or tab.get("childCascadeId")
                     if t_id and isinstance(t_id, str):
-                        t_id = t_id.strip()
-                        if t_id not in threads_map:
-                            proj = _resolve_thread_project(t_id, tab, b_dir, sdata) or _resolve_thread_project(t_id, pane_info, b_dir, sdata)
-                            threads_map[t_id] = {
-                                "thread_id": t_id,
+                        thread_id = t_id.strip()
+                        if b_dir and os.path.isdir(b_dir) and not os.path.isdir(os.path.join(b_dir, thread_id)):
+                            continue
+                        if thread_id not in threads_map:
+                            proj = _resolve_thread_project(thread_id, tab, b_dir, sdata) or _resolve_thread_project(thread_id, pane_info, b_dir, sdata)
+                            threads_map[thread_id] = {
+                                "thread_id": thread_id,
                                 "project": proj,
                                 "is_main_pane": (is_main and tab_idx == 0),
                             }
@@ -911,11 +951,15 @@ def capture_active_threads_snapshot(
             if not tab_found:
                 cid = pane_info.get("cascadeId") or pane_info.get("activeThreadId") or pane_info.get("threadId") or pane_info.get("paneId")
                 if cid and isinstance(cid, str) and cid.strip() and cid.strip() != "index":
-                    cid = cid.strip()
-                    if cid not in threads_map:
-                        proj = _resolve_thread_project(cid, pane_info, b_dir, sdata)
-                        threads_map[cid] = {
-                            "thread_id": cid,
+                    thread_id = cid.strip()
+                    if thread_id.startswith("file__"):
+                        continue
+                    if b_dir and os.path.isdir(b_dir) and not os.path.isdir(os.path.join(b_dir, thread_id)):
+                        continue
+                    if thread_id not in threads_map:
+                        proj = _resolve_thread_project(thread_id, pane_info, b_dir, sdata)
+                        threads_map[thread_id] = {
+                            "thread_id": thread_id,
                             "project": proj,
                             "is_main_pane": is_main,
                         }

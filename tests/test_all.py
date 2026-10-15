@@ -2931,6 +2931,10 @@ class TestAntigravitySwitcher(unittest.TestCase):
         with open(temp_storage, "w", encoding="utf-8") as f:
             json.dump(mock_storage, f)
 
+        # Create thread subdirectories in temp brain dir
+        os.makedirs(os.path.join(self.test_store_dir, "c-alpha-1"), exist_ok=True)
+        os.makedirs(os.path.join(self.test_store_dir, "c-beta-2"), exist_ok=True)
+
         snapshot_file, active_threads = capture_active_threads_snapshot(
             storage_path=temp_storage,
             brain_dir=self.test_store_dir,
@@ -3021,30 +3025,31 @@ class TestAntigravitySwitcher(unittest.TestCase):
         pacing_delays = [d for d in sleep_calls if d == 3.0]
         self.assertEqual(len(pacing_delays), 1)
 
-    def test_switch_account_default_dom_settle_delay_15s(self):
-        """Verifies switch_account dom_settle_delay defaults to 15.0s when not specified."""
-        target_email = "settle15_all@gmail.com"
-        self.store.store_account(target_email, {"access_token": "at_15"})
+    def test_switch_account_default_dom_settle_delay_60s(self):
+        """Verifies switch_account dom_settle_delay defaults to 60.0s when not specified."""
+        target_email = "settle60_all@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_60"})
         sleep_durations = []
 
-        fresh_info = LanguageServerInfo(pid=5555, csrf_token="tok15", port=55551)
+        fresh_info = LanguageServerInfo(pid=5555, csrf_token="tok60", port=55551)
         manager = AccountManager(
             store=self.store,
             process_finder=lambda: fresh_info,
             token_writer=lambda tok: True,
             tos_pre_patcher=lambda em: True,
             language_server_recycler=lambda **kw: None,
-            threads_snapshot_capturer=lambda: ("/path", [{"thread_id": "c15", "project": "", "is_main_pane": True}]),
+            threads_snapshot_capturer=lambda: ("/path", [{"thread_id": "c60", "project": "", "is_main_pane": True}]),
             smart_focuser=lambda info, cid: True,
             trajectory_loader=lambda info, cid: True,
             cascade_sender=lambda info, cid, prompt_text="": True,
             sleep_fn=lambda d: sleep_durations.append(d),
             auto_continue=True,
+            # No dom_settle_delay passed -> MUST default to 60.0s
         )
 
         res = manager.switch_account(target_email)
         self.assertTrue(res.success)
-        self.assertIn(15.0, sleep_durations)
+        self.assertIn(60.0, sleep_durations)
 
     def test_switch_account_default_continuation_prompt(self):
         """Verifies default continuation prompt matches the English directive."""
@@ -3082,6 +3087,9 @@ class TestAntigravitySwitcher(unittest.TestCase):
         with open(temp_storage, "w", encoding="utf-8") as f:
             json.dump(mock_storage, f)
 
+        # Create thread directory in brain_dir for active_thread
+        os.makedirs(os.path.join(self.test_store_dir, active_thread), exist_ok=True)
+
         snapshot_file, active_threads = capture_active_threads_snapshot(
             storage_path=temp_storage,
             brain_dir=self.test_store_dir,
@@ -3093,6 +3101,81 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertEqual(active_threads[0]["project"], "C:/Projects/ActiveApp")
         self.assertTrue(active_threads[0]["is_main_pane"])
         self.assertNotIn(stale_thread, [t["thread_id"] for t in active_threads])
+
+    def test_capture_active_threads_snapshot_filters_fileview_and_missing_brain_dirs(self):
+        """
+        Verifies capture_active_threads_snapshot:
+        1. Filters out non-conversation tabs (content.type == 'fileView' or id starting with 'file__')
+        2. Excludes thread IDs that do not have a corresponding directory in brain/
+        """
+        temp_storage = os.path.join(self.test_store_dir, "filter_app_storage_all.json")
+        temp_brain = os.path.join(self.test_store_dir, "filter_brain_all")
+        temp_history_dir = os.path.join(self.test_store_dir, "filter_history_all")
+        os.makedirs(temp_brain, exist_ok=True)
+
+        valid_thread = "valid-thread-with-brain-dir-all"
+        missing_brain_thread = "missing-brain-thread-all"
+        fileview_thread = "fileview-thread-all"
+
+        # Create brain dir only for valid_thread
+        os.makedirs(os.path.join(temp_brain, valid_thread), exist_ok=True)
+
+        mock_storage = {
+            "aux-pane-v2-session.conversationPanes": [
+                {
+                    "paneId": "main_cascade_pane",
+                    "tabs": [
+                        {
+                            "id": "tab-valid",
+                            "metadata": {
+                                "cascadeId": valid_thread,
+                                "workingDirectory": "C:/Projects/Valid"
+                            }
+                        },
+                        {
+                            "id": "tab-missing-brain",
+                            "metadata": {
+                                "cascadeId": missing_brain_thread,
+                                "workingDirectory": "C:/Projects/Missing"
+                            }
+                        },
+                        {
+                            "id": "tab-fileview-content",
+                            "content": {"type": "fileView"},
+                            "metadata": {
+                                "cascadeId": fileview_thread,
+                                "workingDirectory": "C:/Projects/File1"
+                            }
+                        },
+                        {
+                            "id": "file__readme_md",
+                            "metadata": {
+                                "cascadeId": "file-thread-id",
+                                "workingDirectory": "C:/Projects/File2"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        with open(temp_storage, "w", encoding="utf-8") as f:
+            json.dump(mock_storage, f)
+
+        snapshot_file, active_threads = capture_active_threads_snapshot(
+            storage_path=temp_storage,
+            brain_dir=temp_brain,
+            output_dir=temp_history_dir,
+        )
+
+        # Only valid_thread should be captured
+        self.assertEqual(len(active_threads), 1)
+        self.assertEqual(active_threads[0]["thread_id"], valid_thread)
+        self.assertEqual(active_threads[0]["project"], "C:/Projects/Valid")
+
+        thread_ids = [t["thread_id"] for t in active_threads]
+        self.assertNotIn(missing_brain_thread, thread_ids)
+        self.assertNotIn(fileview_thread, thread_ids)
+        self.assertNotIn("file-thread-id", thread_ids)
 
 
 
