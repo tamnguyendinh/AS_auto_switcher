@@ -101,6 +101,10 @@ Benchmark sections must follow the plan phases:
 | P6-A | Atomic JSON store write & sync latency | ms | 25.0 (Python) | 20.0 | - | < 30.0 | -5.0 | `E6-P6A-STORE1` |
 | P6-A | Go primitives & Win32 test pass count | tests | 0 | 10 | 10 | >= 8 | +10 | `E6-P6A-WIN1`, `E6-P6A-STORE1` |
 | P6-A | Go primitives test pass rate | % | - | 100% | 100% | 100% | 0% | `E6-P6A-WIN1`, `E6-P6A-STORE1` |
+| P6-B | Chrome profile discovery scan latency (Go) | ms | 120.0 (Python) | 20.0 | - | < 50.0 | -100.0 | `E6-P6B-SCAN1` |
+| P6-B | Language server discovery & GetUserStatus latency | ms | 850.0 (Python) | 470.0 | - | < 1000.0 | -380.0 | `E6-P6B-CONN1` |
+| P6-B | Scanner & Connector test pass count | tests | 0 | 13 | 13 | >= 10 | +13 | `E6-P6B-SCAN1`, `E6-P6B-CONN1` |
+| P6-B | Scanner & Connector test pass rate | % | - | 100% | 100% | 100% | 0% | `E6-P6B-SCAN1`, `E6-P6B-CONN1` |
 | P6 | Standalone binary size (`antigravity-switch.exe`) | MB | 50.0 (Python env) | - | - | <= 15.0 | - | `E6-P6D-BIN1` |
 | P6 | CLI cold startup latency | ms | 450 (Python) | - | - | <= 10 | - | `E6-P6D-PERF1` |
 | P6 | GUI cold start latency | ms | 1200 (Tkinter) | - | - | <= 50 | - | `E6-P6C-UI1` |

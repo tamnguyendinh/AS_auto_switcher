@@ -828,12 +828,85 @@ Matching plan item(s): `P6-A`, `P6-B`, `P6-C`, `P6-D`
   - `AccountPool` guarded by `sync.RWMutex` managing account records, state transitions, and thread-safe selection.
   - `FailoverConfig` defining hysteresis gates (15s dwell time, 4 switches / 120s sliding window).
 
+### P6-B Execution Evidence
+
+- `E6-P6B-SCAN1`: Chrome profile discovery scanner and blacklist enforcement (`internal/scanner/`):
+  - Pure Go Chrome User Data scanner reading `%LOCALAPPDATA%\Google\Chrome\User Data\Local State` (`profile.info_cache` and `profile.profiles_attributes`) and profile `Preferences` JSON files (`account_info`, `account_tracker_service_last_update`, and regex fallbacks).
+  - Strict case-insensitive blacklist filtering: rejects any email containing `anvien` or terms in `blacklist`.
+  - False positive protection: rejects non-email assets (`.png`, `.jpg`, `.js`, `.css`, `.json`, `.googleapis.com`, `.chromium.org`).
+  - Metadata enrichment: populates `ChromeAccountInfo` with `Email`, `Name`, `ProfileDir`, and `AvatarURL`.
+  - Unit test verification in `internal/scanner/chrome_scanner_test.go` (5 tests, 100% pass):
+    * `TestIsValidEmail`: standard emails, special tags, false-positive domains, missing components.
+    * `TestIsBlacklisted`: case-insensitive blacklist checks against `anvien`, `ANVIEN`, substring occurrences, custom blacklists.
+    * `TestExtractEmailsFromPreferences`: modern and older Chrome Preferences schemas and regex fallbacks.
+    * `TestScanChromeAccountDetailsAndBlacklist`: full directory scan with Local State, Default, Profile 2, verifying blacklisted email exclusion, metadata enrichment, deduplication, and alphabetical sort.
+    * `TestLiveChromeDiscovery`: live scan of local Chrome profiles validating 0 blacklisted emails.
+    * Test execution output:
+      ```text
+      === RUN   TestIsValidEmail
+      --- PASS: TestIsValidEmail (0.00s)
+      === RUN   TestIsBlacklisted
+      --- PASS: TestIsBlacklisted (0.00s)
+      === RUN   TestExtractEmailsFromPreferences
+      --- PASS: TestExtractEmailsFromPreferences (0.00s)
+      === RUN   TestScanChromeAccountDetailsAndBlacklist
+      --- PASS: TestScanChromeAccountDetailsAndBlacklist (0.01s)
+      === RUN   TestLiveChromeDiscovery
+      --- PASS: TestLiveChromeDiscovery (0.02s)
+      PASS
+      ok      antigravity-switch/internal/scanner    0.821s
+      ```
+
+- `E6-P6B-CONN1`: Language Server Process & Port Discovery and Loopback Connect-RPC Client (`internal/connector/`):
+  - Ephemeral port & PID discovery without CGo (`internal/connector/discovery.go`):
+    * Discovers running `language_server.exe` PID and parses `--csrf_token` from process command line using regex.
+    * Discovers loopback listening ports via pure Go Win32 `iphlpapi.dll::GetExtendedTcpTable` (`AF_INET`, `TCP_TABLE_OWNER_PID_LISTENER`) with fallback to `netstat -ano -p tcp`.
+    * Disambiguates multiple listening ports via loopback HTTP probe (`ProbeHTTPPort`) selecting the port returning HTTP 200 OK.
+  - High-efficiency `net/http` loopback client with connection pooling (`internal/connector/api_client.go` and `endpoints.go`):
+    * Implements `GetUserStatus(ctx)` to synchronize current active user email and name directly from language server RAM.
+    * Implements `AuthLogout(ctx)` to cleanly invalidate active sessions from RAM.
+    * Implements `TriggerReauth(ctx)` to reload credentials from Windows Credential Manager into RAM.
+    * Implements `LoadTrajectory(ctx, cascadeID)` and `SmartFocusConversation(ctx, cascadeID)`.
+    * Implements `DiscoverActiveAgentModel(ctx, pbtxtPath)` and `SendUserCascadeMessage(ctx, cascadeID, prompt, model, config)`.
+    * Transparently handles candidate endpoint fallback resilience across versions.
+  - Unit test verification in `internal/connector/connector_test.go` (8 tests, 100% pass):
+    * `TestExtractCSRFToken`: UUID extraction across format variations.
+    * `TestProbeHTTPPort`: loopback probe returning true on 200 OK, false on 400 or closed port.
+    * `TestGetUserStatus`: mock Connect-RPC endpoint with CSRF verification and nested envelope parsing.
+    * `TestGetUserStatusFallbackEndpoints`: fallback endpoint traversal when primary endpoint 404s.
+    * `TestAuthLogoutAndTriggerReauth`: mock logout and reauth endpoints.
+    * `TestLoadTrajectoryAndSmartFocus`: cascade ID payload and headers verification.
+    * `TestDiscoverActiveAgentModelAndSendCascadeMessage`: pbtxt parsing and Connect-RPC model discovery.
+    * `TestLiveLanguageServerDiscoveryAndStatus`: live discovery and query against running `language_server.exe` (PID 6396, Port 58644) confirming live email `hiendao1760@gmail.com`.
+    * Test execution output:
+      ```text
+      === RUN   TestExtractCSRFToken
+      --- PASS: TestExtractCSRFToken (0.00s)
+      === RUN   TestProbeHTTPPort
+      --- PASS: TestProbeHTTPPort (0.00s)
+      === RUN   TestGetUserStatus
+      --- PASS: TestGetUserStatus (0.00s)
+      === RUN   TestGetUserStatusFallbackEndpoints
+      --- PASS: TestGetUserStatusFallbackEndpoints (0.00s)
+      === RUN   TestAuthLogoutAndTriggerReauth
+      --- PASS: TestAuthLogoutAndTriggerReauth (0.00s)
+      === RUN   TestLoadTrajectoryAndSmartFocus
+      --- PASS: TestLoadTrajectoryAndSmartFocus (0.00s)
+      === RUN   TestDiscoverActiveAgentModelAndSendCascadeMessage
+      --- PASS: TestDiscoverActiveAgentModelAndSendCascadeMessage (0.01s)
+      === RUN   TestLiveLanguageServerDiscoveryAndStatus
+          connector_test.go:418: Live language_server.exe verified: PID=6396, Port=58644, ActiveEmail=hiendao1760@gmail.com
+      --- PASS: TestLiveLanguageServerDiscoveryAndStatus (0.47s)
+      PASS
+      ok      antigravity-switch/internal/connector  2.227s
+      ```
+
 Planned Evidence Targets:
 - `E6-P6A-WIN1`: Pure Go native Win32 Advapi32 wrapper unit test verification (Achieved).
 - `E6-P6A-STORE1`: Atomic JSON file storage round-trip and corruption safety test (Achieved).
 - `E6-P6A-MOD1`: Strongly typed model validation matching Architect specification Section 4.3 (Achieved).
-- `E6-P6B-SCAN1`: Chrome profile scanner with strict `anvien` blacklist test (Pending implementation in P6-B).
-- `E6-P6B-CONN1`: Language server discovery and loopback HTTP RPC client test (Pending implementation in P6-B).
+- `E6-P6B-SCAN1`: Chrome profile scanner with strict `anvien` blacklist test (Achieved).
+- `E6-P6B-CONN1`: Language server discovery and loopback HTTP RPC client test (Achieved).
 - `E6-P6C-MGR1`: Multi-account orchestrator and 4-step hot-swap execution test (Pending implementation in P6-C).
 - `E6-P6C-UI1`: Fyne native GUI startup (< 50ms) and dark theme render test (Pending implementation in P6-C).
 - `E6-P6D-BIN1`: Standalone static binary size $\le 15\text{MB}$ and zero-dependency audit (Pending implementation in P6-D).

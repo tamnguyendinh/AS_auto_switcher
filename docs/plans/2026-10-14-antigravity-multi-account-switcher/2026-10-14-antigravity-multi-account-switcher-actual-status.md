@@ -109,8 +109,8 @@ Out of scope:
 | `internal/model/` | Strongly typed Go models (`TokenData`, `AccountRecord`, `AccountState`, `AccountPool`, `FailoverConfig`) implemented and verified. | Strongly typed Go models (`TokenData`, `AccountRecord`, `AccountState`). | `correct` | 5 related files | `E6-P6A-MOD1` | Implemented in Slice P6-A (Commit: `a7f999b`, Supervisor Commit: `39abfde`) |
 | `internal/wincred/` | Pure Go Win32 `Advapi32.dll` wrapper via `golang.org/x/sys/windows` implemented and verified (CredReadW, CredWriteW, CredDeleteW, CredFree). | Pure Go Win32 `Advapi32.dll` wrapper using `golang.org/x/sys/windows`. | `correct` | 3 related files | `E6-P6A-WIN1` | Implemented in Slice P6-A (Commit: `a7f999b`, Supervisor Commit: `39abfde`) |
 | `internal/store/` | Atomic JSON file persistence in `accounts_store/<email>.json` with path sanitizer implemented and verified. | Atomic JSON file persistence in `accounts_store/<email>.json` with path sanitizer. | `correct` | 3 related files | `E6-P6A-STORE1` | Implemented in Slice P6-A (Commit: `a7f999b`, Supervisor Commit: `39abfde`) |
-| `internal/scanner/` | Not created yet in repository. | Chrome profile scanner in Go with strict `anvien` blacklist filtering. | `missing` | 2 related files | `E6-P6B-SCAN1` | Implement in Slice P6-B |
-| `internal/connector/` | Not created yet in repository. | Language server PID/port discovery and loopback HTTP Connect-RPC client. | `missing` | 3 related files | `E6-P6B-CONN1` | Implement in Slice P6-B |
+| `internal/scanner/` | Chrome profile scanner in Go with strict `anvien` blacklist filtering implemented and verified (Local State, Preferences, regex fallback, metadata enrichment). | Chrome profile scanner in Go with strict `anvien` blacklist filtering. | `correct` | 2 related files | `E6-P6B-SCAN1` | Implemented in Slice P6-B; 5/5 tests pass |
+| `internal/connector/` | Language server process discovery (PID, ephemeral port via Win32 GetExtendedTcpTable / netstat, --csrf_token) and loopback Connect-RPC client implemented and verified. | Language server PID/port discovery and loopback HTTP Connect-RPC client. | `correct` | 3 related files | `E6-P6B-CONN1` | Implemented in Slice P6-B; 8/8 tests pass |
 | `internal/reloader/` | Not created yet in repository. | PID-based HWND discovery and Win32 `keybd_event` Ctrl+R reload bridge. | `missing` | 2 related files | `E6-P6C-REL1` | Implement in Slice P6-C |
 | `internal/manager/` | Not created yet in repository. | Multi-account orchestrator and 4-step hot-swap engine in Go. | `missing` | 5 related files | `E6-P6C-MGR1` | Implement in Slice P6-C |
 | `internal/ui/` | Not created yet in repository. | Fyne 100% pure Go native GUI dashboard (< 20MB RAM, < 50ms startup). | `missing` | 2 related files | `E6-P6C-UI1` | Implement in Slice P6-C |
@@ -144,6 +144,7 @@ Out of scope:
 | R16 | 2026-10-15 | Slice Pn-C | `docs/plans/`, `reports/planner/` | Official plan closure and ledgers synchronization; all 5 phases, Pn-A, Pn-B passed, test suite 68/68 passed | `E-PNC-CLOSE1` | Plan completed and ready for Owner live testing |
 | R17 | 2026-10-15 | Architect Report approval | Docs & Plan Set | Phase 6 (Go Engine, Fyne GUI, Standalone Binary) & Phase 7 (Autonomous Failover Daemon) incorporated; 14 new Go units classified as `missing` | `reports/architect/2026-10-14-autonomous-quota-failover-architecture.md` | Proceed to implementation of Slice P6-A |
 | R18 | 2026-10-15 | commit a7f999b, supervisor 39abfde (Slice P6-A) | `internal/model/`, `internal/wincred/`, `internal/store/`, `go.mod` | P6-A complete: Go primitives (TokenData, AccountRecord, AccountState), pure Go Win32 Advapi32 credential wrapper, atomic JSON store with path sanitizer implemented and supervisor verified; 10/10 tests pass | `E6-P6A-WIN1`, `E6-P6A-STORE1`, `E6-P6A-MOD1` | Proceed to Slice P6-B (Chrome Discovery Scanner & Language Server Connector) |
+| R19 | 2026-10-15 | Slice P6-B | `internal/scanner/`, `internal/connector/` | P6-B complete: Chrome profile discovery scanner with strict `anvien` blacklist filtering, language server PID/port discovery (Win32 GetExtendedTcpTable / netstat), and loopback Connect-RPC client implemented; 13/13 tests pass (100%), verified against live language_server.exe | `E6-P6B-SCAN1`, `E6-P6B-CONN1` | Proceed to Slice P6-C (Core Orchestrator & Fyne Native GUI) |
 
 ## Phase Touch Map
 
@@ -482,7 +483,7 @@ Do not write non-atomic partial JSON files or permit path traversal characters.
 ### `internal/scanner/`
 
 Current state:
-Not yet implemented in repository.
+Implemented in `internal/scanner/chrome_scanner.go` and verified in `chrome_scanner_test.go`. Discovers accounts from `%LOCALAPPDATA%\Google\Chrome\User Data\Local State` (`profile.info_cache`, `profile.profiles_attributes`) and profile `Preferences` files (`account_info`, `account_tracker_service_last_update`, and regex fallbacks). Enforces strict case-insensitive blacklist filtering (`anvien`) and eliminates false positives.
 
 Required state:
 ```text
@@ -490,7 +491,7 @@ Fast Chrome profile preference reader in Go, extracting signed-in Google account
 ```
 
 Evidence:
-- `E6-P6B-SCAN1`: Architect specification Section 2 & Section 6.
+- `E6-P6B-SCAN1`: 5/5 unit tests pass in `internal/scanner/chrome_scanner_test.go`, verified against live Chrome User Data directory.
 
 Relationship and impact:
 - Related file count: 2
@@ -498,10 +499,10 @@ Relationship and impact:
 - Impact note: Low blast radius; read-only file parsing.
 
 Classification:
-`missing`
+`correct`
 
 Allowed next action:
-Implement in Slice P6-B (`internal/scanner/chrome_scanner.go`).
+Preserve in Slice P6-C (`internal/scanner/chrome_scanner.go`).
 
 Forbidden next action:
 Do not modify Chrome browser profiles or SQLite databases on disk; strictly enforce anvien exclusion.
@@ -511,7 +512,7 @@ Do not modify Chrome browser profiles or SQLite databases on disk; strictly enfo
 ### `internal/connector/`
 
 Current state:
-Not yet implemented in repository.
+Implemented in `internal/connector/discovery.go`, `internal/connector/api_client.go`, and `internal/connector/endpoints.go` and verified in `connector_test.go`. Discovers `language_server.exe` PID, extracts `--csrf_token` from command line, resolves ephemeral loopback listening port via Win32 `GetExtendedTcpTable` with fallback to `netstat -ano -p tcp`, probes HTTP port, and provides loopback Connect-RPC client for `GetUserStatus`, `AuthLogout`, `TriggerReauth`, `LoadTrajectory`, `SmartFocusConversation`, `DiscoverActiveAgentModel`, and `SendUserCascadeMessage`.
 
 Required state:
 ```text
@@ -519,7 +520,7 @@ Language server process discovery (PID, ephemeral port via Windows TCP netstat, 
 ```
 
 Evidence:
-- `E6-P6B-CONN1`: Architect specification Section 2 & ADR-P6-03.
+- `E6-P6B-CONN1`: 8/8 unit tests pass in `internal/connector/connector_test.go`, verified live against running `language_server.exe` (PID 6396, Port 58644).
 
 Relationship and impact:
 - Related file count: 3
@@ -527,10 +528,10 @@ Relationship and impact:
 - Impact note: Medium blast radius; essential for closed-loop hot-swap.
 
 Classification:
-`missing`
+`correct`
 
 Allowed next action:
-Implement in Slice P6-B (`internal/connector/discovery.go`, `internal/connector/api_client.go`, `internal/connector/endpoints.go`).
+Preserve in Slice P6-C and wire into `internal/manager/account_manager.go`.
 
 Forbidden next action:
 Do not broadcast network requests; strictly bound to loopback 127.0.0.1.
@@ -814,7 +815,7 @@ Do not terminate actual developer processes during tests; use isolated mock serv
 | P5-A | Unit test suite is `partial`. | Add comprehensive test coverage for API connector and new flows. |
 | P5-B | End-to-end QA is `correct`. | Execute full test suite and verify 100% pass rate across 68 tests. |
 | P6-A | Go core primitives, Win32 Advapi32 wrapper, atomic store are `missing`. | Implement `internal/model/`, `internal/wincred/`, `internal/store/` in Go. |
-| P6-B | Go Chrome scanner and language server loopback connector are `missing`. | Implement `internal/scanner/` and `internal/connector/` in Go. |
+| P6-B | Go Chrome scanner and language server loopback connector are `correct`. | Preserve `internal/scanner/` and `internal/connector/`; proceed to Slice P6-C. |
 | P6-C | Go session reloader, account manager orchestrator, Fyne GUI, and CLI entrypoint are `missing`. | Implement `internal/reloader/`, `internal/manager/`, `internal/ui/`, `cmd/switcher/` in Go. |
 | P6-D | Standalone Windows binary `antigravity-switch.exe` is `missing`. | Author build script `scripts/build_windows.ps1`, compile static binary, benchmark footprint. |
 | P7-A | Goroutine log tailer and quota signature detection pipeline are `missing`. | Implement `internal/sensor/` (log tailer, signatures, event bus) in Go. |
