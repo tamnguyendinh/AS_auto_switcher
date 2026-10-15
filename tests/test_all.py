@@ -21,7 +21,7 @@ from core.credential_manager import (
     delete_antigravity_token,
     write_raw_credential,
 )
-from core.state_resolver import AccountManager, AccountInfo, SwitchResult
+from core.state_resolver import AccountManager, AccountInfo, SwitchResult, DEFAULT_CONTINUATION_PROMPT
 from core.api_connector import (
     LanguageServerInfo,
     extract_csrf_token,
@@ -2891,7 +2891,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertEqual(calls, [
             ("focus", "discovered-flow-cascade"),
             ("load", "discovered-flow-cascade"),
-            ("send", "discovered-flow-cascade", "continue"),
+            ("send", "discovered-flow-cascade", DEFAULT_CONTINUATION_PROMPT),
         ])
 
     def test_capture_active_threads_snapshot_schema_and_timestamp(self):
@@ -2985,6 +2985,10 @@ class TestAntigravitySwitcher(unittest.TestCase):
             keyboard_events.append(prompt_text)
             return True
 
+        sleep_calls = []
+        def mock_sleep_fn(duration):
+            sleep_calls.append(duration)
+
         manager = AccountManager(
             store=self.store,
             process_finder=lambda: fresh_info,
@@ -2997,6 +3001,7 @@ class TestAntigravitySwitcher(unittest.TestCase):
             trajectory_loader=mock_loader,
             cascade_sender=mock_sender,
             prompt_injector=mock_injector,
+            sleep_fn=mock_sleep_fn,
             auto_continue=True,
             dom_settle_delay=0.0,
         )
@@ -3011,6 +3016,83 @@ class TestAntigravitySwitcher(unittest.TestCase):
         self.assertEqual(rpc_calls[4], ("load", 7777, "c-proj2"))
         self.assertEqual(rpc_calls[5], ("send", 7777, "c-proj2", "resume task"))
         self.assertEqual(keyboard_events, [])
+
+        # Assert 3.0s pacing delay called between threads
+        pacing_delays = [d for d in sleep_calls if d == 3.0]
+        self.assertEqual(len(pacing_delays), 1)
+
+    def test_switch_account_default_dom_settle_delay_15s(self):
+        """Verifies switch_account dom_settle_delay defaults to 15.0s when not specified."""
+        target_email = "settle15_all@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_15"})
+        sleep_durations = []
+
+        fresh_info = LanguageServerInfo(pid=5555, csrf_token="tok15", port=55551)
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: fresh_info,
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda **kw: None,
+            threads_snapshot_capturer=lambda: ("/path", [{"thread_id": "c15", "project": "", "is_main_pane": True}]),
+            smart_focuser=lambda info, cid: True,
+            trajectory_loader=lambda info, cid: True,
+            cascade_sender=lambda info, cid, prompt_text="": True,
+            sleep_fn=lambda d: sleep_durations.append(d),
+            auto_continue=True,
+        )
+
+        res = manager.switch_account(target_email)
+        self.assertTrue(res.success)
+        self.assertIn(15.0, sleep_durations)
+
+    def test_switch_account_default_continuation_prompt(self):
+        """Verifies default continuation prompt matches the English directive."""
+        self.assertEqual(
+            DEFAULT_CONTINUATION_PROMPT,
+            "Continue if you still have unfinished work in progress. If all tasks are already completed, reply with: Currently there is no work to do."
+        )
+        manager = AccountManager(store=self.store)
+        self.assertEqual(manager.prompt_text, DEFAULT_CONTINUATION_PROMPT)
+
+    def test_capture_active_threads_snapshot_ignores_stale_layout_keys(self):
+        """Verifies capture_active_threads_snapshot only captures active conversationPanes and ignores stale layout keys."""
+        temp_storage = os.path.join(self.test_store_dir, "stale_test_app_storage.json")
+        temp_history = os.path.join(self.test_store_dir, "history_stale")
+
+        active_thread = "active-pane-thread-99"
+        stale_thread = "stale-layout-thread-42"
+
+        mock_storage = {
+            "aux-pane-v2-session": json.dumps({
+                "conversationPanes": {
+                    "main": {
+                        "tabs": [
+                            {
+                                "cascadeId": active_thread,
+                                "metadata": {"workingDirectory": "C:/Projects/ActiveApp"}
+                            }
+                        ]
+                    }
+                }
+            }),
+            f"antigravity-multi-conversation-layout-v3-{stale_thread}": json.dumps({"activeThreadId": stale_thread}),
+            "workbench.panel.cascade": {"activeThreadId": "stale-workbench"}
+        }
+        with open(temp_storage, "w", encoding="utf-8") as f:
+            json.dump(mock_storage, f)
+
+        snapshot_file, active_threads = capture_active_threads_snapshot(
+            storage_path=temp_storage,
+            brain_dir=self.test_store_dir,
+            output_dir=temp_history,
+        )
+
+        self.assertEqual(len(active_threads), 1)
+        self.assertEqual(active_threads[0]["thread_id"], active_thread)
+        self.assertEqual(active_threads[0]["project"], "C:/Projects/ActiveApp")
+        self.assertTrue(active_threads[0]["is_main_pane"])
+        self.assertNotIn(stale_thread, [t["thread_id"] for t in active_threads])
 
 
 

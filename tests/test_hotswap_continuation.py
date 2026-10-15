@@ -26,7 +26,7 @@ from core.session_reloader import (
     discover_most_recent_cascade_id,
     capture_active_threads_snapshot,
 )
-from core.state_resolver import AccountManager, SwitchResult
+from core.state_resolver import AccountManager, SwitchResult, DEFAULT_CONTINUATION_PROMPT
 from core.account_store import AccountStore
 from core.api_connector import (
     LanguageServerInfo,
@@ -427,7 +427,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertEqual(pipeline_trace[6], ("6_finder_fresh_after_recycle", 2222))
         self.assertEqual(pipeline_trace[7], ("7_rpc_focus", 2222, "thread-alpha"))
         self.assertEqual(pipeline_trace[8], ("7_rpc_load", 2222, "thread-alpha"))
-        self.assertEqual(pipeline_trace[9], ("7_rpc_send", 2222, "thread-alpha", "continue"))
+        self.assertEqual(pipeline_trace[9], ("7_rpc_send", 2222, "thread-alpha", DEFAULT_CONTINUATION_PROMPT))
         self.assertNotIn("6_tos_dismissal", pipeline_trace)
 
         # CRITICAL INVARIANT: Win32 keyboard emulation was strictly bypassed! Zero keyboard events!
@@ -598,7 +598,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertEqual(stage_log[4], ("sleep", 3.0))
         self.assertEqual(stage_log[5], ("giai_doan_3_smart_focus", 9999, "c-owner"))
         self.assertEqual(stage_log[6], ("giai_doan_3_load_trajectory", 9999, "c-owner"))
-        self.assertEqual(stage_log[7], ("giai_doan_3_send_message", 9999, "c-owner", "continue"))
+        self.assertEqual(stage_log[7], ("giai_doan_3_send_message", 9999, "c-owner", DEFAULT_CONTINUATION_PROMPT))
 
         # Invariant: ToS dismissal bypassed by default, keyboard emulation strictly purged (zero events)
         self.assertNotIn("tos_dismissal", stage_log)
@@ -1029,20 +1029,40 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertEqual(threads[1]["project"], "C:/Projects/ProjectBeta")
 
     def test_capture_active_threads_snapshot_layout_keys_and_fallback(self):
-        """Verifies capture_active_threads_snapshot extracts threads from layout keys and resolves project from brain transcript."""
+        """Verifies capture_active_threads_snapshot strictly captures active conversationPanes and ignores stale layout keys."""
         temp_storage = os.path.join(self.test_dir, "layout_storage.json")
         temp_brain = os.path.join(self.test_dir, "brain")
         temp_history_dir = os.path.join(self.test_dir, "layout_history")
 
-        thread_id = "thread-layout-fallback"
-        thread_brain_dir = os.path.join(temp_brain, thread_id)
+        active_thread_id = "thread-active-in-pane"
+        stale_thread_1 = "thread-stale-historical-1"
+        stale_thread_2 = "thread-stale-historical-2"
+
+        thread_brain_dir = os.path.join(temp_brain, active_thread_id)
         os.makedirs(thread_brain_dir, exist_ok=True)
         with open(os.path.join(thread_brain_dir, "metadata.json"), "w", encoding="utf-8") as f:
             json.dump({"active_workspace": "D:/workspace/gamma_proj"}, f)
 
         mock_storage_data = {
+            "aux-pane-v2-session": json.dumps({
+                "conversationPanes": {
+                    "pane-main": {
+                        "paneId": "pane-main",
+                        "tabs": [
+                            {
+                                "cascadeId": active_thread_id,
+                                "metadata": {
+                                    "workingDirectory": "D:/workspace/gamma_proj"
+                                }
+                            }
+                        ]
+                    }
+                }
+            }),
+            f"antigravity-multi-conversation-layout-v3-{stale_thread_1}": json.dumps({"activeThreadId": stale_thread_1}),
+            f"antigravity-multi-conversation-layout-v3-{stale_thread_2}+_new": json.dumps({"activeThreadId": stale_thread_2}),
             "workbench.panel.cascade": {
-                "activeThreadId": thread_id,
+                "activeThreadId": "stale-workbench-thread",
             }
         }
         with open(temp_storage, "w", encoding="utf-8") as f:
@@ -1054,9 +1074,16 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             output_dir=temp_history_dir
         )
 
+        # Strictly captures ONLY active conversationPanes, ignoring stale layout keys
         self.assertEqual(len(active_threads), 1)
-        self.assertEqual(active_threads[0]["thread_id"], thread_id)
+        self.assertEqual(active_threads[0]["thread_id"], active_thread_id)
         self.assertEqual(active_threads[0]["project"], "D:/workspace/gamma_proj")
+        self.assertTrue(active_threads[0]["is_main_pane"])
+
+        captured_ids = [t["thread_id"] for t in active_threads]
+        self.assertNotIn(stale_thread_1, captured_ids)
+        self.assertNotIn(stale_thread_2, captured_ids)
+        self.assertNotIn("stale-workbench-thread", captured_ids)
 
     def test_switch_account_fresh_language_server_info_rediscovery(self):
         """
@@ -1148,6 +1175,10 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             keyboard_calls.append(prompt_text)
             return True
 
+        sleep_log = []
+        def mock_sleeper(duration):
+            sleep_log.append(duration)
+
         manager = AccountManager(
             store=self.store,
             process_finder=lambda: fresh_info,
@@ -1160,6 +1191,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             trajectory_loader=mock_loader,
             cascade_sender=mock_sender,
             prompt_injector=mock_injector,
+            sleep_fn=mock_sleeper,
             auto_continue=True,
             dom_settle_delay=0.0,
         )
@@ -1173,8 +1205,47 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertEqual(rpc_sequence[3:6], [("focus", "thread-beta"), ("load", "thread-beta"), ("send", "thread-beta", "continue working")])
         self.assertEqual(rpc_sequence[6:9], [("focus", "thread-gamma"), ("load", "thread-gamma"), ("send", "thread-gamma", "continue working")])
 
+        # Assert 3.0s pacing delay between threads (2 delays for 3 threads)
+        pacing_delays = [d for d in sleep_log if d == 3.0]
+        self.assertEqual(len(pacing_delays), 2)
+
         # Zero keyboard events
         self.assertEqual(keyboard_calls, [])
+
+    def test_switch_account_default_dom_settle_delay_15s(self):
+        """Verifies switch_account dom_settle_delay defaults to 15.0s when not specified."""
+        target_email = "settle15@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_15"})
+        sleep_durations = []
+
+        fresh_info = LanguageServerInfo(pid=5555, csrf_token="tok15", port=55551)
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: fresh_info,
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda **kw: None,
+            threads_snapshot_capturer=lambda: ("/path", [{"thread_id": "c15", "project": "", "is_main_pane": True}]),
+            smart_focuser=lambda info, cid: True,
+            trajectory_loader=lambda info, cid: True,
+            cascade_sender=lambda info, cid, prompt_text="": True,
+            sleep_fn=lambda d: sleep_durations.append(d),
+            auto_continue=True,
+            # No dom_settle_delay passed -> MUST default to 15.0s
+        )
+
+        res = manager.switch_account(target_email)
+        self.assertTrue(res.success)
+        self.assertIn(15.0, sleep_durations)
+
+    def test_switch_account_default_continuation_prompt(self):
+        """Verifies default continuation prompt matches the English directive."""
+        self.assertEqual(
+            DEFAULT_CONTINUATION_PROMPT,
+            "Continue if you still have unfinished work in progress. If all tasks are already completed, reply with: Currently there is no work to do."
+        )
+        manager = AccountManager(store=self.store)
+        self.assertEqual(manager.prompt_text, DEFAULT_CONTINUATION_PROMPT)
 
 
 if __name__ == "__main__":

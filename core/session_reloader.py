@@ -806,12 +806,11 @@ def capture_active_threads_snapshot(
     output_dir: Optional[str] = None,
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
-    Captures a multi-project timestamped snapshot of all active conversation threads
-    prior to credentials hot-swap or process recycling.
-    Discovers active threads across all workspaces/projects from app_storage.json
-    (aux-pane-v2-session.conversationPanes and layout keys), identifying is_main_pane,
-    and determining the project/workspace path for each thread.
-    Writes snapshot to accounts_store/active_threads_history/<YYYY-MM-DD-HH-MM-SS>_active_threads.json.
+    Captures a multi-project timestamped snapshot of active conversation threads
+    strictly present in conversationPanes (aux-pane-v2-session / aux-pane-session).
+    Stale historical layout keys (antigravity-multi-conversation-layout-v3-*) are strictly ignored.
+    Identifies is_main_pane, resolves workspace project paths, and writes an atomic JSON snapshot
+    to accounts_store/active_threads_history/<YYYY-MM-DD-HH-MM-SS>_active_threads.json.
     Returns (snapshot_file_path, active_threads).
     """
     s_path = storage_path if storage_path is not None else get_app_storage_path()
@@ -834,7 +833,7 @@ def capture_active_threads_snapshot(
             logger.debug("capture_active_threads_snapshot reading storage failed: %s", exc)
             sdata = {}
 
-    # 1. Parse aux-pane-v2-session (or fallback aux-pane-session or direct conversationPanes)
+    # Extract conversationPanes strictly from aux-pane-v2-session (or fallback aux-pane-session)
     conv_panes = sdata.get("aux-pane-v2-session.conversationPanes")
     if conv_panes is None:
         aux_session = sdata.get("aux-pane-v2-session") or sdata.get("aux-pane-session")
@@ -845,7 +844,15 @@ def capture_active_threads_snapshot(
                 aux_session = None
         if isinstance(aux_session, dict):
             conv_panes = aux_session.get("conversationPanes")
+        if conv_panes is None and "conversationPanes" in sdata:
+            conv_panes = sdata.get("conversationPanes")
     elif isinstance(conv_panes, str):
+        try:
+            conv_panes = json.loads(conv_panes)
+        except Exception:
+            conv_panes = None
+
+    if isinstance(conv_panes, str):
         try:
             conv_panes = json.loads(conv_panes)
         except Exception:
@@ -855,6 +862,7 @@ def capture_active_threads_snapshot(
         for k_id, pane_info in conv_panes.items():
             if not isinstance(pane_info, dict):
                 pane_info = {}
+            is_main = ("main" in str(k_id).lower() or "main" in str(pane_info.get("paneId", "")).lower() or len(threads_map) == 0)
             thread_ids_in_pane = []
             for tab in pane_info.get("tabs", []):
                 if isinstance(tab, dict):
@@ -869,23 +877,24 @@ def capture_active_threads_snapshot(
                         threads_map[t_id] = {
                             "thread_id": t_id,
                             "project": proj,
-                            "is_main_pane": (idx == 0 and ("main" in str(k_id).lower() or "main" in str(pane_info.get("paneId", "")).lower() or len(threads_map) == 0)),
+                            "is_main_pane": (idx == 0 and is_main),
                         }
             elif k_id and isinstance(k_id, str) and k_id.strip() and k_id != "index":
-                cid = k_id.strip()
+                cid = pane_info.get("cascadeId") or pane_info.get("activeThreadId") or pane_info.get("threadId") or k_id.strip()
                 proj = _resolve_thread_project(cid, pane_info, b_dir, sdata)
                 threads_map[cid] = {
                     "thread_id": cid,
                     "project": proj,
-                    "is_main_pane": True,
+                    "is_main_pane": is_main,
                 }
     elif isinstance(conv_panes, list):
         for idx, pane_info in enumerate(conv_panes):
             if not isinstance(pane_info, dict):
                 continue
-            is_main = (idx == 0 or "main" in str(pane_info.get("paneId", "")).lower())
+            is_main = (idx == 0 or "main" in str(pane_info.get("paneId", "")).lower() or len(threads_map) == 0)
             tabs = pane_info.get("tabs", [])
-            for tab in tabs:
+            tab_found = False
+            for tab_idx, tab in enumerate(tabs):
                 if isinstance(tab, dict):
                     meta = tab.get("metadata", {}) if isinstance(tab.get("metadata"), dict) else {}
                     t_id = meta.get("cascadeId") or tab.get("cascadeId") or tab.get("childCascadeId")
@@ -896,54 +905,20 @@ def capture_active_threads_snapshot(
                             threads_map[t_id] = {
                                 "thread_id": t_id,
                                 "project": proj,
-                                "is_main_pane": is_main,
+                                "is_main_pane": (is_main and tab_idx == 0),
                             }
-
-    # 2. Parse layout keys from sdata
-    prefix = "antigravity-multi-conversation-layout-v3-"
-    for k, val in sdata.items():
-        if k.startswith(prefix):
-            cid = k[len(prefix):]
-            if cid.endswith("+_new"):
-                cid = cid[:-5]
-            if cid and cid != "index":
-                cid = cid.strip()
-                if cid not in threads_map:
-                    proj = _resolve_thread_project(cid, None, b_dir, sdata)
-                    threads_map[cid] = {
-                        "thread_id": cid,
-                        "project": proj,
-                        "is_main_pane": False,
-                    }
-        elif "panel.cascade" in k or "cascade.panel" in k or k.startswith("workbench.panel.cascade"):
-            target_obj = val
-            if isinstance(target_obj, str):
-                try:
-                    target_obj = json.loads(target_obj)
-                except Exception:
-                    target_obj = None
-            if isinstance(target_obj, dict):
-                cid = target_obj.get("activeThreadId") or target_obj.get("cascadeId") or target_obj.get("threadId")
-                if cid and isinstance(cid, str):
+                            tab_found = True
+            if not tab_found:
+                cid = pane_info.get("cascadeId") or pane_info.get("activeThreadId") or pane_info.get("threadId") or pane_info.get("paneId")
+                if cid and isinstance(cid, str) and cid.strip() and cid.strip() != "index":
                     cid = cid.strip()
                     if cid not in threads_map:
-                        proj = _resolve_thread_project(cid, target_obj, b_dir, sdata)
+                        proj = _resolve_thread_project(cid, pane_info, b_dir, sdata)
                         threads_map[cid] = {
                             "thread_id": cid,
                             "project": proj,
-                            "is_main_pane": True,
+                            "is_main_pane": is_main,
                         }
-
-    # 3. Fallback: if no threads were found in storage, scan brain directory
-    if not threads_map and b_dir and os.path.isdir(b_dir):
-        recent_cid = discover_most_recent_cascade_id(brain_dir=b_dir, storage_path=s_path)
-        if recent_cid:
-            proj = _resolve_thread_project(recent_cid, None, b_dir, sdata)
-            threads_map[recent_cid] = {
-                "thread_id": recent_cid,
-                "project": proj,
-                "is_main_pane": True,
-            }
 
     # Construct active_threads list (main panes first, then child/secondary panes)
     active_threads: List[Dict[str, Any]] = sorted(
@@ -951,7 +926,7 @@ def capture_active_threads_snapshot(
         key=lambda x: (not x.get("is_main_pane", False), x.get("thread_id", "")),
     )
 
-    # 4. Generate timestamped file
+    # Generate timestamped file
     now = datetime.datetime.now()
     timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
     file_ts = now.strftime("%Y-%m-%d-%H-%M-%S")

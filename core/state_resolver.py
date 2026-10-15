@@ -45,6 +45,11 @@ from core.api_connector import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CONTINUATION_PROMPT = (
+    "Continue if you still have unfinished work in progress. "
+    "If all tasks are already completed, reply with: Currently there is no work to do."
+)
+
 
 class SwitchResult(tuple):
     """
@@ -108,7 +113,7 @@ class AccountManager:
         status_getter: Optional[Callable[[Any], Optional[Dict[str, Any]]]] = None,
         force_logout: bool = False,
         auto_continue: bool = True,
-        prompt_text: str = "continue",
+        prompt_text: Optional[str] = None,
         tos_pre_patcher: Optional[Callable[[str], bool]] = None,
         language_server_recycler: Optional[Callable[..., bool]] = None,
         prompt_injector: Optional[Callable[..., bool]] = None,
@@ -141,7 +146,7 @@ class AccountManager:
         self.status_getter = status_getter
         self.force_logout = force_logout
         self.auto_continue = auto_continue
-        self.prompt_text = prompt_text
+        self.prompt_text = prompt_text or DEFAULT_CONTINUATION_PROMPT
         self.tos_pre_patcher = tos_pre_patcher
         self.language_server_recycler = language_server_recycler
         self.prompt_injector = prompt_injector
@@ -616,10 +621,10 @@ class AccountManager:
         # Wait stabilization delay for language server and session to settle
         settle = dom_settle_delay if dom_settle_delay is not None else getattr(self, "dom_settle_delay", None)
         if settle is None:
-            if reloader_fn is not None and language_server_recycler is None and getattr(self, "language_server_recycler", None) is None:
+            if is_legacy_reloader:
                 settle = kwargs.get("dom_settle_delay", 0.0)
             else:
-                settle = kwargs.get("dom_settle_delay", 3.0)
+                settle = kwargs.get("dom_settle_delay", 15.0)
 
         if settle and settle > 0:
             try:
@@ -641,7 +646,7 @@ class AccountManager:
             else (False if is_legacy_reloader else getattr(self, "auto_continue", True))
         )
         if should_auto_continue and active_threads_list:
-            p_text = prompt_text or getattr(self, "prompt_text", "continue") or "continue"
+            p_text = prompt_text or getattr(self, "prompt_text", DEFAULT_CONTINUATION_PROMPT) or DEFAULT_CONTINUATION_PROMPT
 
             # CRITICAL FIX: ALWAYS re-query finder() after recycling
             new_info: Optional[LanguageServerInfo] = None
@@ -657,12 +662,20 @@ class AccountManager:
                 loader = trajectory_loader or getattr(self, "trajectory_loader", None) or load_trajectory
                 sender = cascade_sender or getattr(self, "cascade_sender", None) or send_user_cascade_message
 
+                threads_sent_count = 0
                 # For each thread in active_threads from the snapshot:
                 for thread_item in active_threads_list:
                     t_id = thread_item.get("thread_id") if isinstance(thread_item, dict) else str(thread_item)
                     if not t_id or not str(t_id).strip():
                         continue
                     t_id = str(t_id).strip()
+
+                    # Pacing delay between threads to avoid overloading Language Server
+                    if threads_sent_count > 0:
+                        try:
+                            s_fn(3.0)
+                        except Exception:
+                            pass
 
                     try:
                         focuser(new_info, t_id)
@@ -678,5 +691,7 @@ class AccountManager:
                         sender(new_info, t_id, prompt_text=p_text)
                     except Exception as exc:
                         logger.debug("send_user_cascade_message error on thread %s: %s", t_id, exc)
+
+                    threads_sent_count += 1
 
         return SwitchResult(True, f"Đã chuyển đổi thành công sang: {norm_email}")
