@@ -24,6 +24,7 @@ from core.session_reloader import (
     reload_session,
     reload_antigravity_session,
     discover_most_recent_cascade_id,
+    capture_active_threads_snapshot,
 )
 from core.state_resolver import AccountManager, SwitchResult
 from core.account_store import AccountStore
@@ -324,12 +325,14 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         """
         Tests complete seamless account hot-swap orchestration:
         Step 1: Discover language server and check current active email
-        Step 2: Write target token to Credential Manager ("gemini:antigravity")
-        Step 3: Pre-patch ToS in app_storage.json (lastLoginIsGcpTos = "false")
-        Step 4: Recycle language_server.exe (5.0s wait, no premature keys)
-        Step 5: Bypass ToS dismissal Enter key press by default (preventing click on 'Resuming Previous Conversation')
-        Step 6: Wait 3.0s stabilization delay for session to settle
-        Step 7: Focus active chat (Ctrl+L), wait 0.5s, inject 'continue', wait 0.25s, Enter
+        Step 2: Snapshot active conversation threads across workspaces/projects
+        Step 3: Write target token to Credential Manager ("gemini:antigravity")
+        Step 4: Pre-patch ToS in app_storage.json (lastLoginIsGcpTos = "false")
+        Step 5: Recycle language_server.exe (5.0s wait, no premature keys)
+        Step 6: Bypass ToS dismissal Enter key press by default
+        Step 7: Re-query finder() for fresh LanguageServerInfo (PID, port, CSRF token)
+        Step 8: Pure native RPC continuation (smart_focus -> load_trajectory -> send_cascade_message)
+                with ZERO Win32 keyboard emulation!
         """
         active_email = "old.user@gmail.com"
         target_email = "new.user@gmail.com"
@@ -338,15 +341,27 @@ class TestHotSwapAndContinuation(unittest.TestCase):
 
         pipeline_trace = []
 
-        mock_info = LanguageServerInfo(pid=9999, csrf_token="csrf-9999", port=55555)
+        old_info = LanguageServerInfo(pid=1111, csrf_token="csrf-1111", port=51111)
+        fresh_info = LanguageServerInfo(pid=2222, csrf_token="csrf-2222", port=52222)
+        finder_call_count = [0]
 
         def mock_finder():
-            pipeline_trace.append("1_finder")
-            return mock_info
+            finder_call_count[0] += 1
+            if finder_call_count[0] == 1:
+                pipeline_trace.append(("1_finder_initial", old_info.pid))
+                return old_info
+            pipeline_trace.append(("6_finder_fresh_after_recycle", fresh_info.pid))
+            return fresh_info
 
         def mock_getter(info):
-            pipeline_trace.append("2_getter")
+            pipeline_trace.append(("2_getter", info.pid))
             return {"email": active_email}
+
+        def mock_capturer():
+            pipeline_trace.append("2_snapshot_threads")
+            return ("/mock/path/snapshot.json", [
+                {"thread_id": "thread-alpha", "project": "g:/projA", "is_main_pane": True}
+            ])
 
         def mock_writer(tok):
             pipeline_trace.append(("3_token_writer", tok.get("access_token")))
@@ -363,20 +378,38 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         def mock_dismisser():
             pipeline_trace.append("6_tos_dismissal")
 
+        def mock_focuser(info, cid):
+            pipeline_trace.append(("7_rpc_focus", info.pid, cid))
+            return True
+
+        def mock_loader(info, cid):
+            pipeline_trace.append(("7_rpc_load", info.pid, cid))
+            return True
+
+        def mock_sender(info, cid, prompt_text="continue"):
+            pipeline_trace.append(("7_rpc_send", info.pid, cid, prompt_text))
+            return True
+
+        mock_prompt_injector_called = []
         def mock_prompt_injector(prompt_text="continue"):
-            pipeline_trace.append(("7_prompt_injection", prompt_text))
+            mock_prompt_injector_called.append(prompt_text)
             return True
 
         manager = AccountManager(
             store=self.store,
             process_finder=mock_finder,
             status_getter=mock_getter,
+            threads_snapshot_capturer=mock_capturer,
             token_writer=mock_writer,
             tos_pre_patcher=mock_patcher,
             language_server_recycler=mock_recycler,
             tos_dismisser=mock_dismisser,
+            smart_focuser=mock_focuser,
+            trajectory_loader=mock_loader,
+            cascade_sender=mock_sender,
             prompt_injector=mock_prompt_injector,
             auto_continue=True,
+            dom_settle_delay=0.0,
         )
 
         res = manager.switch_account(target_email)
@@ -384,14 +417,21 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertTrue(res.success)
         self.assertIn(target_email, res.message)
 
-        # Validate exact Owner-verified linear execution order: ToS dismissal bypassed by default!
-        self.assertEqual(pipeline_trace[0], "1_finder")
-        self.assertEqual(pipeline_trace[1], "2_getter")
-        self.assertEqual(pipeline_trace[2], ("3_token_writer", "at_new"))
-        self.assertEqual(pipeline_trace[3], ("4_tos_pre_patcher", target_email))
-        self.assertEqual(pipeline_trace[4], "5_recycle_language_server")
-        self.assertEqual(pipeline_trace[5], ("7_prompt_injection", "continue"))
+        # Validate exact Owner-verified linear execution order:
+        self.assertEqual(pipeline_trace[0], ("1_finder_initial", 1111))
+        self.assertEqual(pipeline_trace[1], ("2_getter", 1111))
+        self.assertEqual(pipeline_trace[2], "2_snapshot_threads")
+        self.assertEqual(pipeline_trace[3], ("3_token_writer", "at_new"))
+        self.assertEqual(pipeline_trace[4], ("4_tos_pre_patcher", target_email))
+        self.assertEqual(pipeline_trace[5], "5_recycle_language_server")
+        self.assertEqual(pipeline_trace[6], ("6_finder_fresh_after_recycle", 2222))
+        self.assertEqual(pipeline_trace[7], ("7_rpc_focus", 2222, "thread-alpha"))
+        self.assertEqual(pipeline_trace[8], ("7_rpc_load", 2222, "thread-alpha"))
+        self.assertEqual(pipeline_trace[9], ("7_rpc_send", 2222, "thread-alpha", "continue"))
         self.assertNotIn("6_tos_dismissal", pipeline_trace)
+
+        # CRITICAL INVARIANT: Win32 keyboard emulation was strictly bypassed! Zero keyboard events!
+        self.assertEqual(mock_prompt_injector_called, [])
 
         # Also verify that when dismiss_tos=True is explicitly requested, dismisser IS called
         pipeline_trace.clear()
@@ -414,7 +454,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
             tos_pre_patcher=lambda em: True,
             language_server_recycler=lambda: True,
             tos_dismisser=lambda: None,
-            prompt_injector=lambda prompt_text: pipeline_trace.append("injected"),
+            cascade_sender=lambda info, cid, prompt_text="continue": pipeline_trace.append("injected"),
             auto_continue=True,
         )
 
@@ -423,19 +463,24 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertNotIn("injected", pipeline_trace)
 
     def test_switch_account_custom_prompt_text(self):
-        """Verifies switch_account passes custom prompt_text to injector."""
+        """Verifies switch_account passes custom prompt_text to RPC sender."""
         target_email = "custom_prompt@gmail.com"
         self.store.store_account(target_email, {"access_token": "at"})
 
         prompts_injected = []
+        mock_info = LanguageServerInfo(pid=8888, csrf_token="token", port=50000)
         manager = AccountManager(
             store=self.store,
-            process_finder=lambda: None,
+            process_finder=lambda: mock_info,
             token_writer=lambda tok: True,
             tos_pre_patcher=lambda em: True,
             language_server_recycler=lambda: True,
             tos_dismisser=lambda: None,
-            prompt_injector=lambda prompt_text: prompts_injected.append(prompt_text),
+            threads_snapshot_capturer=lambda: ("/path", [{"thread_id": "c-custom", "project": "", "is_main_pane": True}]),
+            smart_focuser=lambda info, cid: True,
+            trajectory_loader=lambda info, cid: True,
+            cascade_sender=lambda info, cid, prompt_text="continue": prompts_injected.append(prompt_text) or True,
+            dom_settle_delay=0.0,
         )
 
         res = manager.switch_account(target_email, auto_continue=True, prompt_text="resume task 42")
@@ -475,12 +520,9 @@ class TestHotSwapAndContinuation(unittest.TestCase):
     def test_switch_account_owner_verified_sequencing_and_timing(self):
         """
         Verifies switch_account executes the Owner-verified sequential timing:
-        Step 1: Write target token to Credential Manager
-        Step 2: Pre-patch ToS in app_storage.json (lastLoginIsGcpTos = "false")
-        Step 3: Recycle language_server.exe (5.0s buffer)
-        Step 4: Bypass premature ToS modal dismissal Enter key press
-        Step 5: Wait 3.0s stabilization delay for session to settle
-        Step 6: Focus active chat (Ctrl+L), wait 0.5s settling, inject 'continue', wait 0.25s, Enter
+        Giai đoạn 1: Snapshot active threads before token swap
+        Giai đoạn 2: Token swap and ToS pre-patching (isGcpTos = "false"), recycle language_server.exe (5.0s buffer), 3.0s stabilization delay
+        Giai đoạn 3: Re-query fresh language server info and execute Connect-RPC continuation with zero keyboard events.
         """
         target_email = "ownersequence@gmail.com"
         target_token = {"access_token": "at_stages", "id_token": "id_stages"}
@@ -488,34 +530,57 @@ class TestHotSwapAndContinuation(unittest.TestCase):
 
         stage_log = []
 
+        def mock_capturer():
+            stage_log.append("giai_doan_1_snapshot")
+            return ("/path/history.json", [{"thread_id": "c-owner", "project": "proj-a", "is_main_pane": True}])
+
         def mock_writer(tok):
-            stage_log.append("step_1_writer")
+            stage_log.append("giai_doan_2_writer")
             return True
 
         def mock_recycler(info=None, wait_seconds=5.0, sleep_fn=None):
-            stage_log.append(("step_2_recycle", wait_seconds))
+            stage_log.append(("giai_doan_2_recycle", wait_seconds))
             if sleep_fn:
                 sleep_fn(wait_seconds)
             return True
 
         def mock_dismisser(sleep_fn=None):
-            stage_log.append("step_3_tos_dismissal")
+            stage_log.append("tos_dismissal")
             return True
 
         def mock_sleep_fn(duration):
             stage_log.append(("sleep", duration))
 
+        fresh_info = LanguageServerInfo(pid=9999, csrf_token="fresh_token", port=55555)
+
+        def mock_focuser(info, cid):
+            stage_log.append(("giai_doan_3_smart_focus", info.pid, cid))
+            return True
+
+        def mock_loader(info, cid):
+            stage_log.append(("giai_doan_3_load_trajectory", info.pid, cid))
+            return True
+
+        def mock_sender(info, cid, prompt_text="continue"):
+            stage_log.append(("giai_doan_3_send_message", info.pid, cid, prompt_text))
+            return True
+
+        keyboard_injector_called = []
         def mock_injector(prompt_text="continue", sleep_fn=None):
-            stage_log.append(("step_5_inject", prompt_text))
+            keyboard_injector_called.append(prompt_text)
             return True
 
         manager = AccountManager(
             store=self.store,
-            process_finder=lambda: None,
+            process_finder=lambda: fresh_info,
             token_writer=mock_writer,
             tos_pre_patcher=lambda em: True,
             language_server_recycler=mock_recycler,
             tos_dismisser=mock_dismisser,
+            threads_snapshot_capturer=mock_capturer,
+            smart_focuser=mock_focuser,
+            trajectory_loader=mock_loader,
+            cascade_sender=mock_sender,
             prompt_injector=mock_injector,
             sleep_fn=mock_sleep_fn,
             auto_continue=True,
@@ -525,14 +590,19 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         res = manager.switch_account(target_email)
         self.assertTrue(res.success)
 
-        # Verify Step 1 -> Step 2 (sleep 5.0) -> Step 4 (sleep 3.0) -> Step 5
-        # Step 3 ToS dismissal Enter key press is bypassed by default!
-        self.assertEqual(stage_log[0], "step_1_writer")
-        self.assertEqual(stage_log[1], ("step_2_recycle", 5.0))
-        self.assertEqual(stage_log[2], ("sleep", 5.0))
-        self.assertEqual(stage_log[3], ("sleep", 3.0))
-        self.assertEqual(stage_log[4], ("step_5_inject", "continue"))
-        self.assertNotIn("step_3_tos_dismissal", stage_log)
+        # Verify exact sequence across all 3 phases
+        self.assertEqual(stage_log[0], "giai_doan_1_snapshot")
+        self.assertEqual(stage_log[1], "giai_doan_2_writer")
+        self.assertEqual(stage_log[2], ("giai_doan_2_recycle", 5.0))
+        self.assertEqual(stage_log[3], ("sleep", 5.0))
+        self.assertEqual(stage_log[4], ("sleep", 3.0))
+        self.assertEqual(stage_log[5], ("giai_doan_3_smart_focus", 9999, "c-owner"))
+        self.assertEqual(stage_log[6], ("giai_doan_3_load_trajectory", 9999, "c-owner"))
+        self.assertEqual(stage_log[7], ("giai_doan_3_send_message", 9999, "c-owner", "continue"))
+
+        # Invariant: ToS dismissal bypassed by default, keyboard emulation strictly purged (zero events)
+        self.assertNotIn("tos_dismissal", stage_log)
+        self.assertEqual(keyboard_injector_called, [])
 
     def test_switch_account_4_stages_sequencing_and_timing(self):
         """Backward-compatible test name alias for Owner sequence test."""
@@ -822,7 +892,7 @@ class TestHotSwapAndContinuation(unittest.TestCase):
         self.assertEqual(keyboard_injector_called, [])
 
     def test_switch_account_native_rpc_fallback_when_rpc_fails(self):
-        """Verifies switch_account falls back to Win32 keyboard prompt_injector if send_user_cascade_message fails."""
+        """Verifies switch_account never invokes Win32 keyboard prompt_injector even if send_user_cascade_message fails."""
         target_email = "rpc_fail@gmail.com"
         self.store.store_account(target_email, {"access_token": "at_fail"})
         mock_info = LanguageServerInfo(pid=8888, csrf_token="csrf-fail", port=59000)
@@ -850,11 +920,11 @@ class TestHotSwapAndContinuation(unittest.TestCase):
 
         res = manager.switch_account(target_email, prompt_text="fallback-continue")
         self.assertTrue(res.success)
-        # Keyboard emulation invoked as fallback
-        self.assertEqual(keyboard_injector_called, ["fallback-continue"])
+        # Keyboard emulation strictly purged: zero keyboard events dispatched
+        self.assertEqual(keyboard_injector_called, [])
 
     def test_switch_account_native_rpc_fallback_when_no_cascade_id(self):
-        """Verifies switch_account falls back to Win32 keyboard prompt_injector if no cascade_id is discoverable."""
+        """Verifies switch_account never invokes Win32 keyboard prompt_injector if no cascade_id is discoverable."""
         target_email = "no_cascade@gmail.com"
         self.store.store_account(target_email, {"access_token": "at_nocascade"})
         mock_info = LanguageServerInfo(pid=8888, csrf_token="csrf-nocascade", port=59000)
@@ -879,7 +949,232 @@ class TestHotSwapAndContinuation(unittest.TestCase):
 
         res = manager.switch_account(target_email, prompt_text="fallback-nocascade")
         self.assertTrue(res.success)
-        self.assertEqual(keyboard_injector_called, ["fallback-nocascade"])
+        # Keyboard emulation strictly purged: zero keyboard events dispatched
+        self.assertEqual(keyboard_injector_called, [])
+
+    def test_capture_active_threads_snapshot_schema_and_timestamp(self):
+        """
+        Verifies capture_active_threads_snapshot creates a timestamped JSON file
+        in accounts_store/active_threads_history/<YYYY-MM-DD-HH-MM-SS>_active_threads.json
+        matching the exact schema:
+        {"timestamp": "YYYY-MM-DD HH:MM:SS", "active_threads": [{"thread_id": "...", "project": "...", "is_main_pane": bool}]}
+        """
+        import re
+        temp_storage = os.path.join(self.test_dir, "test_app_storage.json")
+        temp_history_dir = os.path.join(self.test_dir, "history_out")
+
+        mock_storage_data = {
+            "aux-pane-v2-session.conversationPanes": [
+                {
+                    "paneId": "main_cascade_pane",
+                    "tabs": [
+                        {
+                            "tabId": "tab-1",
+                            "metadata": {
+                                "cascadeId": "thread-main-alpha",
+                                "workingDirectory": "C:/Projects/ProjectAlpha"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "paneId": "secondary_pane",
+                    "tabs": [
+                        {
+                            "tabId": "tab-2",
+                            "metadata": {
+                                "cascadeId": "thread-sec-beta",
+                                "workspaceUri": "file:///C:/Projects/ProjectBeta"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        with open(temp_storage, "w", encoding="utf-8") as f:
+            json.dump(mock_storage_data, f)
+
+        snapshot_file, active_threads = capture_active_threads_snapshot(
+            storage_path=temp_storage,
+            brain_dir=self.test_dir,
+            output_dir=temp_history_dir
+        )
+
+        self.assertIsNotNone(snapshot_file)
+        self.assertTrue(os.path.exists(snapshot_file))
+        basename = os.path.basename(snapshot_file)
+        self.assertTrue(
+            bool(re.match(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}_active_threads\.json$", basename)),
+            f"Filename {basename} does not match timestamp format"
+        )
+
+        with open(snapshot_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        self.assertIn("timestamp", data)
+        self.assertIn("active_threads", data)
+        self.assertTrue(
+            bool(re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", data["timestamp"])),
+            f"Timestamp {data['timestamp']} does not match format"
+        )
+
+        threads = data["active_threads"]
+        self.assertEqual(len(threads), 2)
+        self.assertEqual(threads[0]["thread_id"], "thread-main-alpha")
+        self.assertTrue(threads[0]["is_main_pane"])
+        self.assertEqual(threads[0]["project"], "C:/Projects/ProjectAlpha")
+
+        self.assertEqual(threads[1]["thread_id"], "thread-sec-beta")
+        self.assertFalse(threads[1]["is_main_pane"])
+        self.assertEqual(threads[1]["project"], "C:/Projects/ProjectBeta")
+
+    def test_capture_active_threads_snapshot_layout_keys_and_fallback(self):
+        """Verifies capture_active_threads_snapshot extracts threads from layout keys and resolves project from brain transcript."""
+        temp_storage = os.path.join(self.test_dir, "layout_storage.json")
+        temp_brain = os.path.join(self.test_dir, "brain")
+        temp_history_dir = os.path.join(self.test_dir, "layout_history")
+
+        thread_id = "thread-layout-fallback"
+        thread_brain_dir = os.path.join(temp_brain, thread_id)
+        os.makedirs(thread_brain_dir, exist_ok=True)
+        with open(os.path.join(thread_brain_dir, "metadata.json"), "w", encoding="utf-8") as f:
+            json.dump({"active_workspace": "D:/workspace/gamma_proj"}, f)
+
+        mock_storage_data = {
+            "workbench.panel.cascade": {
+                "activeThreadId": thread_id,
+            }
+        }
+        with open(temp_storage, "w", encoding="utf-8") as f:
+            json.dump(mock_storage_data, f)
+
+        snapshot_file, active_threads = capture_active_threads_snapshot(
+            storage_path=temp_storage,
+            brain_dir=temp_brain,
+            output_dir=temp_history_dir
+        )
+
+        self.assertEqual(len(active_threads), 1)
+        self.assertEqual(active_threads[0]["thread_id"], thread_id)
+        self.assertEqual(active_threads[0]["project"], "D:/workspace/gamma_proj")
+
+    def test_switch_account_fresh_language_server_info_rediscovery(self):
+        """
+        Verifies switch_account re-queries process_finder() post-recycle to retrieve fresh LanguageServerInfo
+        (new PID, new Port, new CSRF token), never using stale info from before recycling.
+        """
+        target_email = "freshls@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_fresh"})
+
+        old_info = LanguageServerInfo(pid=1111, csrf_token="old_csrf", port=41111)
+        fresh_info = LanguageServerInfo(pid=2222, csrf_token="fresh_csrf", port=52222)
+
+        finder_calls = 0
+        def mock_finder():
+            nonlocal finder_calls
+            finder_calls += 1
+            if finder_calls == 1:
+                return old_info
+            return fresh_info
+
+        rpc_infos_received = []
+        def mock_focuser(info, cid):
+            rpc_infos_received.append(("focus", info.pid, info.port, info.csrf_token, cid))
+            return True
+
+        def mock_loader(info, cid):
+            rpc_infos_received.append(("load", info.pid, info.port, info.csrf_token, cid))
+            return True
+
+        def mock_sender(info, cid, prompt_text="continue"):
+            rpc_infos_received.append(("send", info.pid, info.port, info.csrf_token, cid, prompt_text))
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=mock_finder,
+            status_getter=lambda info: {"email": "old_user@gmail.com"},
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda: True,
+            cascade_discoverer=lambda: "target-cascade-id",
+            smart_focuser=mock_focuser,
+            trajectory_loader=mock_loader,
+            cascade_sender=mock_sender,
+            auto_continue=True,
+            dom_settle_delay=0.0,
+        )
+
+        res = manager.switch_account(target_email, prompt_text="continue task")
+        self.assertTrue(res.success)
+        self.assertGreaterEqual(finder_calls, 2)
+
+        # Asserts ALL RPC continuation calls received the FRESH LanguageServerInfo (PID 2222, port 52222)
+        self.assertEqual(len(rpc_infos_received), 3)
+        self.assertEqual(rpc_infos_received[0], ("focus", 2222, 52222, "fresh_csrf", "target-cascade-id"))
+        self.assertEqual(rpc_infos_received[1], ("load", 2222, 52222, "fresh_csrf", "target-cascade-id"))
+        self.assertEqual(rpc_infos_received[2], ("send", 2222, 52222, "fresh_csrf", "target-cascade-id", "continue task"))
+
+    def test_switch_account_multi_project_pure_native_rpc_continuation(self):
+        """
+        Verifies switch_account iterates over all active threads across multiple projects
+        from snapshot, executing native RPC continuation for each thread in order with zero keyboard events.
+        """
+        target_email = "multiproject@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_multi"})
+        fresh_info = LanguageServerInfo(pid=3333, csrf_token="multi_csrf", port=53333)
+
+        mock_threads_snapshot = [
+            {"thread_id": "thread-alpha", "project": "C:/Projects/Alpha", "is_main_pane": True},
+            {"thread_id": "thread-beta", "project": "C:/Projects/Beta", "is_main_pane": False},
+            {"thread_id": "thread-gamma", "project": "C:/Projects/Gamma", "is_main_pane": False},
+        ]
+
+        rpc_sequence = []
+        def mock_focuser(info, cid):
+            rpc_sequence.append(("focus", cid))
+            return True
+
+        def mock_loader(info, cid):
+            rpc_sequence.append(("load", cid))
+            return True
+
+        def mock_sender(info, cid, prompt_text="continue"):
+            rpc_sequence.append(("send", cid, prompt_text))
+            return True
+
+        keyboard_calls = []
+        def mock_injector(prompt_text="continue", sleep_fn=None):
+            keyboard_calls.append(prompt_text)
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: fresh_info,
+            status_getter=lambda info: {"email": "old_user@gmail.com"},
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda: True,
+            threads_snapshot_capturer=lambda: ("/path/snapshot.json", mock_threads_snapshot),
+            smart_focuser=mock_focuser,
+            trajectory_loader=mock_loader,
+            cascade_sender=mock_sender,
+            prompt_injector=mock_injector,
+            auto_continue=True,
+            dom_settle_delay=0.0,
+        )
+
+        res = manager.switch_account(target_email, prompt_text="continue working")
+        self.assertTrue(res.success)
+
+        # 3 threads * 3 RPCs = 9 calls in exact sequence
+        self.assertEqual(len(rpc_sequence), 9)
+        self.assertEqual(rpc_sequence[0:3], [("focus", "thread-alpha"), ("load", "thread-alpha"), ("send", "thread-alpha", "continue working")])
+        self.assertEqual(rpc_sequence[3:6], [("focus", "thread-beta"), ("load", "thread-beta"), ("send", "thread-beta", "continue working")])
+        self.assertEqual(rpc_sequence[6:9], [("focus", "thread-gamma"), ("load", "thread-gamma"), ("send", "thread-gamma", "continue working")])
+
+        # Zero keyboard events
+        self.assertEqual(keyboard_calls, [])
 
 
 if __name__ == "__main__":

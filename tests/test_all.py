@@ -43,6 +43,8 @@ from core.session_reloader import (
     reload_antigravity_session,
     pre_patch_tos_acceptance,
     discover_most_recent_cascade_id,
+    capture_active_threads_snapshot,
+    get_default_threads_history_dir,
 )
 from ui.app_window import AppWindow, SwitcherApp
 import threading
@@ -2891,6 +2893,125 @@ class TestAntigravitySwitcher(unittest.TestCase):
             ("load", "discovered-flow-cascade"),
             ("send", "discovered-flow-cascade", "continue"),
         ])
+
+    def test_capture_active_threads_snapshot_schema_and_timestamp(self):
+        """Verifies capture_active_threads_snapshot generates valid timestamped JSON matching exact schema."""
+        import re
+        temp_storage = os.path.join(self.test_store_dir, "test_app_storage.json")
+        temp_history = os.path.join(self.test_store_dir, "history_snapshot")
+
+        mock_storage = {
+            "aux-pane-v2-session.conversationPanes": [
+                {
+                    "paneId": "main_cascade",
+                    "tabs": [
+                        {
+                            "tabId": "tab-1",
+                            "metadata": {
+                                "cascadeId": "c-alpha-1",
+                                "workingDirectory": "C:/Projects/ProjectAlpha"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "paneId": "sub_cascade",
+                    "tabs": [
+                        {
+                            "tabId": "tab-2",
+                            "metadata": {
+                                "cascadeId": "c-beta-2",
+                                "workingDirectory": "C:/Projects/ProjectBeta"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        with open(temp_storage, "w", encoding="utf-8") as f:
+            json.dump(mock_storage, f)
+
+        snapshot_file, active_threads = capture_active_threads_snapshot(
+            storage_path=temp_storage,
+            brain_dir=self.test_store_dir,
+            output_dir=temp_history,
+        )
+
+        self.assertIsNotNone(snapshot_file)
+        self.assertTrue(os.path.exists(snapshot_file))
+        basename = os.path.basename(snapshot_file)
+        self.assertTrue(bool(re.match(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}_active_threads\.json$", basename)))
+
+        with open(snapshot_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        self.assertIn("timestamp", data)
+        self.assertIn("active_threads", data)
+        self.assertEqual(len(data["active_threads"]), 2)
+        self.assertEqual(data["active_threads"][0]["thread_id"], "c-alpha-1")
+        self.assertTrue(data["active_threads"][0]["is_main_pane"])
+        self.assertEqual(data["active_threads"][0]["project"], "C:/Projects/ProjectAlpha")
+        self.assertEqual(data["active_threads"][1]["thread_id"], "c-beta-2")
+        self.assertFalse(data["active_threads"][1]["is_main_pane"])
+        self.assertEqual(data["active_threads"][1]["project"], "C:/Projects/ProjectBeta")
+
+    def test_switch_account_multi_project_pure_native_rpc_continuation(self):
+        """Verifies multi-project continuation loop sends RPCs to all threads with fresh LanguageServerInfo and zero keyboard events."""
+        target_email = "multi_flow@gmail.com"
+        self.store.store_account(target_email, {"access_token": "multi_at"})
+
+        fresh_info = LanguageServerInfo(pid=7777, csrf_token="csrf-multi", port=57777)
+        rpc_calls = []
+
+        threads_snapshot = [
+            {"thread_id": "c-proj1", "project": "C:/Work/Proj1", "is_main_pane": True},
+            {"thread_id": "c-proj2", "project": "C:/Work/Proj2", "is_main_pane": False},
+        ]
+
+        def mock_focuser(info, cid):
+            rpc_calls.append(("focus", info.pid, cid))
+            return True
+
+        def mock_loader(info, cid):
+            rpc_calls.append(("load", info.pid, cid))
+            return True
+
+        def mock_sender(info, cid, prompt_text="continue"):
+            rpc_calls.append(("send", info.pid, cid, prompt_text))
+            return True
+
+        keyboard_events = []
+        def mock_injector(prompt_text="continue", sleep_fn=None):
+            keyboard_events.append(prompt_text)
+            return True
+
+        manager = AccountManager(
+            store=self.store,
+            process_finder=lambda: fresh_info,
+            status_getter=lambda info: {"email": "old_multi@gmail.com"},
+            token_writer=lambda tok: True,
+            tos_pre_patcher=lambda em: True,
+            language_server_recycler=lambda: True,
+            threads_snapshot_capturer=lambda: ("/path", threads_snapshot),
+            smart_focuser=mock_focuser,
+            trajectory_loader=mock_loader,
+            cascade_sender=mock_sender,
+            prompt_injector=mock_injector,
+            auto_continue=True,
+            dom_settle_delay=0.0,
+        )
+
+        res = manager.switch_account(target_email, prompt_text="resume task")
+        self.assertTrue(res.success)
+        self.assertEqual(len(rpc_calls), 6)
+        self.assertEqual(rpc_calls[0], ("focus", 7777, "c-proj1"))
+        self.assertEqual(rpc_calls[1], ("load", 7777, "c-proj1"))
+        self.assertEqual(rpc_calls[2], ("send", 7777, "c-proj1", "resume task"))
+        self.assertEqual(rpc_calls[3], ("focus", 7777, "c-proj2"))
+        self.assertEqual(rpc_calls[4], ("load", 7777, "c-proj2"))
+        self.assertEqual(rpc_calls[5], ("send", 7777, "c-proj2", "resume task"))
+        self.assertEqual(keyboard_events, [])
+
 
 
 class MockHttpServerHelper:

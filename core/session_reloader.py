@@ -7,7 +7,7 @@ import ctypes
 from ctypes import wintypes
 import time
 import logging
-from typing import Optional, List, Callable, Any
+from typing import Optional, List, Callable, Any, Tuple, Dict
 from core.api_connector import LanguageServerInfo, trigger_reauth
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,9 @@ import tempfile
 import subprocess
 import csv
 import io
+import datetime
+import urllib.parse
+import re
 
 def find_antigravity_pids(
     command_runner: Optional[Callable[..., Any]] = None,
@@ -652,4 +655,319 @@ def discover_most_recent_cascade_id(
     # Priority 3: Fallback to most recent candidate in brain directory
     candidates.sort(key=lambda x: x[1], reverse=True)
     return candidates[0][0]
+
+
+def get_default_threads_history_dir() -> str:
+    """Returns the default accounts_store/active_threads_history directory."""
+    try:
+        from core.account_store import get_default_store_dir
+        store_dir = get_default_store_dir()
+    except Exception:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        store_dir = os.path.join(base_dir, "accounts_store")
+    history_dir = os.path.join(store_dir, "active_threads_history")
+    os.makedirs(history_dir, exist_ok=True)
+    return history_dir
+
+
+def _extract_project_from_text(text: str) -> Optional[str]:
+    """Extracts project/workspace path from transcript line or metadata string."""
+    if not text or not isinstance(text, str):
+        return None
+
+    # Check for Active Workspaces pattern
+    m_ws = re.search(r"Active Workspaces:\s*[\r\n]+-\s*([^\r\n]+)", text)
+    if m_ws:
+        p = m_ws.group(1).strip()
+        if p:
+            return p
+
+    # Check for Command Working Directory pattern
+    m_cwd = re.search(r"Command Working Directory:\s*([^\r\n]+)", text)
+    if m_cwd:
+        p = m_cwd.group(1).strip()
+        if p:
+            return p
+
+    # Check for "Cwd": "..." pattern
+    m_json_cwd = re.search(r'["\']Cwd["\']\s*:\s*["\']([^"\']+)["\']', text)
+    if m_json_cwd:
+        p = m_json_cwd.group(1).strip().replace("\\\\", "\\")
+        if p:
+            return p
+
+    # Check for "project": "..." or "workspace": "..." or "workingDirectory": "..."
+    m_json_proj = re.search(r'["\'](?:project|workspace|workspace_path|workingDirectory|working_directory|active_workspace|activeWorkspace)["\']\s*:\s*["\']([^"\']+)["\']', text, re.IGNORECASE)
+    if m_json_proj:
+        p = m_json_proj.group(1).strip().replace("\\\\", "\\")
+        if p:
+            return p
+
+    # Check for file URI pattern (e.g. file:///C:/Projects/ProjectBeta or file:///g:/Restaurant_manager/...)
+    m_uri = re.search(r'file:///([^\r\n"\'#]+)', text)
+    if m_uri:
+        raw_uri = m_uri.group(1)
+        raw_uri = urllib.parse.unquote(raw_uri)
+        if raw_uri:
+            return raw_uri
+
+    return None
+
+
+def _resolve_thread_project(
+    thread_id: str,
+    pane_data: Optional[Dict[str, Any]],
+    brain_dir: Optional[str],
+    sdata: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Resolves project/workspace path for a thread ID from brain transcripts/metadata
+    or app_storage layout/tabs configuration.
+    """
+    # 1. Check pane_data directly if available
+    if pane_data and isinstance(pane_data, dict):
+        for k in ["workingDirectory", "working_directory", "workspaceUri", "workspace_uri", "project", "workspace", "active_workspace", "activeWorkspace", "cwd", "Cwd"]:
+            val = pane_data.get(k)
+            if val and isinstance(val, str) and val.strip():
+                if val.startswith("file:///"):
+                    return urllib.parse.unquote(val[len("file:///"):])
+                return val.strip()
+
+        # Check tabs inside pane_data
+        for tab in pane_data.get("tabs", []):
+            if isinstance(tab, dict):
+                meta = tab.get("metadata", {}) if isinstance(tab.get("metadata"), dict) else tab
+                for k in ["workingDirectory", "working_directory", "workspaceUri", "workspace_uri", "project", "workspace", "active_workspace", "activeWorkspace", "cwd", "Cwd"]:
+                    val = meta.get(k)
+                    if val and isinstance(val, str) and val.strip():
+                        if val.startswith("file:///"):
+                            return urllib.parse.unquote(val[len("file:///"):])
+                        return val.strip()
+
+        pane_str = json.dumps(pane_data)
+        extracted = _extract_project_from_text(pane_str)
+        if extracted:
+            return extracted
+
+    # 2. Check brain directory for transcripts or metadata
+    if brain_dir and os.path.isdir(brain_dir) and thread_id:
+        thread_dir = os.path.join(brain_dir, thread_id)
+        if os.path.isdir(thread_dir):
+            # Check metadata.json if present
+            meta_path = os.path.join(thread_dir, "metadata.json")
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    if isinstance(meta, dict):
+                        for k in ["project", "workspace", "workspace_path", "workingDirectory", "working_directory", "active_workspace", "activeWorkspace", "cwd", "Cwd"]:
+                            val = meta.get(k)
+                            if val and isinstance(val, str) and val.strip():
+                                if val.startswith("file:///"):
+                                    return urllib.parse.unquote(val[len("file:///"):])
+                                return val.strip()
+                except Exception:
+                    pass
+
+            # Check transcript.jsonl
+            t_candidates = [
+                os.path.join(thread_dir, "transcript.jsonl"),
+                os.path.join(thread_dir, ".system_generated", "logs", "transcript.jsonl"),
+            ]
+            for t_file in t_candidates:
+                if os.path.isfile(t_file):
+                    try:
+                        with open(t_file, "r", encoding="utf-8", errors="ignore") as f:
+                            lines = [f.readline() for _ in range(40)]
+                        for line in lines:
+                            if not line:
+                                break
+                            extracted = _extract_project_from_text(line)
+                            if extracted:
+                                return extracted
+                    except Exception:
+                        pass
+
+    # 3. Check layout keys in sdata
+    if sdata and isinstance(sdata, dict):
+        layout_key = f"antigravity-multi-conversation-layout-v3-{thread_id}"
+        val = sdata.get(layout_key) or sdata.get(f"{layout_key}+_new")
+        if val and isinstance(val, str):
+            extracted = _extract_project_from_text(val)
+            if extracted:
+                return extracted
+
+    return ""
+
+
+def capture_active_threads_snapshot(
+    storage_path: Optional[str] = None,
+    brain_dir: Optional[str] = None,
+    output_dir: Optional[str] = None,
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Captures a multi-project timestamped snapshot of all active conversation threads
+    prior to credentials hot-swap or process recycling.
+    Discovers active threads across all workspaces/projects from app_storage.json
+    (aux-pane-v2-session.conversationPanes and layout keys), identifying is_main_pane,
+    and determining the project/workspace path for each thread.
+    Writes snapshot to accounts_store/active_threads_history/<YYYY-MM-DD-HH-MM-SS>_active_threads.json.
+    Returns (snapshot_file_path, active_threads).
+    """
+    s_path = storage_path if storage_path is not None else get_app_storage_path()
+    b_dir = brain_dir
+    if b_dir is None:
+        user_profile = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+        b_dir = os.path.join(user_profile, ".gemini", "antigravity", "brain")
+
+    out_dir = output_dir if output_dir is not None else get_default_threads_history_dir()
+    os.makedirs(out_dir, exist_ok=True)
+
+    threads_map: Dict[str, Dict[str, Any]] = {}
+    sdata: Dict[str, Any] = {}
+
+    if s_path and os.path.isfile(s_path):
+        try:
+            with open(s_path, "r", encoding="utf-8") as f:
+                sdata = json.load(f)
+        except Exception as exc:
+            logger.debug("capture_active_threads_snapshot reading storage failed: %s", exc)
+            sdata = {}
+
+    # 1. Parse aux-pane-v2-session (or fallback aux-pane-session or direct conversationPanes)
+    conv_panes = sdata.get("aux-pane-v2-session.conversationPanes")
+    if conv_panes is None:
+        aux_session = sdata.get("aux-pane-v2-session") or sdata.get("aux-pane-session")
+        if isinstance(aux_session, str):
+            try:
+                aux_session = json.loads(aux_session)
+            except Exception:
+                aux_session = None
+        if isinstance(aux_session, dict):
+            conv_panes = aux_session.get("conversationPanes")
+    elif isinstance(conv_panes, str):
+        try:
+            conv_panes = json.loads(conv_panes)
+        except Exception:
+            conv_panes = None
+
+    if isinstance(conv_panes, dict):
+        for k_id, pane_info in conv_panes.items():
+            if not isinstance(pane_info, dict):
+                pane_info = {}
+            thread_ids_in_pane = []
+            for tab in pane_info.get("tabs", []):
+                if isinstance(tab, dict):
+                    meta = tab.get("metadata", {}) if isinstance(tab.get("metadata"), dict) else {}
+                    t_id = meta.get("cascadeId") or tab.get("cascadeId") or tab.get("childCascadeId")
+                    if t_id and isinstance(t_id, str):
+                        thread_ids_in_pane.append((t_id.strip(), tab))
+            if thread_ids_in_pane:
+                for idx, (t_id, tab_obj) in enumerate(thread_ids_in_pane):
+                    if t_id not in threads_map:
+                        proj = _resolve_thread_project(t_id, tab_obj, b_dir, sdata) or _resolve_thread_project(t_id, pane_info, b_dir, sdata)
+                        threads_map[t_id] = {
+                            "thread_id": t_id,
+                            "project": proj,
+                            "is_main_pane": (idx == 0 and ("main" in str(k_id).lower() or "main" in str(pane_info.get("paneId", "")).lower() or len(threads_map) == 0)),
+                        }
+            elif k_id and isinstance(k_id, str) and k_id.strip() and k_id != "index":
+                cid = k_id.strip()
+                proj = _resolve_thread_project(cid, pane_info, b_dir, sdata)
+                threads_map[cid] = {
+                    "thread_id": cid,
+                    "project": proj,
+                    "is_main_pane": True,
+                }
+    elif isinstance(conv_panes, list):
+        for idx, pane_info in enumerate(conv_panes):
+            if not isinstance(pane_info, dict):
+                continue
+            is_main = (idx == 0 or "main" in str(pane_info.get("paneId", "")).lower())
+            tabs = pane_info.get("tabs", [])
+            for tab in tabs:
+                if isinstance(tab, dict):
+                    meta = tab.get("metadata", {}) if isinstance(tab.get("metadata"), dict) else {}
+                    t_id = meta.get("cascadeId") or tab.get("cascadeId") or tab.get("childCascadeId")
+                    if t_id and isinstance(t_id, str):
+                        t_id = t_id.strip()
+                        if t_id not in threads_map:
+                            proj = _resolve_thread_project(t_id, tab, b_dir, sdata) or _resolve_thread_project(t_id, pane_info, b_dir, sdata)
+                            threads_map[t_id] = {
+                                "thread_id": t_id,
+                                "project": proj,
+                                "is_main_pane": is_main,
+                            }
+
+    # 2. Parse layout keys from sdata
+    prefix = "antigravity-multi-conversation-layout-v3-"
+    for k, val in sdata.items():
+        if k.startswith(prefix):
+            cid = k[len(prefix):]
+            if cid.endswith("+_new"):
+                cid = cid[:-5]
+            if cid and cid != "index":
+                cid = cid.strip()
+                if cid not in threads_map:
+                    proj = _resolve_thread_project(cid, None, b_dir, sdata)
+                    threads_map[cid] = {
+                        "thread_id": cid,
+                        "project": proj,
+                        "is_main_pane": False,
+                    }
+        elif "panel.cascade" in k or "cascade.panel" in k or k.startswith("workbench.panel.cascade"):
+            target_obj = val
+            if isinstance(target_obj, str):
+                try:
+                    target_obj = json.loads(target_obj)
+                except Exception:
+                    target_obj = None
+            if isinstance(target_obj, dict):
+                cid = target_obj.get("activeThreadId") or target_obj.get("cascadeId") or target_obj.get("threadId")
+                if cid and isinstance(cid, str):
+                    cid = cid.strip()
+                    if cid not in threads_map:
+                        proj = _resolve_thread_project(cid, target_obj, b_dir, sdata)
+                        threads_map[cid] = {
+                            "thread_id": cid,
+                            "project": proj,
+                            "is_main_pane": True,
+                        }
+
+    # 3. Fallback: if no threads were found in storage, scan brain directory
+    if not threads_map and b_dir and os.path.isdir(b_dir):
+        recent_cid = discover_most_recent_cascade_id(brain_dir=b_dir, storage_path=s_path)
+        if recent_cid:
+            proj = _resolve_thread_project(recent_cid, None, b_dir, sdata)
+            threads_map[recent_cid] = {
+                "thread_id": recent_cid,
+                "project": proj,
+                "is_main_pane": True,
+            }
+
+    # Construct active_threads list (main panes first, then child/secondary panes)
+    active_threads: List[Dict[str, Any]] = sorted(
+        threads_map.values(),
+        key=lambda x: (not x.get("is_main_pane", False), x.get("thread_id", "")),
+    )
+
+    # 4. Generate timestamped file
+    now = datetime.datetime.now()
+    timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    file_ts = now.strftime("%Y-%m-%d-%H-%M-%S")
+    filename = f"{file_ts}_active_threads.json"
+    snapshot_path = os.path.join(out_dir, filename)
+
+    payload = {
+        "timestamp": timestamp_str,
+        "active_threads": active_threads,
+    }
+
+    # Atomic write
+    tmp_path = f"{snapshot_path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_path, snapshot_path)
+
+    return snapshot_path, active_threads
 

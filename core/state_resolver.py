@@ -31,6 +31,7 @@ from core.session_reloader import (
     wait_and_dismiss_tos_modal,
     inject_continuation_prompt,
     discover_most_recent_cascade_id,
+    capture_active_threads_snapshot,
 )
 from core.api_connector import (
     find_language_server_process,
@@ -126,6 +127,8 @@ class AccountManager:
         cascade_sender: Optional[Callable[..., bool]] = None,
         brain_dir: Optional[str] = None,
         storage_path: Optional[str] = None,
+        threads_snapshot_capturer: Optional[Callable[..., Tuple[str, List[Dict[str, Any]]]]] = None,
+        output_dir: Optional[str] = None,
     ):
         self.store = store or AccountStore()
         self.user_status_provider = user_status_provider
@@ -157,6 +160,8 @@ class AccountManager:
         self.cascade_sender = cascade_sender
         self.brain_dir = brain_dir
         self.storage_path = storage_path
+        self.threads_snapshot_capturer = threads_snapshot_capturer
+        self.output_dir = output_dir
 
     def get_current_active_email(
         self,
@@ -344,6 +349,8 @@ class AccountManager:
         cascade_sender: Optional[Callable[..., bool]] = None,
         brain_dir: Optional[str] = None,
         storage_path: Optional[str] = None,
+        threads_snapshot_capturer: Optional[Callable[..., Tuple[str, List[Dict[str, Any]]]]] = None,
+        output_dir: Optional[str] = None,
         **kwargs: Any,
     ) -> SwitchResult:
         """
@@ -452,7 +459,73 @@ class AccountManager:
             except Exception:
                 pass
 
-        # Step 1: Write target Token directly into Windows Credential Manager
+        # Giai đoạn 1: Multi-Project Timestamped Active Threads Snapshot
+        # Discovers and snapshots active conversation threads across all workspaces/projects
+        # before credentials swap or server recycle
+        b_dir = brain_dir or getattr(self, "brain_dir", None)
+        s_path = storage_path or getattr(self, "storage_path", None)
+        out_dir = output_dir or getattr(self, "output_dir", None)
+
+        is_legacy_reloader = (
+            (reloader_fn is not None or getattr(self, "reloader_fn", None) is not None)
+            and language_server_recycler is None
+            and getattr(self, "language_server_recycler", None) is None
+        )
+        custom_snap = threads_snapshot_capturer or getattr(self, "threads_snapshot_capturer", None)
+        custom_disc = cascade_discoverer or getattr(self, "cascade_discoverer", None)
+
+        snapshot_capturer = custom_snap or (None if (custom_disc is not None or is_legacy_reloader) else capture_active_threads_snapshot)
+
+        active_threads_list: List[Dict[str, Any]] = []
+        snapshot_file: Optional[str] = None
+        if callable(snapshot_capturer):
+            try:
+                import inspect
+                s_sig = inspect.signature(snapshot_capturer)
+                s_kwargs = {}
+                if "storage_path" in s_sig.parameters and s_path is not None:
+                    s_kwargs["storage_path"] = s_path
+                if "brain_dir" in s_sig.parameters and b_dir is not None:
+                    s_kwargs["brain_dir"] = b_dir
+                if "output_dir" in s_sig.parameters and out_dir is not None:
+                    s_kwargs["output_dir"] = out_dir
+                res_snapshot = snapshot_capturer(**s_kwargs) if s_kwargs else snapshot_capturer()
+                if isinstance(res_snapshot, tuple) and len(res_snapshot) == 2:
+                    snapshot_file, active_threads_list = res_snapshot
+                elif isinstance(res_snapshot, list):
+                    active_threads_list = res_snapshot
+            except Exception as exc:
+                logger.debug("capture_active_threads_snapshot error: %s", exc)
+                active_threads_list = []
+
+        # If explicit cascade_id was passed, ensure it is included
+        if cascade_id:
+            if not any(t.get("thread_id") == cascade_id for t in active_threads_list):
+                active_threads_list.insert(0, {"thread_id": cascade_id, "project": "", "is_main_pane": True})
+
+        # Fallback to cascade_discoverer if active_threads_list is empty
+        if not active_threads_list:
+            discoverer = (
+                cascade_discoverer
+                or getattr(self, "cascade_discoverer", None)
+                or (None if is_legacy_reloader else discover_most_recent_cascade_id)
+            )
+            if discoverer is not None:
+                try:
+                    import inspect
+                    d_sig = inspect.signature(discoverer)
+                    d_kwargs = {}
+                    if "brain_dir" in d_sig.parameters and b_dir is not None:
+                        d_kwargs["brain_dir"] = b_dir
+                    if "storage_path" in d_sig.parameters and s_path is not None:
+                        d_kwargs["storage_path"] = s_path
+                    discovered_cid = discoverer(**d_kwargs) if d_kwargs else discoverer()
+                    if discovered_cid:
+                        active_threads_list = [{"thread_id": discovered_cid, "project": "", "is_main_pane": True}]
+                except Exception as exc:
+                    logger.debug("Failed discovering cascade_id before recycle: %s", exc)
+
+        # Giai đoạn 2: Write target Token directly into Windows Credential Manager
         writer = token_writer or self.token_writer or write_antigravity_token
         write_ok = False
         try:
@@ -463,7 +536,7 @@ class AccountManager:
         if not write_ok:
             return SwitchResult(False, "Không thể ghi Token vào Windows Credential Manager!")
 
-        # Layer 1 ToS Pre-Patching in app_storage.json
+        # Layer 1 ToS Pre-Patching in app_storage.json (isGcpTos = "false")
         patcher = tos_pre_patcher or getattr(self, "tos_pre_patcher", None) or pre_patch_tos_acceptance
         try:
             patcher(norm_email)
@@ -478,32 +551,7 @@ class AccountManager:
         except Exception:
             pass
 
-        # Discover active cascade_id before recycling (or use explicit cascade_id)
-        b_dir = brain_dir or getattr(self, "brain_dir", None)
-        s_path = storage_path or getattr(self, "storage_path", None)
-        discoverer = (
-            cascade_discoverer
-            or getattr(self, "cascade_discoverer", None)
-            or discover_most_recent_cascade_id
-        )
-
-        target_cascade_id: Optional[str] = cascade_id
-        if target_cascade_id is None and discoverer is not None:
-            try:
-                import inspect
-                d_sig = inspect.signature(discoverer)
-                d_kwargs = {}
-                if "brain_dir" in d_sig.parameters and b_dir is not None:
-                    d_kwargs["brain_dir"] = b_dir
-                if "storage_path" in d_sig.parameters and s_path is not None:
-                    d_kwargs["storage_path"] = s_path
-                target_cascade_id = discoverer(**d_kwargs) if d_kwargs else discoverer()
-            except Exception as exc:
-                logger.debug("Failed discovering cascade_id before recycle: %s", exc)
-                target_cascade_id = None
-
-        # Step 2: Recycle language_server.exe and wait a full 5.0 seconds
-        # (do NOT press any keys; allow Antigravity to reload and let the Google ToS modal dialog completely appear on screen)
+        # Recycle language_server.exe and wait a full 5.0 seconds
         recycler = (
             language_server_recycler
             or reloader_fn
@@ -536,9 +584,7 @@ class AccountManager:
         except Exception:
             pass
 
-        # Step 6 (Optional Fallback): Dismiss ToS modal dialog via Enter key press ONLY if explicitly requested.
-        # Since pre-patching lastLoginIsGcpTos="false" eliminates the ToS modal completely (proven in live runtime testing by Owner),
-        # dispatching Enter is bypassed by default to prevent accidental clicks (e.g. clicking 'Resuming Previous Conversation' button).
+        # Optional Fallback: Dismiss ToS modal dialog via Enter key press ONLY if explicitly requested
         should_dismiss_tos = (
             dismiss_tos
             if dismiss_tos is not None
@@ -567,12 +613,9 @@ class AccountManager:
             except Exception:
                 pass
 
-        # Step 4: Wait 3.0 seconds for the ToS modal dialog to completely disappear
-        # and the existing in-flight session to settle into place
+        # Wait stabilization delay for language server and session to settle
         settle = dom_settle_delay if dom_settle_delay is not None else getattr(self, "dom_settle_delay", None)
         if settle is None:
-            # If reloader_fn legacy mock was provided without dom_settle_delay specified,
-            # use 0.0 to keep legacy unit tests hermetic and fast. Otherwise default to 3.0s.
             if reloader_fn is not None and language_server_recycler is None and getattr(self, "language_server_recycler", None) is None:
                 settle = kwargs.get("dom_settle_delay", 0.0)
             else:
@@ -584,79 +627,56 @@ class AccountManager:
             except Exception:
                 pass
 
-        # If cascade_id was not discovered prior to recycling, attempt discovery post-recycling
-        if target_cascade_id is None and discoverer is not None:
-            try:
-                import inspect
-                d_sig = inspect.signature(discoverer)
-                d_kwargs = {}
-                if "brain_dir" in d_sig.parameters and b_dir is not None:
-                    d_kwargs["brain_dir"] = b_dir
-                if "storage_path" in d_sig.parameters and s_path is not None:
-                    d_kwargs["storage_path"] = s_path
-                target_cascade_id = discoverer(**d_kwargs) if d_kwargs else discoverer()
-            except Exception as exc:
-                logger.debug("Failed discovering cascade_id after recycle: %s", exc)
-                target_cascade_id = None
-
-        # Step 7 (Prompt Continuation):
-        # 3-step active Thread ID native continuation pipeline:
-        # a. Discover active cascade_id (captured above)
-        # b. If auto_continue is True and cascade_id is found:
-        #    - smart_focus_conversation(ls_info, cascade_id)
-        #    - load_trajectory(ls_info, cascade_id)
-        #    - send_user_cascade_message(ls_info, cascade_id, prompt_text=p_text)
-        # c. Only fallback to Win32 keyboard emulation (inject_continuation_prompt) if API injection fails or no cascade_id was discoverable.
-        should_auto_continue = self.auto_continue if auto_continue is None else bool(auto_continue)
-        if should_auto_continue:
+        # Giai đoạn 3 (CRITICAL FIX & Pure Native RPC Continuation):
+        # 1. ALWAYS re-query finder() to retrieve fresh LanguageServerInfo (new PID, new Port, new CSRF token).
+        #    Never reuse stale info from before recycling!
+        # 2. For each thread in active_threads from the snapshot:
+        #    - smart_focus_conversation(new_info, thread_id)
+        #    - load_trajectory(new_info, thread_id)
+        #    - send_user_cascade_message(new_info, thread_id, prompt_text=p_text)
+        # 3. ZERO Win32 keyboard events: keyboard emulation is completely purged!
+        should_auto_continue = (
+            auto_continue
+            if auto_continue is not None
+            else (False if is_legacy_reloader else getattr(self, "auto_continue", True))
+        )
+        if should_auto_continue and active_threads_list:
             p_text = prompt_text or getattr(self, "prompt_text", "continue") or "continue"
-            rpc_injected = False
 
-            if target_cascade_id:
-                current_info = info
-                if current_info is None and callable(finder):
-                    try:
-                        current_info = finder()
-                    except Exception:
-                        current_info = None
-
-                if current_info is not None:
-                    focuser = smart_focuser or getattr(self, "smart_focuser", None) or smart_focus_conversation
-                    loader = trajectory_loader or getattr(self, "trajectory_loader", None) or load_trajectory
-                    sender = cascade_sender or getattr(self, "cascade_sender", None) or send_user_cascade_message
-
-                    try:
-                        focuser(current_info, target_cascade_id)
-                    except Exception as exc:
-                        logger.debug("smart_focus_conversation error: %s", exc)
-
-                    try:
-                        loader(current_info, target_cascade_id)
-                    except Exception as exc:
-                        logger.debug("load_trajectory error: %s", exc)
-
-                    try:
-                        rpc_injected = bool(sender(current_info, target_cascade_id, prompt_text=p_text))
-                    except Exception as exc:
-                        logger.debug("send_user_cascade_message error: %s", exc)
-                        rpc_injected = False
-
-            # Fallback to Win32 keyboard emulation ONLY if API injection fails or no cascade_id was discoverable
-            if not rpc_injected:
-                injector = prompt_injector or getattr(self, "prompt_injector", None) or inject_continuation_prompt
+            # CRITICAL FIX: ALWAYS re-query finder() after recycling
+            new_info: Optional[LanguageServerInfo] = None
+            if callable(finder):
                 try:
-                    import inspect
-                    i_sig = inspect.signature(injector)
-                    i_kwargs = {}
-                    if "prompt_text" in i_sig.parameters:
-                        i_kwargs["prompt_text"] = p_text
-                    if "sleep_fn" in i_sig.parameters:
-                        i_kwargs["sleep_fn"] = s_fn
-                    if i_kwargs:
-                        injector(**i_kwargs)
-                    else:
-                        injector(p_text)
-                except Exception:
-                    pass
+                    new_info = finder()
+                except Exception as exc:
+                    logger.debug("Failed re-querying fresh LanguageServerInfo: %s", exc)
+                    new_info = None
+
+            if new_info is not None:
+                focuser = smart_focuser or getattr(self, "smart_focuser", None) or smart_focus_conversation
+                loader = trajectory_loader or getattr(self, "trajectory_loader", None) or load_trajectory
+                sender = cascade_sender or getattr(self, "cascade_sender", None) or send_user_cascade_message
+
+                # For each thread in active_threads from the snapshot:
+                for thread_item in active_threads_list:
+                    t_id = thread_item.get("thread_id") if isinstance(thread_item, dict) else str(thread_item)
+                    if not t_id or not str(t_id).strip():
+                        continue
+                    t_id = str(t_id).strip()
+
+                    try:
+                        focuser(new_info, t_id)
+                    except Exception as exc:
+                        logger.debug("smart_focus_conversation error on thread %s: %s", t_id, exc)
+
+                    try:
+                        loader(new_info, t_id)
+                    except Exception as exc:
+                        logger.debug("load_trajectory error on thread %s: %s", t_id, exc)
+
+                    try:
+                        sender(new_info, t_id, prompt_text=p_text)
+                    except Exception as exc:
+                        logger.debug("send_user_cascade_message error on thread %s: %s", t_id, exc)
 
         return SwitchResult(True, f"Đã chuyển đổi thành công sang: {norm_email}")
