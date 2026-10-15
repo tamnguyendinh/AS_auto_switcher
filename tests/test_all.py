@@ -3060,31 +3060,31 @@ class TestAntigravitySwitcher(unittest.TestCase):
         pacing_delays = [d for d in sleep_calls if d == 3.0]
         self.assertEqual(len(pacing_delays), 1)
 
-    def test_switch_account_default_dom_settle_delay_15s(self):
-        """Verifies switch_account dom_settle_delay defaults to 15.0s when not specified."""
-        target_email = "settle15_all@gmail.com"
-        self.store.store_account(target_email, {"access_token": "at_15"})
+    def test_switch_account_default_dom_settle_delay_5s(self):
+        """Verifies switch_account dom_settle_delay defaults to 5.0s when not specified."""
+        target_email = "settle5_all@gmail.com"
+        self.store.store_account(target_email, {"access_token": "at_5"})
         sleep_durations = []
 
-        fresh_info = LanguageServerInfo(pid=5555, csrf_token="tok15", port=55551)
+        fresh_info = LanguageServerInfo(pid=5555, csrf_token="tok5", port=55551)
         manager = AccountManager(
             store=self.store,
             process_finder=lambda: fresh_info,
             token_writer=lambda tok: True,
             tos_pre_patcher=lambda em: True,
             language_server_recycler=lambda **kw: None,
-            threads_snapshot_capturer=lambda: ("/path", [{"thread_id": "c15", "project": "", "is_main_pane": True}]),
+            threads_snapshot_capturer=lambda: ("/path", [{"thread_id": "c5", "project": "", "is_main_pane": True}]),
             smart_focuser=lambda info, cid: True,
             trajectory_loader=lambda info, cid: True,
             cascade_sender=lambda info, cid, prompt_text="": True,
             sleep_fn=lambda d: sleep_durations.append(d),
             auto_continue=True,
-            # No dom_settle_delay passed -> MUST default to 15.0s
+            # No dom_settle_delay passed -> MUST default to 5.0s
         )
 
         res = manager.switch_account(target_email)
         self.assertTrue(res.success)
-        self.assertIn(15.0, sleep_durations)
+        self.assertIn(5.0, sleep_durations)
 
     def test_switch_account_default_continuation_prompt(self):
         """Verifies default continuation prompt matches the English directive."""
