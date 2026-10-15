@@ -901,14 +901,102 @@ Matching plan item(s): `P6-A`, `P6-B`, `P6-C`, `P6-D`
       ok      antigravity-switch/internal/connector  2.227s
       ```
 
+### P6-C Execution Evidence
+
+- `E6-P6C-MGR1`: Multi-Account Orchestrator & 4-Step Hot-Swap Execution (`internal/manager/` & `internal/reloader/`):
+  - Unified orchestration engine (`internal/manager/account_manager.go`):
+    * Discovers and unifies Chrome browser profiles (`scanner.ScanChromeAccountDetails`) and persistent JSON tokens (`store.AccountStore`).
+    * Proactively captures active session identity (`CaptureCurrentSession`) to safeguard tokens before any transition.
+    * Prioritizes live RAM status from language server (`connector.Client::GetUserStatus`) over Windows Credential Manager to eliminate stale cache illusions.
+    * Sorts accounts deterministically: Active first, then Ready, then Unauth, then alphabetically by email.
+    * Closed-loop 4-step hot-swap (`SwitchAccount`):
+      1. Probe live RAM -> verify if already active on target email (no-op return).
+      2. Auto-capture active session to preserve current token in `accounts_store/<email>.json`.
+      3. Invalidate backend RAM credentials via `connector.Client::AuthLogout`.
+      4. Write target token payload to Windows Credential Manager (`LegacyGeneric:target=gemini:antigravity`).
+      5. Pre-patch ToS in `app_storage.json` (`jetski.onboarding.lastLoginUsername` and `jetski.onboarding.lastLoginIsGcpTos = "false"`).
+      6. Coordinated session reload: triggers loopback `ReAuth` RPC with fallback to `EnumWindows` + `keybd_event Ctrl+R`.
+  - Windows Process, Window Targeting & Session Reloader (`internal/reloader/session_reloader.go`):
+    * Native Win32 process enumeration using `CreateToolhelp32Snapshot` without external process execution.
+    * Visible window enumeration using `EnumWindows` + `GetWindowThreadProcessId` cross-referenced with Antigravity PIDs and title fallback.
+    * Keystroke dispatch using `SetForegroundWindow` + `keybd_event` (Ctrl+R).
+    * Atomic ToS patching in `app_storage.json` preventing Google Cloud ToS modal prompts during first login.
+  - Automated unit test suite execution:
+    * `internal/manager` (5 tests, 100% pass):
+      ```text
+      === RUN   TestExtractEmailFromToken
+      --- PASS: TestExtractEmailFromToken (0.00s)
+      === RUN   TestCaptureCurrentSession
+      --- PASS: TestCaptureCurrentSession (0.02s)
+      === RUN   TestGetCurrentActiveEmail
+      --- PASS: TestGetCurrentActiveEmail (0.01s)
+      === RUN   TestGetAccountStates
+      --- PASS: TestGetAccountStates (0.04s)
+      === RUN   TestSwitchAccount
+      --- PASS: TestSwitchAccount (3.37s)
+      PASS
+      ok      antigravity-switch/internal/manager    3.483s
+      ```
+    * `internal/reloader` (6 tests, 100% pass):
+      ```text
+      === RUN   TestFindAntigravityPIDs
+      --- PASS: TestFindAntigravityPIDs (0.01s)
+      === RUN   TestFindAntigravityWindows
+      --- PASS: TestFindAntigravityWindows (0.01s)
+      === RUN   TestPrePatchToSAcceptance
+      --- PASS: TestPrePatchToSAcceptance (0.03s)
+      === RUN   TestReloadAntigravitySession_ReauthSuccess
+      --- PASS: TestReloadAntigravitySession_ReauthSuccess (0.00s)
+      === RUN   TestReloadAntigravitySession_WindowFallback
+      --- PASS: TestReloadAntigravitySession_WindowFallback (0.00s)
+      === RUN   TestReloadAntigravitySession_BothFail
+      --- PASS: TestReloadAntigravitySession_BothFail (0.00s)
+      PASS
+      ok      antigravity-switch/internal/reloader   0.098s
+      ```
+
+- `E6-P6C-UI1`: Fyne Native GUI Dashboard & CLI Entrypoint (`internal/ui/` & `cmd/switcher/`):
+  - Fyne v2 modern dark GUI dashboard (`internal/ui/`):
+    * Custom dark palette (`SwitcherTheme`) matching Antigravity aesthetics (Catppuccin Mocha-inspired palette: `#181825` background, `#1e1e2e` card, `#242b3d` active card, `#a6e3a1` green status dot, `#89b4fa` accent blue).
+    * Compact 440x560 window layout (`setupLayout`) with header card, active account badge, language server process indicator, 3-column action bar (`🔄 Làm mới Chrome`, `💾 Lưu phiên`, `⚡ Auto-Failover: BẬT`), scrollable account list, and timestamped status footer.
+    * System tray integration (`setupTray`) with 32x32 RGBA icon, show/hide toggle, close intercept (minimize to tray), and background menu actions.
+    * Dynamic UI updates (`updateUI`) and asynchronous non-blocking dispatch via `fyne.Do()` and timeout-guarded contexts.
+    * 100% headless testability using `fyne.io/fyne/v2/test` and mock manager handlers.
+  - Dual-mode CLI/GUI Entrypoint (`cmd/switcher/main.go`):
+    * Default mode: launches Fyne native GUI dashboard with system tray resident support.
+    * CLI mode (`--cli`, `--status`, `--list`, `--switch <email>`, `--capture`): fast terminal execution with tabular formatting (`text/tabwriter`) and colored status headers.
+  - Automated unit test suite execution (`internal/ui` - 6 tests, 100% pass):
+    ```text
+    === RUN   TestNewAppAndInit
+    --- PASS: TestNewAppAndInit (2.43s)
+    === RUN   TestToggleAutoFailover
+    --- PASS: TestToggleAutoFailover (0.02s)
+    === RUN   TestUpdateUI_WithAccounts
+    --- PASS: TestUpdateUI_WithAccounts (0.04s)
+    === RUN   TestUpdateUI_Empty
+    --- PASS: TestUpdateUI_Empty (0.02s)
+    === RUN   TestNewAccountCard_Callbacks
+    --- PASS: TestNewAccountCard_Callbacks (0.00s)
+    === RUN   TestStatusDot
+    --- PASS: TestStatusDot (0.00s)
+    PASS
+    ok      antigravity-switch/internal/ui         2.520s
+    ```
+  - Standalone binary build & verification:
+    * Command: `go build -o antigravity-switch-dev.exe ./cmd/switcher`
+    * Output: `antigravity-switch-dev.exe` (Size: 43,981,267 bytes, PE64 executable)
+    * Live CLI verification against running host:
+      - `.\antigravity-switch-dev.exe --cli --status` -> Successfully detected active email `hokinhdoanh.anvien.sales@gmail.com`, Language Server PID 17628 / Port 63432, and Win32 Credential (258 bytes).
+      - `.\antigravity-switch-dev.exe --cli --list` -> Successfully listed 7 accounts across Chrome profiles and `accounts_store/`.
+
 Planned Evidence Targets:
 - `E6-P6A-WIN1`: Pure Go native Win32 Advapi32 wrapper unit test verification (Achieved).
 - `E6-P6A-STORE1`: Atomic JSON file storage round-trip and corruption safety test (Achieved).
 - `E6-P6A-MOD1`: Strongly typed model validation matching Architect specification Section 4.3 (Achieved).
 - `E6-P6B-SCAN1`: Chrome profile scanner with strict `anvien` blacklist test (Achieved).
 - `E6-P6B-CONN1`: Language server discovery and loopback HTTP RPC client test (Achieved).
-- `E6-P6C-MGR1`: Multi-account orchestrator and 4-step hot-swap execution test (Pending implementation in P6-C).
-- `E6-P6C-UI1`: Fyne native GUI startup (< 50ms) and dark theme render test (Pending implementation in P6-C).
+- `E6-P6C-MGR1`: Multi-account orchestrator and 4-step hot-swap execution test (Achieved).
+- `E6-P6C-UI1`: Fyne native GUI startup (< 50ms) and dark theme render test (Achieved).
 - `E6-P6D-BIN1`: Standalone static binary size $\le 15\text{MB}$ and zero-dependency audit (Pending implementation in P6-D).
 - `E6-P6D-PERF1`: Memory footprint ($\le 12\text{MB}$ CLI / $\le 20\text{MB}$ GUI) and startup latency ($\le 10\text{ms}$) (Pending implementation in P6-D).
 

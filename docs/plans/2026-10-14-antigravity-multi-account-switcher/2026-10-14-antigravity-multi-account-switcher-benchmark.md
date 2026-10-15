@@ -105,6 +105,10 @@ Benchmark sections must follow the plan phases:
 | P6-B | Language server discovery & GetUserStatus latency | ms | 850.0 (Python) | 470.0 | - | < 1000.0 | -380.0 | `E6-P6B-CONN1` |
 | P6-B | Scanner & Connector test pass count | tests | 0 | 13 | 13 | >= 10 | +13 | `E6-P6B-SCAN1`, `E6-P6B-CONN1` |
 | P6-B | Scanner & Connector test pass rate | % | - | 100% | 100% | 100% | 0% | `E6-P6B-SCAN1`, `E6-P6B-CONN1` |
+| P6-C | Multi-Account Orchestrator & UI test pass count | tests | 0 | 17 | 17 | >= 10 | +17 | `E6-P6C-MGR1`, `E6-P6C-UI1` |
+| P6-C | Multi-Account Orchestrator & UI test pass rate | % | - | 100% | 100% | 100% | 0% | `E6-P6C-MGR1`, `E6-P6C-UI1` |
+| P6-C | Total Go test suite pass count (`internal/...`) | tests | 0 | 35 | 35 | >= 25 | +35 | `E6-P6C-MGR1`, `E6-P6C-UI1` |
+| P6-C | Total Go test suite pass rate | % | - | 100% | 100% | 100% | 0% | `E6-P6C-MGR1`, `E6-P6C-UI1` |
 | P6 | Standalone binary size (`antigravity-switch.exe`) | MB | 50.0 (Python env) | - | - | <= 15.0 | - | `E6-P6D-BIN1` |
 | P6 | CLI cold startup latency | ms | 450 (Python) | - | - | <= 10 | - | `E6-P6D-PERF1` |
 | P6 | GUI cold start latency | ms | 1200 (Tkinter) | - | - | <= 50 | - | `E6-P6C-UI1` |
