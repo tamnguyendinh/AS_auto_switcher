@@ -1090,7 +1090,7 @@ Following the completion of the Python prototype (Phases P0–P5), the project a
   - Actual-status Update: Transition `internal/wincred`, `internal/store`, `internal/model` to `correct`.
   - Commit Boundary: Commit milestone `feat(P6-A): implement Go core primitives and native Win32 credential layer`.
 
-- [x] P6-B: Chrome Discovery Scanner & Language Server Connector
+- [ ] P6-B: Chrome Discovery Scanner & Language Server Connector
   - Goal: Port the Chrome profile discovery scanner with strict `anvien` keyword filtering and the loopback HTTP / Connect-RPC client for `language_server.exe` process discovery, `GetUserStatus()`, `AuthLogout()`, and `trigger_reauth()`.
   - Scope Boundary:
     - Editable: `internal/scanner/chrome_scanner.go`, `internal/scanner/chrome_scanner_test.go`, `internal/connector/discovery.go`, `internal/connector/api_client.go`, `internal/connector/endpoints.go`, `internal/connector/connector_test.go`.
