@@ -65,16 +65,33 @@ func NewSessionReloader() *SessionReloader {
 
 var defaultReloader = NewSessionReloader()
 
-// DefaultKillLanguageServer terminates running language_server.exe processes using Windows taskkill.
-// Exit code errors (e.g. process was not running) are safely ignored matching Python check=False parity.
-func DefaultKillLanguageServer(ctx context.Context) error {
+// osTaskKill is a package-level function pointer allowing tests to intercept
+// OS-level process killing and isolate the test suite from real processes.
+var osTaskKill = defaultOsTaskKill
+
+func defaultOsTaskKill(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, "taskkill", "/F", "/IM", "language_server.exe")
 	cmd.SysProcAttr = &windows.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: windows.CREATE_NO_WINDOW,
 	}
-	_ = cmd.Run() // Ignore exit code if process was already dead
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// Ignore exit code if process was already dead (matching Python check=False parity)
+	}
 	return nil
+}
+
+// DefaultKillLanguageServer terminates running language_server.exe processes using Windows taskkill.
+// Exit code errors (e.g. process was not running) are safely ignored matching Python check=False parity.
+// It delegates to osTaskKill to allow clean mocking and complete isolation in tests.
+func DefaultKillLanguageServer(ctx context.Context) error {
+	return osTaskKill(ctx)
 }
 
 func defaultSleep(ctx context.Context, d time.Duration) error {
