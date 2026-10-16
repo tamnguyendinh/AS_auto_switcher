@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-16`
-- Status: `completed`
+- Status: `completed (100% Slices PASS)`
 - Plan: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-plan.md`
 - Evidence: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-evidence.md`
 - Benchmark: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-benchmark.md`
@@ -93,7 +93,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
 - [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (PASS in commit 9492736)
 - [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS in commit b3cd1f8)
-- [x] Slice 4 (P1-D): Civilized Connect-RPC ReAuth Hot-Swap (PASS in commit 8df9f07)
+- [x] Slice 4 (P1-D): Civilized Connect-RPC ReAuth Hot-Swap (PASS in commit 712f7fb)
 
 #### - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer
 
