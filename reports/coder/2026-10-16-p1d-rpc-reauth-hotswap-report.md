@@ -102,36 +102,43 @@ ok  	antigravity-switch/internal/wincred	(cached)
 ```
 100% tất cả các package trong kho mã nguồn đều vượt qua bài kiểm thử an toàn!
 
-### 3.3 Mandated Windows Build Automation (`scripts/build_windows.ps1`)
+### 3.3 Mandated Windows Build Automation (`scripts/build_windows.ps1 -Mode all`)
 Lệnh build:
 ```powershell
-powershell -File scripts/build_windows.ps1
+powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Mode all
 ```
 
 Kết quả:
 ```text
 ================================================================================
 ⚡ Antigravity Multi-Account Switcher - Windows Build System
-   Mode: cli | OutDir: bin | SkipTests: False | Clean: False
+   Mode: all | OutDir: bin | SkipTests: False | Clean: False
 ================================================================================
 [2/4] Running pre-flight tests & vet...
   -> Verifying pure Go packages (CGO_ENABLED=0)...
 ok  	antigravity-switch/internal/model	(cached)
 ok  	antigravity-switch/internal/wincred	(cached)
-ok  	antigravity-switch/internal/store	5.089s
+ok  	antigravity-switch/internal/store	21.774s
 ok  	antigravity-switch/internal/scanner	(cached)
 ok  	antigravity-switch/internal/connector	(cached)
 ok  	antigravity-switch/internal/reloader	(cached)
-ok  	antigravity-switch/internal/manager	11.780s
+ok  	antigravity-switch/internal/manager	15.811s
 ?   	antigravity-switch/cmd/switcher	[no test files]
   [PASS] Pure Go verification succeeded.
+  -> Verifying GUI packages with CGo & Fyne (CGO_ENABLED=1)...
+?   	antigravity-switch/cmd/switcher	[no test files]
+ok  	antigravity-switch/internal/ui	3.708s
+  [PASS] GUI verification succeeded.
 [3/4] Compiling target binaries...
   -> Checking Windows application icon and resource...
   -> Compiling resource with windres: cmd\switcher\app.rc -> cmd\switcher\rsrc_windows_amd64.syso
   [SUCCESS] Compiled PE resource object: cmd\switcher\rsrc_windows_amd64.syso (12552 bytes)
   -> Building Standalone CLI Binary (Pure Go, CGO_ENABLED=0)...
   [SUCCESS] Created: bin\antigravity-switch.exe
-  Compile Duration: 2767 ms | Size: 6.76 MB (7085056 bytes)
+  Compile Duration: 2853 ms | Size: 6.76 MB (7085056 bytes)
+  -> Building Standalone GUI Binary (Fyne, CGO_ENABLED=1)...
+  [SUCCESS] Created: bin\antigravity-switch-gui.exe
+  Compile Duration: 5309 ms | Size: 23.56 MB (24702976 bytes)
 [4/4] Executing quick verification...
   [PASS] Embedded PE application icon verified on bin\antigravity-switch.exe (32x32)
   [PASS] Embedded PE application icon verified on bin\antigravity-switch-gui.exe (32x32)
