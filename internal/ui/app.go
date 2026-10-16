@@ -180,24 +180,29 @@ func (a *App) SwitchAccount(targetEmail string) {
 
 		res, err := a.mgr.SwitchAccount(ctx, targetEmail, false) // forceLogout = false: smooth zero-chrome hot-swap
 
-		fyne.Do(func() {
-			if err != nil {
+		if err != nil {
+			fyne.Do(func() {
 				if a.statusBarLabel != nil {
 					a.statusBarLabel.SetText(fmt.Sprintf("Chuyển thất bại: %v", err))
 				}
 				if a.win != nil {
 					dialog.ShowError(err, a.win)
 				}
-			} else {
-				if a.statusBarLabel != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Đã chuyển sang %s (%s)", res.TargetEmail, res.Duration.Round(time.Millisecond)))
-				}
-				if a.win != nil {
-					dialog.ShowInformation("Chuyển thành công", res.Message, a.win)
-				}
+			})
+			return
+		}
+
+		// Refresh account states in RAM and update cards/header immediately (Python SSOT parity)
+		overview, _ := a.mgr.GetAccountStates(ctx)
+		a.mu.Lock()
+		a.overview = overview
+		a.mu.Unlock()
+
+		fyne.Do(func() {
+			a.updateUI(overview)
+			if a.statusBarLabel != nil {
+				a.statusBarLabel.SetText(fmt.Sprintf("Đã chuyển sang %s (%s)", res.TargetEmail, res.Duration.Round(time.Millisecond)))
 			}
-			// Trigger a refresh to update cards and active status
-			a.Refresh()
 		})
 	}()
 }
@@ -227,23 +232,32 @@ func (a *App) SaveSession() {
 
 		email, err := a.mgr.CaptureCurrentSession()
 
-		fyne.Do(func() {
-			if err != nil {
+		if err != nil {
+			fyne.Do(func() {
 				if a.statusBarLabel != nil {
 					a.statusBarLabel.SetText(fmt.Sprintf("Lưu phiên thất bại: %v", err))
 				}
 				if a.win != nil {
 					dialog.ShowError(err, a.win)
 				}
-			} else {
-				if a.statusBarLabel != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Đã lưu phiên của %s vào kho JSON", email))
-				}
-				if a.win != nil {
-					dialog.ShowInformation("Lưu phiên", fmt.Sprintf("Đã lưu thành công token của tài khoản %s!", email), a.win)
-				}
+			})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+
+		// Refresh account states in RAM and update cards immediately (Python SSOT parity)
+		overview, _ := a.mgr.GetAccountStates(ctx)
+		a.mu.Lock()
+		a.overview = overview
+		a.mu.Unlock()
+
+		fyne.Do(func() {
+			a.updateUI(overview)
+			if a.statusBarLabel != nil {
+				a.statusBarLabel.SetText(fmt.Sprintf("Đã lưu phiên của %s vào kho JSON", email))
 			}
-			a.Refresh()
 		})
 	}()
 }

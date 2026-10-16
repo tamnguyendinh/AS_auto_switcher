@@ -189,3 +189,15 @@ func TestRecycleLanguageServer_ContextCancelled(t *testing.T) {
 		t.Errorf("Expected context.Canceled, got: %v", err)
 	}
 }
+
+func TestDefaultKillLanguageServer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// DefaultKillLanguageServer executes taskkill silently with CREATE_NO_WINDOW and HideWindow.
+	// It must complete cleanly without panic or error.
+	err := DefaultKillLanguageServer(ctx)
+	if err != nil {
+		t.Fatalf("DefaultKillLanguageServer failed: %v", err)
+	}
+}

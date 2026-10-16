@@ -70,6 +70,10 @@ type ProcessCandidate struct {
 func QueryLanguageServerProcesses() ([]ProcessCandidate, error) {
 	psScript := `Get-CimInstance Win32_Process -Filter "Name = 'language_server.exe'" | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress`
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", psScript)
+	cmd.SysProcAttr = &windows.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW,
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("querying Win32_Process via PowerShell failed: %w", err)
@@ -193,6 +197,10 @@ func discoverPortsViaNetstat(pid int) ([]int, error) {
 	}
 
 	cmd := exec.Command("netstat", "-ano", "-p", "tcp")
+	cmd.SysProcAttr = &windows.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW,
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("netstat failed: %w", err)

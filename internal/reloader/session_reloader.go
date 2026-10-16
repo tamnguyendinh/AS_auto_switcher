@@ -69,7 +69,10 @@ var defaultReloader = NewSessionReloader()
 // Exit code errors (e.g. process was not running) are safely ignored matching Python check=False parity.
 func DefaultKillLanguageServer(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "taskkill", "/F", "/IM", "language_server.exe")
-	cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+	cmd.SysProcAttr = &windows.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW,
+	}
 	_ = cmd.Run() // Ignore exit code if process was already dead
 	return nil
 }

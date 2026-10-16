@@ -2,8 +2,12 @@ package ui
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -17,6 +21,18 @@ import (
 	"antigravity-switch/internal/store"
 )
 
+func makeTestJWT(email string) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte("{\"alg\":\"RS256\",\"typ\":\"JWT\"}"))
+	claims := map[string]interface{}{
+		"email": email,
+		"exp":   time.Now().Add(1 * time.Hour).Unix(),
+	}
+	claimsBytes, _ := json.Marshal(claims)
+	payload := base64.RawURLEncoding.EncodeToString(claimsBytes)
+	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
+	return header + "." + payload + "." + signature
+}
+
 func createTestManager(t *testing.T) *manager.AccountManager {
 	t.Helper()
 	tempDir := t.TempDir()
@@ -28,6 +44,16 @@ func createTestManager(t *testing.T) *manager.AccountManager {
 	}
 
 	sessionReloader := reloader.NewSessionReloader()
+	sessionReloader.ProcessKiller = func(ctx context.Context) error { return nil }
+	sessionReloader.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	sessionReloader.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       12345,
+			Port:      54321,
+			CSRFToken: "test-csrf",
+		}, nil
+	}
+
 	mgr, err := manager.NewAccountManager(accStore, sessionReloader)
 	if err != nil {
 		t.Fatalf("failed initializing manager: %v", err)
@@ -38,7 +64,7 @@ func createTestManager(t *testing.T) *manager.AccountManager {
 		func() (*model.TokenData, error) {
 			return &model.TokenData{
 				AccessToken: "test_access",
-				IDToken:     "header.eyBlbWFpbCI6ICJjdXJyZW50QGdtYWlsLmNvbSJ9.sig",
+				IDToken:     makeTestJWT("current@gmail.com"),
 			}, nil
 		},
 		func(token *model.TokenData) error {
@@ -91,6 +117,7 @@ func TestNewAppAndInit(t *testing.T) {
 	if headerBg.StrokeColor != ColorBorderSubtle || headerBg.StrokeWidth != 1 || headerBg.CornerRadius != 8 {
 		t.Errorf("unexpected headerBg styling: strokeColor=%#v strokeWidth=%f cornerRadius=%f", headerBg.StrokeColor, headerBg.StrokeWidth, headerBg.CornerRadius)
 	}
+	waitForIdle(app, 3*time.Second)
 }
 
 func TestToggleAlwaysOnTop(t *testing.T) {
@@ -163,6 +190,7 @@ func TestToggleAlwaysOnTop(t *testing.T) {
 	setWindowAlwaysOnTop(windowTitle, false)
 	setWindowAlwaysOnTop(windowTitle, true)
 	setWindowAlwaysOnTop("non_existent_title", true)
+	waitForIdle(app, 3*time.Second)
 }
 
 func TestUpdateUI_WithAccounts(t *testing.T) {
@@ -318,6 +346,7 @@ func TestAppLogoResourceAndWindowIcon(t *testing.T) {
 	if app.Logo() != AppLogoResource {
 		t.Errorf("expected app logo to match AppLogoResource")
 	}
+	waitForIdle(app, 3*time.Second)
 }
 
 func TestElevationTokensAndBorders(t *testing.T) {
@@ -392,5 +421,78 @@ func TestElevationTokensAndBorders(t *testing.T) {
 	}
 	if activeRect.StrokeWidth != 1.5 {
 		t.Errorf("expected active card StrokeWidth 1.5, got %f", activeRect.StrokeWidth)
+	}
+}
+
+func waitForIdle(app *App, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		app.mu.RLock()
+		busy := app.isBusy
+		app.mu.RUnlock()
+		if !busy {
+			time.Sleep(30 * time.Millisecond)
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestSwitchAccount_NoModalPopup(t *testing.T) {
+	mgr := createTestManager(t)
+	testApp := test.NewApp()
+	app := NewAppWithFyne(testApp, mgr)
+	app.Init()
+
+	// Wait for initial Init() refresh to complete
+	waitForIdle(app, 3*time.Second)
+
+	// Pre-save account to store so switch succeeds
+	err := mgr.Store().SaveAccount("target@gmail.com", &model.TokenData{
+		AccessToken: "target_access",
+		IDToken:     makeTestJWT("target@gmail.com"),
+	})
+	if err != nil {
+		t.Fatalf("failed saving target account: %v", err)
+	}
+
+	app.SwitchAccount("target@gmail.com")
+
+	// Wait for async switch to complete
+	waitForIdle(app, 3*time.Second)
+
+	// Verify status bar updated with success message
+	if !strings.Contains(app.statusBarLabel.Text, "Đã chuyển sang target@gmail.com") {
+		t.Errorf("expected status bar text to reflect switch, got: %s", app.statusBarLabel.Text)
+	}
+
+	// Verify NO modal overlay dialog exists on the window canvas (Python parity: zero blocking popups)
+	if app.win.Canvas().Overlays().Top() != nil {
+		t.Errorf("expected zero modal dialogs on canvas, but found an active overlay")
+	}
+}
+
+func TestSaveSession_NoModalPopup(t *testing.T) {
+	mgr := createTestManager(t)
+	testApp := test.NewApp()
+	app := NewAppWithFyne(testApp, mgr)
+	app.Init()
+
+	// Wait for initial Init() refresh to complete
+	waitForIdle(app, 3*time.Second)
+
+	app.SaveSession()
+
+	// Wait for async save to complete
+	waitForIdle(app, 3*time.Second)
+
+	// Verify status bar updated with save message
+	if !strings.Contains(app.statusBarLabel.Text, "Đã lưu phiên của current@gmail.com vào kho JSON") {
+		t.Errorf("expected status bar text to reflect save, got: %s", app.statusBarLabel.Text)
+	}
+
+	// Verify NO modal overlay dialog exists on the window canvas (Python parity: zero blocking popups)
+	if app.win.Canvas().Overlays().Top() != nil {
+		t.Errorf("expected zero modal dialogs on canvas, but found an active overlay")
 	}
 }
