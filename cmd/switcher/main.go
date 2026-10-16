@@ -14,7 +14,6 @@ import (
 	"antigravity-switch/internal/model"
 	"antigravity-switch/internal/reloader"
 	"antigravity-switch/internal/store"
-	"antigravity-switch/internal/ui"
 	"antigravity-switch/internal/wincred"
 )
 
@@ -61,14 +60,10 @@ func main() {
 	// Determine execution mode: CLI vs GUI
 	isCLIAction := *flagCLI || *flagStatus || *flagList || *flagCapture || *flagSwitch != ""
 	if !isCLIAction || *flagGUI {
-		// Launch Fyne Native GUI Dashboard (Default)
-		appInstance, err := ui.NewApp(mgr)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed launching GUI: %v\nFalling back to CLI mode.\n", err)
-			runCLI(mgr, *flagStatus, *flagList, *flagCapture, *flagSwitch)
-			return
+		if err := launchGUI(mgr, *flagStatus, *flagList, *flagCapture, *flagSwitch); err != nil {
+			fmt.Fprintf(os.Stderr, "Error in GUI launch: %v\n", err)
+			os.Exit(1)
 		}
-		appInstance.ShowAndRun()
 		return
 	}
 

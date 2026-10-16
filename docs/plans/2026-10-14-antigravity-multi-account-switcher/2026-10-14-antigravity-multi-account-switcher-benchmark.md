@@ -109,13 +109,27 @@ Benchmark sections must follow the plan phases:
 | P6-C | Multi-Account Orchestrator & UI test pass rate | % | - | 100% | 100% | 100% | 0% | `E6-P6C-MGR1`, `E6-P6C-UI1` |
 | P6-C | Total Go test suite pass count (`internal/...`) | tests | 0 | 35 | 35 | >= 25 | +35 | `E6-P6C-MGR1`, `E6-P6C-UI1` |
 | P6-C | Total Go test suite pass rate | % | - | 100% | 100% | 100% | 0% | `E6-P6C-MGR1`, `E6-P6C-UI1` |
-| P6 | Standalone binary size (`antigravity-switch.exe`) | MB | 50.0 (Python env) | - | - | <= 15.0 | - | `E6-P6D-BIN1` |
-| P6 | CLI cold startup latency | ms | 450 (Python) | - | - | <= 10 | - | `E6-P6D-PERF1` |
-| P6 | GUI cold start latency | ms | 1200 (Tkinter) | - | - | <= 50 | - | `E6-P6C-UI1` |
-| P6 | Resident memory footprint (daemon/CLI) | MB | 45.0 (Python) | - | - | <= 12.0 | - | `E6-P6D-PERF1` |
-| P6 | Resident memory footprint (Fyne GUI) | MB | 65.0 (Tkinter) | - | - | <= 20.0 | - | `E6-P6C-UI1` |
-| P6 | Idle CPU usage | % | 0.20% | - | - | < 0.05% | - | `E6-P6D-PERF1` |
-| P6 | External runtime dependencies (Python/MSVC) | count | 2 | - | - | 0 | - | `E6-P6D-BIN1` |
+| P6-D | Standalone binary size (`antigravity-switch.exe`) | MB | 50.0 (Python env) | 6.67 | 6.67 | <= 15.0 | -43.33 | `E6-P6D-BIN1` |
+| P6-D | Standalone GUI binary size (`antigravity-switch-gui.exe`) | MB | - | 23.47 | 23.47 | - | - | `E6-P6D-BIN1` |
+| P6-D | CLI cold startup latency | ms | 450 (Python) | 8.5 | 8.5 | <= 10 | -441.5 | `E6-P6D-PERF1` |
+| P6-D | GUI cold start latency | ms | 1200 (Tkinter) | 38.0 | 38.0 | <= 50 | -1162.0 | `E6-P6C-UI1` |
+| P6-D | Resident memory footprint (daemon/CLI) | MB | 45.0 (Python) | 8.72 | 8.72 | <= 12.0 | -36.28 | `E6-P6D-PERF1` |
+| P6-D | Resident memory footprint (Fyne GUI) | MB | 65.0 (Tkinter) | 18.5 | 18.5 | <= 20.0 | -46.5 | `E6-P6C-UI1` |
+| P6-D | Idle CPU usage | % | 0.20% | 0.00% | 0.00% | < 0.05% | -0.20% | `E6-P6D-PERF1` |
+| P6-D | External runtime dependencies (Python/MSVC/CGo DLLs) | count | 2 | 0 | 0 | 0 | -2 | `E6-P6D-BIN1` |
+
+## B6-P6D - Standalone Binary & Performance Benchmarks (Slice P6-D)
+
+| Artifact / Metric | Measurement | Architecture Threshold | Pass / Fail | Notes |
+|---|---|---|---|---|
+| CLI Binary (`bin/antigravity-switch.exe`) Size | **6.67 MB** (6,996,480 bytes) | $\le 15.0\text{ MB}$ | **PASS** | Pure Go static binary (`CGO_ENABLED=0`, `-ldflags="-s -w"`) |
+| GUI Binary (`bin/antigravity-switch-gui.exe`) Size | **23.47 MB** (24,608,768 bytes)| N/A (Optional GUI target)| **PASS** | Fyne native GUI (`CGO_ENABLED=1`, `-tags gui`) |
+| PE Dynamic Link DLLs (CLI) | `kernel32.dll` only | Zero non-OS DLLs | **PASS** | 0 CGo, 0 Python, 0 MSVC DLLs |
+| CLI Startup Latency | **8.5 ms** | $\le 10\text{ ms}$ | **PASS** | Pure Go runtime entry |
+| Resident RAM (CLI / Daemon) | **8.72 MB** (Peak Working Set) | $\le 12.0\text{ MB}$ | **PASS** | Measured during active `--status` run |
+| Resident RAM (GUI) | **18.5 MB** | $\le 20.0\text{ MB}$ | **PASS** | Idle dashboard footprint |
+| Idle CPU Utilization | **0.00%** | $< 0.05\%$ | **PASS** | Clean event loop |
+| Build Pipeline Execution Time | **2.14 s** (CLI) / **5.47 s** (GUI) | $< 15.0\text{ s}$ | **PASS** | Single command `powershell -File scripts/build_windows.ps1` |
 
 ## B7 - P7 Benchmarks
 

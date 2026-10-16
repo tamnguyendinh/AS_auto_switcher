@@ -7,3 +7,5 @@ accounts_store/
 .vscode/
 .agents/
 reports/problem/images/
+bin/
+*.exe
