@@ -55,6 +55,7 @@ type SwitchResult struct {
 	PreviousEmail string                  `json:"previous_email"`
 	Duration      time.Duration           `json:"duration"`
 	ActiveThreads []reloader.ActiveThread `json:"active_threads,omitempty"`
+	HotSwapped    bool                    `json:"hot_swapped"`
 }
 
 // AccountManager orchestrates AccountStore, WinCred, ChromeScanner, Connector, and Reloader.
@@ -487,36 +488,66 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	// 7. Ensure Antigravity window in foreground
 	_ = reloader.EnsureAntigravityForeground()
 
-	// 9. Recycle Language Server: terminates language_server.exe cleanly and waits for
-	// Antigravity's monitorLsCrashInternal to respawn fresh instance with new credentials (P0-03)
-	var recycleErr error
-	if rel != nil {
-		recycleErr = rel.RecycleLanguageServer(ctx, 2*time.Second)
-	} else {
-		recycleErr = reloader.RecycleLanguageServer(ctx, 2*time.Second)
-	}
-	if recycleErr != nil {
-		return &SwitchResult{
-			Success:       true,
-			Message:       fmt.Sprintf("Đã chuyển sang %s (cảnh báo khởi động lại Language Server: %v)", normTarget, recycleErr),
-			TargetEmail:   normTarget,
-			PreviousEmail: currentEmail,
-			Duration:      time.Since(start),
-			ActiveThreads: activeThreads,
-		}, nil
-	}
-
-	// 10. Re-probe fresh Language Server (new PID, new Port, new CSRF token)
+	// 8. Civilized RPC ReAuth Hot-Swap with Graceful Fallback (Slice 4 P1-D)
+	// When Language Server is alive (client != nil), first attempt zero-crash RPC ReAuth:
+	// 1. Post to Connect-RPC endpoint (/exa.language_server_pb.LanguageServerService/ReAuth)
+	// 2. Poll GetUserStatus to confirm Language Server loaded the new token into RAM
+	// 3. If verified, bypass RecycleLanguageServer completely (0 taskkill, 0 window reload, seamless hot-swap!)
+	// 4. If ReAuth fails, email mismatch, or Language Server is not running, fall back safely to RecycleLanguageServer.
+	var hotSwapped bool
 	var newClient *connector.Client
-	if finder != nil {
-		newClient, _ = finder(ctx)
-	} else {
-		if newInfo, err := connector.DiscoverLanguageServer(); err == nil && newInfo != nil {
-			newClient = connector.NewClient(newInfo)
+
+	if client != nil {
+		reauthCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		reauthErr := client.TriggerReauth(reauthCtx)
+		cancel()
+
+		if reauthErr == nil {
+			// Short polling (up to 5 attempts, 50ms intervals) to confirm new token loaded into RAM
+			for attempt := 0; attempt < 5; attempt++ {
+				time.Sleep(50 * time.Millisecond)
+				status, statusErr := client.GetUserStatus(ctx)
+				if statusErr == nil && status != nil && strings.EqualFold(strings.TrimSpace(status.Email), normTarget) {
+					hotSwapped = true
+					newClient = client
+					break
+				}
+			}
 		}
 	}
 
-	// 11. In-Flight Session Continuation (Pure Native Connect-RPC: SmartFocus -> LoadTrajectory -> SendUserCascadeMessage) (P0-04)
+	if !hotSwapped {
+		// Fallback path: language server was dead or RPC ReAuth could not hot-swap.
+		// Recycle language server process to let Antigravity crash monitor respawn fresh instance.
+		var recycleErr error
+		if rel != nil {
+			recycleErr = rel.RecycleLanguageServer(ctx, 2*time.Second)
+		} else {
+			recycleErr = reloader.RecycleLanguageServer(ctx, 2*time.Second)
+		}
+		if recycleErr != nil {
+			return &SwitchResult{
+				Success:       true,
+				Message:       fmt.Sprintf("Đã chuyển sang %s (cảnh báo khởi động lại Language Server: %v)", normTarget, recycleErr),
+				TargetEmail:   normTarget,
+				PreviousEmail: currentEmail,
+				Duration:      time.Since(start),
+				ActiveThreads: activeThreads,
+				HotSwapped:    false,
+			}, nil
+		}
+
+		// Re-probe fresh Language Server (new PID, new Port, new CSRF token)
+		if finder != nil {
+			newClient, _ = finder(ctx)
+		} else {
+			if newInfo, err := connector.DiscoverLanguageServer(); err == nil && newInfo != nil {
+				newClient = connector.NewClient(newInfo)
+			}
+		}
+	}
+
+	// 9. In-Flight Session Continuation (Pure Native Connect-RPC: SmartFocus -> LoadTrajectory -> SendUserCascadeMessage) (P0-04)
 	if newClient != nil && len(activeThreads) > 0 {
 		if rel != nil {
 			_ = rel.PerformSessionContinuation(ctx, newClient, activeThreads, "")
@@ -525,8 +556,8 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}
 	}
 
-	// 12. Re-verify new active email via GetUserStatus
-	if newClient != nil {
+	// 10. Re-verify new active email via GetUserStatus if not already verified
+	if newClient != nil && !hotSwapped {
 		if status, err := newClient.GetUserStatus(ctx); err == nil && status != nil && status.Email != "" {
 			confirmedEmail := strings.ToLower(strings.TrimSpace(status.Email))
 			if confirmedEmail == normTarget {
@@ -537,6 +568,7 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 					PreviousEmail: currentEmail,
 					Duration:      time.Since(start),
 					ActiveThreads: activeThreads,
+					HotSwapped:    hotSwapped,
 				}, nil
 			}
 		}
@@ -549,5 +581,6 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		PreviousEmail: currentEmail,
 		Duration:      time.Since(start),
 		ActiveThreads: activeThreads,
+		HotSwapped:    hotSwapped,
 	}, nil
 }

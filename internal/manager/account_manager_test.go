@@ -335,9 +335,15 @@ func TestSwitchAccount(t *testing.T) {
 	if authLogoutCount > 0 {
 		t.Fatalf("AuthLogout was invoked (%d times) during SwitchAccount! Expected AuthLogout to be bypassed (P0-02)", authLogoutCount)
 	}
-	if recycleCount.Load() == 0 {
-		t.Fatal("Expected language server to be recycled during SwitchAccount (P0-03 parity)")
+	if recycleCount.Load() != 0 {
+		t.Fatalf("Expected language server to NOT be recycled on successful ReAuth hot-swap, got %d", recycleCount.Load())
 	}
+	if !result.HotSwapped {
+		t.Errorf("Expected result.HotSwapped = true on successful ReAuth hot-swap, got false")
+	}
+
+
+
 
 	// 2b. Verify default SwitchAccount (variadic, no forceLogout argument) also bypasses AuthLogout
 	authLogoutCount = 0
@@ -365,6 +371,9 @@ func TestSwitchAccount(t *testing.T) {
 	}
 
 	// 2d. Verify graceful handling when language server recycling encounters an error
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, connector.ErrLanguageServerNotFound
+	})
 	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
 		return nil, errors.New("simulated discover error")
 	}
@@ -382,6 +391,9 @@ func TestSwitchAccount(t *testing.T) {
 	}
 
 	// Restore discoverer for subsequent tests
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return client, nil
+	})
 	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
 		return &connector.ServerInfo{
 			PID:       9999,
@@ -761,5 +773,307 @@ func TestSwitchAccount_AtomicAppStorageSync(t *testing.T) {
 	}
 	if appStorageDuringWincred["jetski.onboarding.lastLoginIsGcpTos"] != "false" {
 		t.Errorf("Expected isGcpTos 'false' for consumer account, got %v", appStorageDuringWincred["jetski.onboarding.lastLoginIsGcpTos"])
+	}
+}
+
+func TestSwitchAccount_CivilizedReAuth_HotSwapped(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, _ := store.NewAccountStore(tmpDir)
+
+	targetEmail := "reauth-target@example.com"
+	currentEmail := "reauth-current@example.com"
+	mockEmail := currentEmail
+
+	_ = accStore.SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "reauth-access-token",
+		Expiry:      time.Now().Add(1 * time.Hour),
+		IDToken:     makeTestJWT(targetEmail),
+	})
+
+	var reauthInvoked atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "ReAuth") || strings.Contains(r.URL.Path, "reauth") || strings.Contains(r.URL.Path, "Reload") {
+			reauthInvoked.Store(true)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
+		if strings.Contains(r.URL.Path, "GetUserStatus") || strings.Contains(r.URL.Path, "user_status") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"email":"` + mockEmail + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	parts := strings.Split(server.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	client := connector.NewClientWithHTTP(&connector.ServerInfo{
+		PID:       8888,
+		Port:      port,
+		CSRFToken: "test-reauth-csrf",
+	}, server.Client())
+
+	rel := reloader.NewSessionReloader()
+	rel.StoragePath = filepath.Join(tmpDir, "app_storage.json")
+	var killerCallCount atomic.Int32
+	rel.ProcessKiller = func(ctx context.Context) error {
+		killerCallCount.Add(1)
+		return nil
+	}
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+
+	mgr, _ := NewAccountManager(accStore, rel)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return client, nil
+	})
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-tok",
+				IDToken:     makeTestJWT(currentEmail),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			if email := ExtractEmailFromToken(token); email != "" {
+				mockEmail = email
+			}
+			return nil
+		},
+	)
+
+	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
+	if err != nil {
+		t.Fatalf("SwitchAccount failed: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Expected success, got false: %s", result.Message)
+	}
+	if !result.HotSwapped {
+		t.Errorf("Expected HotSwapped = true for responsive LS, got false")
+	}
+	if killerCallCount.Load() != 0 {
+		t.Errorf("Expected 0 killer calls for civilized ReAuth, got %d", killerCallCount.Load())
+	}
+	if !reauthInvoked.Load() {
+		t.Errorf("Expected TriggerReauth to be invoked on client")
+	}
+}
+
+func TestSwitchAccount_ReAuthFallback_TriggerReauthError(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, _ := store.NewAccountStore(tmpDir)
+
+	targetEmail := "fallback-target@example.com"
+	currentEmail := "fallback-current@example.com"
+
+	_ = accStore.SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "fallback-access-token",
+		Expiry:      time.Now().Add(1 * time.Hour),
+		IDToken:     makeTestJWT(targetEmail),
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "ReAuth") || strings.Contains(r.URL.Path, "reauth") || strings.Contains(r.URL.Path, "Reload") {
+			// Simulate LS rejecting ReAuth (e.g. 500 internal error)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if strings.Contains(r.URL.Path, "GetUserStatus") || strings.Contains(r.URL.Path, "user_status") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"email":"` + currentEmail + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	parts := strings.Split(server.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	client := connector.NewClientWithHTTP(&connector.ServerInfo{
+		PID:       8889,
+		Port:      port,
+		CSRFToken: "test-fallback-csrf",
+	}, server.Client())
+
+	rel := reloader.NewSessionReloader()
+	rel.StoragePath = filepath.Join(tmpDir, "app_storage.json")
+	var killerCallCount atomic.Int32
+	rel.ProcessKiller = func(ctx context.Context) error {
+		killerCallCount.Add(1)
+		return nil
+	}
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{PID: 9001, Port: port, CSRFToken: "new-csrf"}, nil
+	}
+
+	mgr, _ := NewAccountManager(accStore, rel)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return client, nil
+	})
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-tok",
+				IDToken:     makeTestJWT(currentEmail),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			return nil
+		},
+	)
+
+	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
+	if err != nil {
+		t.Fatalf("SwitchAccount failed: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Expected success through recycle fallback, got false: %s", result.Message)
+	}
+	if result.HotSwapped {
+		t.Errorf("Expected HotSwapped = false when ReAuth errors, got true")
+	}
+	if killerCallCount.Load() != 1 {
+		t.Errorf("Expected exactly 1 killer call on fallback, got %d", killerCallCount.Load())
+	}
+}
+
+func TestSwitchAccount_ReAuthFallback_EmailMismatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, _ := store.NewAccountStore(tmpDir)
+
+	targetEmail := "mismatch-target@example.com"
+	currentEmail := "mismatch-current@example.com"
+
+	_ = accStore.SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "mismatch-access-token",
+		Expiry:      time.Now().Add(1 * time.Hour),
+		IDToken:     makeTestJWT(targetEmail),
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "ReAuth") || strings.Contains(r.URL.Path, "reauth") || strings.Contains(r.URL.Path, "Reload") {
+			// TriggerReauth returns OK, but RAM never updates
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
+		if strings.Contains(r.URL.Path, "GetUserStatus") || strings.Contains(r.URL.Path, "user_status") {
+			// Stale email returned from RAM
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"email":"stale-unswitched@example.com"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	parts := strings.Split(server.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	client := connector.NewClientWithHTTP(&connector.ServerInfo{
+		PID:       8890,
+		Port:      port,
+		CSRFToken: "test-mismatch-csrf",
+	}, server.Client())
+
+	rel := reloader.NewSessionReloader()
+	rel.StoragePath = filepath.Join(tmpDir, "app_storage.json")
+	var killerCallCount atomic.Int32
+	rel.ProcessKiller = func(ctx context.Context) error {
+		killerCallCount.Add(1)
+		return nil
+	}
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{PID: 9002, Port: port, CSRFToken: "new-csrf"}, nil
+	}
+
+	mgr, _ := NewAccountManager(accStore, rel)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return client, nil
+	})
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-tok",
+				IDToken:     makeTestJWT(currentEmail),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			return nil
+		},
+	)
+
+	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
+	if err != nil {
+		t.Fatalf("SwitchAccount failed: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Expected success through recycle fallback, got false: %s", result.Message)
+	}
+	if result.HotSwapped {
+		t.Errorf("Expected HotSwapped = false when email does not match, got true")
+	}
+	if killerCallCount.Load() != 1 {
+		t.Errorf("Expected exactly 1 killer call on fallback, got %d", killerCallCount.Load())
+	}
+}
+
+func TestSwitchAccount_ReAuthFallback_ClientNil(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, _ := store.NewAccountStore(tmpDir)
+
+	targetEmail := "clientnil-target@example.com"
+	currentEmail := "clientnil-current@example.com"
+
+	_ = accStore.SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "clientnil-access-token",
+		Expiry:      time.Now().Add(1 * time.Hour),
+		IDToken:     makeTestJWT(targetEmail),
+	})
+
+	rel := reloader.NewSessionReloader()
+	rel.StoragePath = filepath.Join(tmpDir, "app_storage.json")
+	var killerCallCount atomic.Int32
+	rel.ProcessKiller = func(ctx context.Context) error {
+		killerCallCount.Add(1)
+		return nil
+	}
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{PID: 9003, Port: 54321, CSRFToken: "new-csrf"}, nil
+	}
+
+	mgr, _ := NewAccountManager(accStore, rel)
+	// client is nil (LS not running)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, connector.ErrLanguageServerNotFound
+	})
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-tok",
+				IDToken:     makeTestJWT(currentEmail),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			return nil
+		},
+	)
+
+	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
+	if err != nil {
+		t.Fatalf("SwitchAccount failed: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Expected success through recycle fallback, got false: %s", result.Message)
+	}
+	if result.HotSwapped {
+		t.Errorf("Expected HotSwapped = false when client is nil, got true")
+	}
+	if killerCallCount.Load() != 1 {
+		t.Errorf("Expected exactly 1 killer call on fallback, got %d", killerCallCount.Load())
 	}
 }
