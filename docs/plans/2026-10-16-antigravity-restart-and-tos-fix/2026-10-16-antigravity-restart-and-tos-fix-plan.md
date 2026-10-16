@@ -91,8 +91,8 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 ### P1: Implementation Slices
 
 - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
-- [ ] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (Active Next)
-- [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization
+- [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (PASS in commit 9492736)
+- [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (Active Next)
 - [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback
 
 #### - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer

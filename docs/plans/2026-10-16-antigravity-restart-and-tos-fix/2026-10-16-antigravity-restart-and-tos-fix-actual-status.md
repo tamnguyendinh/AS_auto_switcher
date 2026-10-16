@@ -57,8 +57,8 @@ Out of scope:
 ## Slice Execution Status
 
 - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
-- [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (PASS)
-- [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization
+- [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (PASS in commit 9492736)
+- [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (Active Next)
 - [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback
 
 ## Current Status Matrix
@@ -81,3 +81,5 @@ Out of scope:
 | `SRL-P1A` | Slice 1 (P1-A: Test Suite Isolation & Mock Process Killer) completion (commit `8289c28`) | `internal/reloader/reloader_test.go::TestDefaultKillLanguageServer` | `wrong` -> `correct` | `E1-P1A-MOCK1`, `E1-P1A-TEST1` | Slice 1 (P1-A) PASS. Proceed to Slice 2 (P1-B: Proactive Token Expiry Verification & Google OAuth Refresh Engine). |
 
 | `SRL-P1B` | Slice 2 (P1-B: Proactive Token Expiry Verification & Google OAuth Refresh Engine) completion | 3 rows | partial/missing -> correct | `E1-P1B-OAUTH1`, `E1-P1B-TEST3` | Slice 2 (P1-B) PASS. Proceed to Slice 3 (P1-C: Atomic app_storage.json & Session Synchronization). |
+| SRL-P1B-PASS | Slice 2 (P1-B) Supervisor PASS (commit 9492736) | Current Status Matrix | verified correct | E1-P1B-OAUTH1..E1-P1B-MGR1 | Slice 2 PASS. Proceed to Slice 3 (P1-C). |
+
