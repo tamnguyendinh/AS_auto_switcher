@@ -92,8 +92,8 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
 - [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (PASS in commit 9492736)
-- [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS in commit 6c023ab)
-- [ ] Slice 4 (P1-D): Civilized Connect-RPC ReAuth Hot-Swap (Active Next)
+- [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS in commit b3cd1f8)
+- [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback (Active Next)
 
 #### - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer
 
@@ -200,7 +200,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 ---
 
-#### - [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS)
+#### - [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS in commit b3cd1f8)
 
 - **Goal:** Đồng bộ hóa nguyên tử `%APPDATA%\Antigravity\app_storage.json` (`jetski.onboarding.lastLoginUsername` và `jetski.onboarding.lastLoginIsGcpTos`) trước khi reload/reauth, triệt tiêu hoàn toàn modal Google Policy / ToS popup.
 - **Scope Boundary:**
@@ -256,7 +256,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 ---
 
-#### - [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback
+#### - [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback (Active Next)
 
 - **Goal:** Nâng cấp cơ chế chuyển đổi tài khoản văn minh qua Connect-RPC endpoint `/exa.language_server_pb.LanguageServerService/ReAuth` thay cho hành vi tiêu diệt tiến trình thô bạo (`taskkill /F`). Giữ cho Antigravity IDE hoàn toàn ổn định, không giật màn hình và không reload cửa sổ.
 - **Scope Boundary:**

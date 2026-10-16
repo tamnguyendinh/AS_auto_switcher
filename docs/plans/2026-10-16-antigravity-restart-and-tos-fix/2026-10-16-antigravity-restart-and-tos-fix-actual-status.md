@@ -58,8 +58,8 @@ Out of scope:
 
 - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
 - [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (PASS in commit 9492736)
-- [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS in commit 6c023ab)
-- [ ] Slice 4 (P1-D): Civilized Connect-RPC ReAuth Hot-Swap (Active Next)
+- [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS in commit b3cd1f8)
+- [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback (Active Next)
 
 ## Current Status Matrix
 
@@ -69,8 +69,8 @@ Out of scope:
 | `internal/reloader/session_reloader.go::DefaultKillLanguageServer` | `partial` | Hiện tại thực thi `taskkill /F /IM language_server.exe`. Đây là cơ chế thô bạo khiến Electron xem là crash và reload all windows. | `E0-P0A-SRC2`, `E0-P0A-LOG1` | Edit | Đổi thành fallback cuối cùng khi RPC ReAuth thất bại; không dùng làm phương thức hot-swap mặc định. |
 | `internal/model/types.go::TokenData` | `correct` | `UpdateTokens` cập nhật các trường token và xóa `RawPayload = nil`, đảm bảo `MarshalJSON()` xuất ra token mới chính xác. | `E1-P1B-OAUTH1`, `E1-P1B-TEST1` | Preserve | Slice 2 (P1-B) hoàn thành; kiểm thử unit test TestTokenData_UpdateTokens PASS. |
 | `internal/connector/oauth_refresher.go` | `correct` | Module `GoogleOAuthRefresher` triển khai interface `OAuthRefresher`, hỗ trợ custom HTTP client và xử lý refresh token chuẩn Google OAuth2. | `E1-P1B-OAUTH2`, `E1-P1B-TEST2` | Preserve | Slice 2 (P1-B) hoàn thành; kiểm thử TestGoogleOAuthRefresher_* PASS 100%. |
-| `internal/manager/account_manager.go::SwitchAccount` | `partial` | Đã tích hợp proactive token refresh (< 5 phút), lưu disk store và ghi WinCred. Còn chờ Slice 3 (atomic ToS prepatch) và Slice 4 (RPC ReAuth). | `E1-P1B-STORE1`, `E1-P1B-TEST3` | Edit | Bước refresh token hoàn tất; sẵn sàng cho Slice 3 (P1-C: Atomic app_storage.json). |
-| `internal/reloader/session_reloader.go::PrePatchToSAcceptance` | `partial` | Ghi đè `jetski.onboarding.lastLoginUsername` và `jetski.onboarding.lastLoginIsGcpTos` nhưng chưa đồng bộ chặt chẽ với auth_method và thiếu guard file locking/atomic sync hoàn chỉnh. | `E0-P0A-TOS1` | Edit | Chuẩn hóa hàm ghi atomic sync, hỗ trợ tham số `isGcpTos` chuẩn theo `auth_method` của tài khoản, flush I/O triệt để. |
+| `internal/manager/account_manager.go::SwitchAccount` | `partial` | Đã tích hợp proactive token refresh (< 5 phút), đồng bộ nguyên tử app_storage.json trước WinCred write. Còn chờ Slice 4 tích hợp Connect-RPC ReAuth. | `E1-P1B-STORE1`, `E3-P1C-SYNC2` | Edit | Bước refresh token và đồng bộ ToS hoàn tất; sẵn sàng cho Slice 4 (P1-D: Civilized RPC ReAuth Hot-Swap with Safe Fallback). |
+| `internal/reloader/session_reloader.go::SyncAppStorageToS` | `correct` | Đã triển khai SyncAppStorageToS ghi nguyên tử (temp file + fsync + os.Rename), xử lý retry backoff cho Windows sharing violation, bảo toàn 100% key khác và hỗ trợ dynamic isGcpTos. | `E3-P1C-SYNC1`, `E3-P1C-TEST1` | Preserve | Slice 3 (P1-C) hoàn thành (commit `b3cd1f8`). Triệt tiêu Google Cloud ToS modal prompt (B-M04 = 0). |
 | `internal/connector/api_client.go::TriggerReauth` | `bound-correct` | Đã triển khai sẵn hàm `TriggerReauth(ctx)` gọi danh sách `DefaultReauthEndpoints` (`/exa.language_server_pb.LanguageServerService/ReAuth`), nhưng chưa được `AccountManager.SwitchAccount` tích hợp. | `E0-P0A-RPC1` | Preserve / Integrate | Giữ nguyên implementation chuẩn, tích hợp vào `AccountManager.SwitchAccount` làm First-Class ReAuth mechanism. |
 
 ## Status Refresh Log
@@ -82,6 +82,6 @@ Out of scope:
 
 | `SRL-P1B` | Slice 2 (P1-B: Proactive Token Expiry Verification & Google OAuth Refresh Engine) completion | 3 rows | partial/missing -> correct | `E1-P1B-OAUTH1`, `E1-P1B-TEST3` | Slice 2 (P1-B) PASS. Proceed to Slice 3 (P1-C: Atomic app_storage.json & Session Synchronization). |
 | SRL-P1B-PASS | Slice 2 (P1-B) Supervisor PASS (commit 9492736) | Current Status Matrix | verified correct | E1-P1B-OAUTH1..E1-P1B-MGR1 | Slice 2 PASS. Proceed to Slice 3 (P1-C). |
-| SRL-P1C-PASS | Slice 3 (P1-C) Supervisor PASS (commit 6c023ab) | Current Status Matrix | verified correct | E3-P1C | Slice 3 PASS. Proceed to Slice 4 (P1-D). |
+| SRL-P1C-PASS | Slice 3 (P1-C) Supervisor PASS (commit b3cd1f8) | Current Status Matrix | verified correct | E3-P1C | Slice 3 PASS. Proceed to Slice 4 (P1-D). |
 
 
