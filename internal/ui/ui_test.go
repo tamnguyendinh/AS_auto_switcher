@@ -150,19 +150,19 @@ func TestToggleAlwaysOnTop(t *testing.T) {
 		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
 	}
 
-	// Verify window interface SetAlwaysOnTop
-	if customWin, ok := app.Window().(Window); ok {
-		customWin.SetAlwaysOnTop(false)
-		if customWin.IsAlwaysOnTop() {
-			t.Error("expected customWin.IsAlwaysOnTop to be false")
-		}
-		customWin.SetAlwaysOnTop(true)
-		if !customWin.IsAlwaysOnTop() {
-			t.Error("expected customWin.IsAlwaysOnTop to be true")
-		}
-	} else {
-		t.Fatal("expected app.Window() to implement Window interface")
+	// Verify window is the original fyne.Window and not wrapped
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window")
 	}
+	if win.Title() != windowTitle {
+		t.Errorf("unexpected window title: %s", win.Title())
+	}
+
+	// Verify setWindowAlwaysOnTop handles window safely without panic
+	setWindowAlwaysOnTop(windowTitle, false)
+	setWindowAlwaysOnTop(windowTitle, true)
+	setWindowAlwaysOnTop("non_existent_title", true)
 }
 
 func TestUpdateUI_WithAccounts(t *testing.T) {

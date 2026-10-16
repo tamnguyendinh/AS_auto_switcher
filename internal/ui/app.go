@@ -19,7 +19,7 @@ import (
 type App struct {
 	mu          sync.RWMutex
 	app         fyne.App
-	win         Window
+	win         fyne.Window
 	mgr         *manager.AccountManager
 	overview    *manager.AccountOverview
 	alwaysOnTop bool
@@ -66,17 +66,16 @@ func (a *App) Init() {
 	a.app.Settings().SetTheme(&SwitcherTheme{})
 	a.app.SetIcon(AppLogoResource)
 
-	rawWin := a.app.NewWindow("⚡ Antigravity Multi-Account Switcher")
-	rawWin.SetIcon(AppLogoResource)
-	rawWin.Resize(fyne.NewSize(440, 560))
-
-	a.win = newSwitcherWindow(rawWin)
-	if a.alwaysOnTop {
-		a.win.SetAlwaysOnTop(true)
-	}
+	a.win = a.app.NewWindow(windowTitle)
+	a.win.SetIcon(AppLogoResource)
+	a.win.Resize(fyne.NewSize(440, 560))
 
 	a.setupLayout()
 	a.setupTray()
+
+	if a.alwaysOnTop {
+		setWindowAlwaysOnTop(windowTitle, true)
+	}
 
 	// Initial data sync
 	a.Refresh()
@@ -86,6 +85,9 @@ func (a *App) Init() {
 func (a *App) ShowAndRun() {
 	if a.win == nil {
 		a.Init()
+	}
+	if a.alwaysOnTop {
+		setWindowAlwaysOnTop(windowTitle, true)
 	}
 	a.win.ShowAndRun()
 }
@@ -253,9 +255,7 @@ func (a *App) ToggleAlwaysOnTop() {
 	enabled := a.alwaysOnTop
 	a.mu.Unlock()
 
-	if a.win != nil {
-		a.win.SetAlwaysOnTop(enabled)
-	}
+	setWindowAlwaysOnTop(windowTitle, enabled)
 
 	if a.alwaysOnTopBtn != nil {
 		if enabled {
@@ -283,9 +283,7 @@ func (a *App) SetAlwaysOnTop(enabled bool) {
 	a.alwaysOnTop = enabled
 	a.mu.Unlock()
 
-	if a.win != nil {
-		a.win.SetAlwaysOnTop(enabled)
-	}
+	setWindowAlwaysOnTop(windowTitle, enabled)
 
 	if a.alwaysOnTopBtn != nil {
 		if enabled {

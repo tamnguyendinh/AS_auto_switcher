@@ -6,62 +6,13 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"golang.org/x/sys/windows"
 )
 
-// Window defines the interface for the application window, extending fyne.Window with AlwaysOnTop support.
-type Window interface {
-	fyne.Window
-	SetAlwaysOnTop(onTop bool)
-	IsAlwaysOnTop() bool
-}
-
-type switcherWindow struct {
-	fyne.Window
-	onTop bool
-}
-
-func newSwitcherWindow(w fyne.Window) Window {
-	return &switcherWindow{
-		Window: w,
-		onTop:  true,
-	}
-}
-
-func (w *switcherWindow) SetAlwaysOnTop(onTop bool) {
-	w.onTop = onTop
-	if deskWin, ok := w.Window.(desktop.Window); ok && onTop {
-		deskWin.RequestAlwaysOnTop()
-	}
-	setWindowsNativeAlwaysOnTop("⚡ Antigravity Multi-Account Switcher", onTop)
-}
-
-func (w *switcherWindow) IsAlwaysOnTop() bool {
-	return w.onTop
-}
-
-func (w *switcherWindow) RequestAlwaysOnTop() {
-	w.SetAlwaysOnTop(true)
-	if dw, ok := w.Window.(desktop.Window); ok {
-		dw.RequestAlwaysOnTop()
-	}
-}
-
-func (w *switcherWindow) RequestFullScreenSecondary() {
-	if dw, ok := w.Window.(desktop.Window); ok {
-		dw.RequestFullScreenSecondary()
-	}
-}
-
-func (w *switcherWindow) RequestPosition(x, y int) {
-	if dw, ok := w.Window.(desktop.Window); ok {
-		dw.RequestPosition(x, y)
-	}
-}
+const windowTitle = "⚡ Antigravity Multi-Account Switcher"
 
 var (
 	modUser32        = windows.NewLazySystemDLL("user32.dll")
@@ -74,11 +25,9 @@ const (
 	hwndNoTopMost = ^uintptr(1) // (HWND)-2
 	swpNoMove     = 0x0002
 	swpNoSize     = 0x0001
-	swpNoActivate = 0x0010
-	swpShowWindow = 0x0040
 )
 
-func setWindowsNativeAlwaysOnTop(title string, onTop bool) {
+func setWindowAlwaysOnTop(title string, isTop bool) {
 	if procFindWindowW.Find() != nil || procSetWindowPos.Find() != nil {
 		return
 	}
@@ -88,10 +37,10 @@ func setWindowsNativeAlwaysOnTop(title string, onTop bool) {
 		return
 	}
 	var insertAfter uintptr = hwndNoTopMost
-	if onTop {
+	if isTop {
 		insertAfter = hwndTopMost
 	}
-	flags := uintptr(swpNoMove | swpNoSize | swpNoActivate | swpShowWindow)
+	flags := uintptr(swpNoMove | swpNoSize)
 	_, _, _ = procSetWindowPos.Call(hwnd, insertAfter, 0, 0, 0, 0, flags)
 }
 
@@ -102,7 +51,7 @@ func (a *App) setupLayout() {
 	logoImg.FillMode = canvas.ImageFillContain
 	logoContainer := container.NewGridWrap(fyne.NewSize(34, 34), logoImg)
 
-	titleLabel := widget.NewLabelWithStyle("⚡ Antigravity Multi-Account Switcher", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	titleLabel := widget.NewLabelWithStyle(windowTitle, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	titleRow := container.NewHBox(container.NewCenter(logoContainer), titleLabel)
 
 	a.activeDotContainer = container.NewHBox(NewStatusDot(ColorYellow, 12))

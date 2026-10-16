@@ -52,6 +52,9 @@ func (a *App) setupTray() {
 			if a.win != nil {
 				a.win.Show()
 				a.win.RequestFocus()
+				if a.IsAlwaysOnTop() {
+					setWindowAlwaysOnTop(windowTitle, true)
+				}
 			}
 		}),
 		fyne.NewMenuItem("Làm mới Chrome", func() {
