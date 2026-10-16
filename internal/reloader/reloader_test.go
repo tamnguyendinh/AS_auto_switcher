@@ -190,14 +190,157 @@ func TestRecycleLanguageServer_ContextCancelled(t *testing.T) {
 	}
 }
 
+func TestMain(m *testing.M) {
+	// Global test safety barrier: neutralize osTaskKill by default across all tests
+	// in this package so that unmocked invocations never spawn real taskkill.exe processes.
+	osTaskKill = func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return nil
+	}
+	os.Exit(m.Run())
+}
+
 func TestDefaultKillLanguageServer(t *testing.T) {
+	origTaskKill := osTaskKill
+	t.Cleanup(func() {
+		osTaskKill = origTaskKill
+	})
+
+	var callCount atomic.Int32
+	var receivedCtx context.Context
+
+	osTaskKill = func(ctx context.Context) error {
+		callCount.Add(1)
+		receivedCtx = ctx
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// DefaultKillLanguageServer executes taskkill silently with CREATE_NO_WINDOW and HideWindow.
-	// It must complete cleanly without panic or error.
+	// DefaultKillLanguageServer must delegate to osTaskKill without error and pass ctx.
 	err := DefaultKillLanguageServer(ctx)
 	if err != nil {
 		t.Fatalf("DefaultKillLanguageServer failed: %v", err)
+	}
+
+	if callCount.Load() != 1 {
+		t.Fatalf("Expected osTaskKill to be called exactly once, got %d", callCount.Load())
+	}
+	if receivedCtx != ctx {
+		t.Errorf("Expected context %v passed to osTaskKill, got %v", ctx, receivedCtx)
+	}
+}
+
+func TestDefaultKillLanguageServer_ContextCancelled(t *testing.T) {
+	origTaskKill := osTaskKill
+	t.Cleanup(func() {
+		osTaskKill = origTaskKill
+	})
+
+	var callCount atomic.Int32
+	osTaskKill = func(ctx context.Context) error {
+		callCount.Add(1)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel before execution
+
+	err := DefaultKillLanguageServer(ctx)
+	if err == nil {
+		t.Fatal("Expected error on cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Expected context.Canceled, got: %v", err)
+	}
+	if callCount.Load() != 1 {
+		t.Errorf("Expected osTaskKill to be called once, got %d", callCount.Load())
+	}
+}
+
+func TestDefaultKillLanguageServer_ContextTimeout(t *testing.T) {
+	origTaskKill := osTaskKill
+	t.Cleanup(func() {
+		osTaskKill = origTaskKill
+	})
+
+	var callCount atomic.Int32
+	osTaskKill = func(ctx context.Context) error {
+		callCount.Add(1)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+			return nil
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := DefaultKillLanguageServer(ctx)
+	if err == nil {
+		t.Fatal("Expected error on timed out context, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Expected context.DeadlineExceeded, got: %v", err)
+	}
+	if callCount.Load() != 1 {
+		t.Errorf("Expected osTaskKill to be called once, got %d", callCount.Load())
+	}
+}
+
+func TestDefaultKillLanguageServer_ErrorPropagation(t *testing.T) {
+	origTaskKill := osTaskKill
+	t.Cleanup(func() {
+		osTaskKill = origTaskKill
+	})
+
+	expectedErr := errors.New("mock process kill failure")
+	osTaskKill = func(ctx context.Context) error {
+		return expectedErr
+	}
+
+	ctx := context.Background()
+	err := DefaultKillLanguageServer(ctx)
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("Expected error %v, got %v", expectedErr, err)
+	}
+}
+
+func TestRecycleLanguageServer_DefaultProcessKillerDelegation(t *testing.T) {
+	origTaskKill := osTaskKill
+	t.Cleanup(func() {
+		osTaskKill = origTaskKill
+	})
+
+	var taskKillCalled atomic.Bool
+	osTaskKill = func(ctx context.Context) error {
+		taskKillCalled.Store(true)
+		return nil
+	}
+
+	rel := NewSessionReloader()
+	rel.ProcessKiller = nil // Force default fallback to DefaultKillLanguageServer
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error {
+		return nil
+	}
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{PID: 111, Port: 222}, nil
+	}
+
+	ctx := context.Background()
+	err := rel.RecycleLanguageServer(ctx, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("RecycleLanguageServer failed: %v", err)
+	}
+	if !taskKillCalled.Load() {
+		t.Fatal("Expected osTaskKill to be called via DefaultKillLanguageServer fallback")
 	}
 }
