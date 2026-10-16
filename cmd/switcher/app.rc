@@ -1,0 +1,4 @@
+// Resource script for Antigravity Multi-Account Switcher
+// Embeds Windows application icon into compiled PE executable header
+
+1 ICON "logo/app.ico"

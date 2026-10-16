@@ -237,3 +237,28 @@ func TestStatusDot(t *testing.T) {
 		t.Errorf("unexpected dot size: %v", dot.MinSize())
 	}
 }
+
+func TestAppLogoResourceAndWindowIcon(t *testing.T) {
+	if AppLogoResource == nil {
+		t.Fatal("expected AppLogoResource to be non-nil")
+	}
+	if len(AppLogoResource.Content()) == 0 {
+		t.Fatal("expected AppLogoResource to contain image bytes")
+	}
+	if AppLogoResource.Name() != "app_logo.png" {
+		t.Errorf("unexpected resource name: %s", AppLogoResource.Name())
+	}
+
+	mgr := createTestManager(t)
+	testApp := test.NewApp()
+	app := NewAppWithFyne(testApp, mgr)
+	app.Init()
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window after Init")
+	}
+	if app.Logo() != AppLogoResource {
+		t.Errorf("expected app logo to match AppLogoResource")
+	}
+}

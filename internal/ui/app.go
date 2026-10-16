@@ -64,7 +64,10 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 // Init configures the application window, dark theme, widgets, and system tray.
 func (a *App) Init() {
 	a.app.Settings().SetTheme(&SwitcherTheme{})
+	a.app.SetIcon(AppLogoResource)
+
 	a.win = a.app.NewWindow("⚡ Antigravity Multi-Account Switcher")
+	a.win.SetIcon(AppLogoResource)
 	a.win.Resize(fyne.NewSize(440, 560))
 
 	a.setupLayout()
@@ -309,4 +312,9 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 	}
 	nowStr := time.Now().Format("15:04:05")
 	a.statusBarLabel.SetText(fmt.Sprintf("Đồng bộ lúc %s • %d tài khoản trong kho JSON • %d trên Chrome", nowStr, storedCount, len(overview.Accounts)))
+}
+
+// Logo returns the brand logo static resource.
+func (a *App) Logo() fyne.Resource {
+	return AppLogoResource
 }

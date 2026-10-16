@@ -68,11 +68,9 @@ func (a *App) setupTray() {
 
 	desk.SetSystemTrayMenu(menu)
 
-	// Set tray icon
-	iconData := generateTrayIconBytes()
-	if len(iconData) > 0 {
-		trayRes := fyne.NewStaticResource("tray_icon.png", iconData)
-		desk.SetSystemTrayIcon(trayRes)
+	// Set tray icon to official brand logo
+	if AppLogoResource != nil && len(AppLogoResource.Content()) > 0 {
+		desk.SetSystemTrayIcon(AppLogoResource)
 	} else {
 		desk.SetSystemTrayIcon(theme.AccountIcon())
 	}

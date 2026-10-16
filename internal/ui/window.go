@@ -10,8 +10,13 @@ import (
 
 // setupLayout builds the main compact 440x560 window layout.
 func (a *App) setupLayout() {
-	// 1. Header Card
+	// 1. Header Card with Brand Logo
+	logoImg := canvas.NewImageFromResource(AppLogoResource)
+	logoImg.FillMode = canvas.ImageFillContain
+	logoContainer := container.NewGridWrap(fyne.NewSize(34, 34), logoImg)
+
 	titleLabel := widget.NewLabelWithStyle("⚡ Antigravity Multi-Account Switcher", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	titleRow := container.NewHBox(container.NewCenter(logoContainer), titleLabel)
 
 	a.activeDotContainer = container.NewHBox(NewStatusDot(ColorYellow, 12))
 	a.activeStatusLabel = widget.NewLabelWithStyle("● Đang kiểm tra Antigravity...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -20,7 +25,7 @@ func (a *App) setupLayout() {
 	a.serverStatusLabel = widget.NewLabelWithStyle("● Đang kết nối Language Server...", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
 	headerBox := container.NewVBox(
-		titleLabel,
+		titleRow,
 		activeHBox,
 		a.serverStatusLabel,
 	)

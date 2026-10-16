@@ -9,3 +9,6 @@ accounts_store/
 reports/problem/images/
 bin/
 *.exe
+*.syso
+.tmp/
+.playwright-mcp/
