@@ -351,7 +351,9 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 //    Default is False (smooth zero-chrome hot-swap without OAuth popups).
 //    NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true!
 // 5. Write target token from accounts_store/<email>.json to Windows Credential Manager.
-// 6. Pre-patch ToS in app_storage.json and trigger coordinated reauth/reload.
+// 6. Pre-patch ToS in app_storage.json (jetski.onboarding.lastLoginIsGcpTos = "false").
+// 7. Recycle language_server.exe via taskkill /F and wait for monitorLsCrashInternal to respawn.
+// 8. Re-probe fresh Language Server instance and verify active identity via GetUserStatus.
 func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, forceLogout ...bool) (*SwitchResult, error) {
 	start := time.Now()
 	normTarget := strings.ToLower(strings.TrimSpace(targetEmail))
@@ -424,19 +426,48 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	}
 
 	// 6. Pre-patch ToS acceptance to eliminate Google Cloud ToS modal dialog
-	_ = reloader.PrePatchToSAcceptance(normTarget, "")
+	_ = reloader.PrepatchToS(normTarget)
 
-	// 7. Coordinated reauth/reload
+	// 7. Recycle Language Server: terminates language_server.exe cleanly and waits for
+	// Antigravity's monitorLsCrashInternal to respawn fresh instance with new credentials
+	var recycleErr error
 	if rel != nil {
-		if err := rel.ReloadAntigravitySession(ctx, client, true); err != nil {
-			// Even if window reload had minor issues, the token is written to Credential Manager
-			return &SwitchResult{
-				Success:       true,
-				Message:       fmt.Sprintf("Đã chuyển sang %s (cảnh báo tải lại: %v)", normTarget, err),
-				TargetEmail:   normTarget,
-				PreviousEmail: currentEmail,
-				Duration:      time.Since(start),
-			}, nil
+		recycleErr = rel.RecycleLanguageServer(ctx, 2*time.Second)
+	} else {
+		recycleErr = reloader.RecycleLanguageServer(ctx, 2*time.Second)
+	}
+	if recycleErr != nil {
+		return &SwitchResult{
+			Success:       true,
+			Message:       fmt.Sprintf("Đã chuyển sang %s (cảnh báo khởi động lại Language Server: %v)", normTarget, recycleErr),
+			TargetEmail:   normTarget,
+			PreviousEmail: currentEmail,
+			Duration:      time.Since(start),
+		}, nil
+	}
+
+	// 8. Re-probe fresh Language Server & verify new active email via GetUserStatus
+	var newClient *connector.Client
+	if finder != nil {
+		newClient, _ = finder(ctx)
+	} else {
+		if newInfo, err := connector.DiscoverLanguageServer(); err == nil && newInfo != nil {
+			newClient = connector.NewClient(newInfo)
+		}
+	}
+
+	if newClient != nil {
+		if status, err := newClient.GetUserStatus(ctx); err == nil && status != nil && status.Email != "" {
+			confirmedEmail := strings.ToLower(strings.TrimSpace(status.Email))
+			if confirmedEmail == normTarget {
+				return &SwitchResult{
+					Success:       true,
+					Message:       fmt.Sprintf("Chuyển sang tài khoản %s thành công!", normTarget),
+					TargetEmail:   normTarget,
+					PreviousEmail: currentEmail,
+					Duration:      time.Since(start),
+				}, nil
+			}
 		}
 	}
 

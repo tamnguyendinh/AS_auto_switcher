@@ -3,17 +3,15 @@ package reloader
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"antigravity-switch/internal/connector"
 
-	"golang.org/x/sys/windows"
 )
 
 func TestFindAntigravityPIDs(t *testing.T) {
@@ -30,6 +28,14 @@ func TestFindAntigravityWindows(t *testing.T) {
 		t.Fatalf("FindAntigravityWindows failed: %v", err)
 	}
 	t.Logf("Discovered Antigravity HWNDs: %d", len(hwnds))
+}
+
+func TestEnsureAntigravityForeground(t *testing.T) {
+	// Should execute safely without panic, returning ErrNoWindowsFound if no window exists
+	err := EnsureAntigravityForeground()
+	if err != nil && !errors.Is(err, ErrNoWindowsFound) {
+		t.Logf("EnsureAntigravityForeground returned: %v", err)
+	}
 }
 
 func TestPrePatchToSAcceptance(t *testing.T) {
@@ -78,104 +84,108 @@ func TestPrePatchToSAcceptance(t *testing.T) {
 	}
 }
 
-func TestReloadAntigravitySession_ReauthSuccess(t *testing.T) {
-	// Create mock HTTP server that handles /ReAuth
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "ReAuth") || strings.Contains(r.URL.Path, "reauth") {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("{}"))
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	parts := strings.Split(server.URL, ":")
-	port, _ := strconv.Atoi(parts[len(parts)-1])
-
-	client := connector.NewClientWithHTTP(&connector.ServerInfo{
-		PID:       1234,
-		Port:      port,
-		CSRFToken: "test-token",
-	}, server.Client())
-
-	reloader := NewSessionReloader()
-	windowCalled := false
-	reloader.WindowFinder = func() ([]windows.HWND, error) {
-		windowCalled = true
-		return []windows.HWND{windows.HWND(1001)}, nil
-	}
-	reloader.KeySender = func(hwnds []windows.HWND) error {
-		return nil
-	}
-
-	// When reloadWindow=false and reauth succeeds, window reload should NOT be called
-	err := reloader.ReloadAntigravitySession(context.Background(), client, false)
-	if err != nil {
-		t.Fatalf("ReloadAntigravitySession returned error: %v", err)
-	}
-	if windowCalled {
-		t.Errorf("Expected window reload not to be called when reauth succeeds and reloadWindow=false")
+func TestPrepatchToS(t *testing.T) {
+	// PrepatchToS should reject empty email
+	if err := PrepatchToS(""); err == nil {
+		t.Error("Expected error for empty email, got nil")
 	}
 }
 
-func TestReloadAntigravitySession_WindowFallback(t *testing.T) {
-	// Reauth fails (404)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
+func TestRecycleLanguageServer_Success(t *testing.T) {
+	rel := NewSessionReloader()
 
-	parts := strings.Split(server.URL, ":")
-	port, _ := strconv.Atoi(parts[len(parts)-1])
+	var killed atomic.Bool
+	var sleptDuration time.Duration
+	var discovered atomic.Bool
 
-	client := connector.NewClientWithHTTP(&connector.ServerInfo{
-		PID:       1234,
-		Port:      port,
-		CSRFToken: "test-token",
-	}, server.Client())
-
-	reloader := NewSessionReloader()
-	var dispatchedHWNDs []windows.HWND
-	reloader.WindowFinder = func() ([]windows.HWND, error) {
-		return []windows.HWND{windows.HWND(42), windows.HWND(43)}, nil
-	}
-	reloader.KeySender = func(hwnds []windows.HWND) error {
-		dispatchedHWNDs = hwnds
+	rel.ProcessKiller = func(ctx context.Context) error {
+		killed.Store(true)
 		return nil
 	}
 
-	err := reloader.ReloadAntigravitySession(context.Background(), client, false)
-	if err != nil {
-		t.Fatalf("ReloadAntigravitySession fallback failed: %v", err)
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error {
+		sleptDuration = d
+		return nil
 	}
-	if len(dispatchedHWNDs) != 2 {
-		t.Fatalf("Expected 2 HWNDs dispatched on fallback, got %d", len(dispatchedHWNDs))
+
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		discovered.Store(true)
+		return &connector.ServerInfo{
+			PID:       12345,
+			Port:      54321,
+			CSRFToken: "new-csrf-token",
+		}, nil
+	}
+
+	ctx := context.Background()
+	err := rel.RecycleLanguageServer(ctx, 2*time.Second)
+	if err != nil {
+		t.Fatalf("RecycleLanguageServer failed: %v", err)
+	}
+
+	if !killed.Load() {
+		t.Error("Expected ProcessKiller to be invoked")
+	}
+	if sleptDuration != 2*time.Second {
+		t.Errorf("Expected sleptDuration 2s, got %v", sleptDuration)
+	}
+	if !discovered.Load() {
+		t.Error("Expected ServerDiscoverer to be invoked")
 	}
 }
 
-func TestReloadAntigravitySession_BothFail(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
+func TestRecycleLanguageServer_DiscovererFails(t *testing.T) {
+	rel := NewSessionReloader()
 
-	parts := strings.Split(server.URL, ":")
-	port, _ := strconv.Atoi(parts[len(parts)-1])
-
-	client := connector.NewClientWithHTTP(&connector.ServerInfo{
-		PID:       1234,
-		Port:      port,
-		CSRFToken: "test-token",
-	}, server.Client())
-
-	reloader := NewSessionReloader()
-	reloader.WindowFinder = func() ([]windows.HWND, error) {
-		return nil, ErrNoWindowsFound
+	rel.ProcessKiller = func(ctx context.Context) error {
+		return nil
 	}
 
-	err := reloader.ReloadAntigravitySession(context.Background(), client, true)
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error {
+		return nil
+	}
+
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return nil, connector.ErrLanguageServerNotFound
+	}
+
+	// Use short deadline context so probe loop completes quickly in test
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err := rel.RecycleLanguageServer(ctx, 10*time.Millisecond)
 	if err == nil {
-		t.Fatal("Expected error when both reauth and window reload fail, got nil")
+		t.Fatal("Expected error when ServerDiscoverer fails, got nil")
+	}
+	if !errors.Is(err, ErrLanguageServerRestart) && !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Expected ErrLanguageServerRestart or context deadline error, got: %v", err)
+	}
+}
+
+func TestRecycleLanguageServer_ContextCancelled(t *testing.T) {
+	rel := NewSessionReloader()
+
+	rel.ProcessKiller = func(ctx context.Context) error {
+		return nil
+	}
+
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return nil
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := rel.RecycleLanguageServer(ctx, 2*time.Second)
+	if err == nil {
+		t.Fatal("Expected error on cancelled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Expected context.Canceled, got: %v", err)
 	}
 }

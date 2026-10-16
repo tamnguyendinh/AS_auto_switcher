@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -25,39 +26,125 @@ var (
 	procGetWindowTextW          = modUser32.NewProc("GetWindowTextW")
 	procIsWindowVisible         = modUser32.NewProc("IsWindowVisible")
 	procSetForegroundWindow     = modUser32.NewProc("SetForegroundWindow")
-	procKeybdEvent              = modUser32.NewProc("keybd_event")
-)
-
-const (
-	VK_CONTROL       = 0x11
-	VK_R             = 0x52
-	VK_RETURN        = 0x0D
-	KEYEVENTF_KEYUP  = 0x0002
 )
 
 var (
-	ErrNoWindowsFound   = errors.New("no visible Antigravity windows found")
-	ErrInvalidEmail     = errors.New("invalid email address")
-	ErrStorageNotFound  = errors.New("app_storage.json not found")
+	ErrNoWindowsFound        = errors.New("no visible Antigravity windows found")
+	ErrInvalidEmail          = errors.New("invalid email address")
+	ErrStorageNotFound       = errors.New("app_storage.json not found")
+	ErrLanguageServerRestart = errors.New("failed discovering respawned language_server.exe")
 )
 
-// SessionReloader provides window targeting, keystroke dispatch, ToS patching,
-// and coordinated reauth for Antigravity sessions.
+// SessionReloader provides process lifecycle management, window targeting,
+// ToS patching, and language server recycling for Antigravity sessions.
 type SessionReloader struct {
-	mu           sync.RWMutex
-	PIDFinder    func() ([]int, error)
-	WindowFinder func() ([]windows.HWND, error)
-	KeySender    func(hwnds []windows.HWND) error
-	StoragePath  string
+	mu               sync.RWMutex
+	PIDFinder        func() ([]int, error)
+	WindowFinder     func() ([]windows.HWND, error)
+	ProcessKiller    func(ctx context.Context) error
+	ServerDiscoverer func() (*connector.ServerInfo, error)
+	Sleeper          func(ctx context.Context, d time.Duration) error
+	StoragePath      string
 }
 
 // NewSessionReloader creates a default SessionReloader.
 func NewSessionReloader() *SessionReloader {
 	return &SessionReloader{
-		PIDFinder:    FindAntigravityPIDs,
-		WindowFinder: FindAntigravityWindows,
-		KeySender:    ReloadAntigravityWindow,
+		PIDFinder:        FindAntigravityPIDs,
+		WindowFinder:     FindAntigravityWindows,
+		ProcessKiller:    DefaultKillLanguageServer,
+		ServerDiscoverer: connector.DiscoverLanguageServer,
+		Sleeper:          defaultSleep,
 	}
+}
+
+var defaultReloader = NewSessionReloader()
+
+// DefaultKillLanguageServer terminates running language_server.exe processes using Windows taskkill.
+// Exit code errors (e.g. process was not running) are safely ignored matching Python check=False parity.
+func DefaultKillLanguageServer(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "taskkill", "/F", "/IM", "language_server.exe")
+	cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+	_ = cmd.Run() // Ignore exit code if process was already dead
+	return nil
+}
+
+func defaultSleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+// RecycleLanguageServer terminates language_server.exe cleanly and waits waitDuration
+// for Antigravity's monitorLsCrashInternal to respawn a fresh instance with new credentials.
+func RecycleLanguageServer(ctx context.Context, waitDuration time.Duration) error {
+	return defaultReloader.RecycleLanguageServer(ctx, waitDuration)
+}
+
+// RecycleLanguageServer terminates language_server.exe cleanly and waits for Antigravity's
+// monitorLsCrashInternal to automatically respawn a fresh instance with new credentials.
+// It verifies the new process is alive with a valid PID and loopback port via connector.DiscoverLanguageServer.
+func (r *SessionReloader) RecycleLanguageServer(ctx context.Context, waitDuration time.Duration) error {
+	if r == nil {
+		return defaultReloader.RecycleLanguageServer(ctx, waitDuration)
+	}
+
+	r.mu.RLock()
+	killer := r.ProcessKiller
+	discoverer := r.ServerDiscoverer
+	sleeper := r.Sleeper
+	r.mu.RUnlock()
+
+	if killer == nil {
+		killer = DefaultKillLanguageServer
+	}
+	if discoverer == nil {
+		discoverer = connector.DiscoverLanguageServer
+	}
+	if sleeper == nil {
+		sleeper = defaultSleep
+	}
+
+	// 1. Terminate language_server.exe
+	if err := killer(ctx); err != nil {
+		return fmt.Errorf("failed executing taskkill for language_server.exe: %w", err)
+	}
+
+	// 2. Wait for Antigravity parent (monitorLsCrashInternal) to respawn fresh instance
+	if waitDuration <= 0 {
+		waitDuration = 2 * time.Second
+	}
+	if err := sleeper(ctx, waitDuration); err != nil {
+		return err
+	}
+
+	// 3. Confirm new language_server.exe has spawned with valid PID and loopback port
+	info, err := discoverer()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrLanguageServerRestart, err)
+	}
+	if info == nil || info.PID <= 0 || info.Port <= 0 {
+		return fmt.Errorf("%w: invalid server info (pid=%d, port=%d)", ErrLanguageServerRestart, nilPid(info), nilPort(info))
+	}
+
+	return nil
+}
+
+func nilPid(i *connector.ServerInfo) int {
+	if i == nil {
+		return 0
+	}
+	return i.PID
+}
+
+func nilPort(i *connector.ServerInfo) int {
+	if i == nil {
+		return 0
+	}
+	return i.Port
 }
 
 // FindAntigravityPIDs discovers running PIDs belonging to Antigravity.exe or language_server.exe
@@ -149,27 +236,13 @@ func FindAntigravityWindows() ([]windows.HWND, error) {
 	return found, nil
 }
 
-// ReloadAntigravityWindow dispatches Ctrl+R keybd_event to each target Antigravity window.
-func ReloadAntigravityWindow(hwnds []windows.HWND) error {
-	if len(hwnds) == 0 {
+// EnsureAntigravityForeground brings the primary visible Antigravity window to the foreground.
+func EnsureAntigravityForeground() error {
+	hwnds, err := FindAntigravityWindows()
+	if err != nil || len(hwnds) == 0 {
 		return ErrNoWindowsFound
 	}
-
-	for _, hwnd := range hwnds {
-		procSetForegroundWindow.Call(uintptr(hwnd))
-		time.Sleep(50 * time.Millisecond)
-
-		// Key down: Ctrl + R
-		procKeybdEvent.Call(uintptr(VK_CONTROL), 0, 0, 0)
-		procKeybdEvent.Call(uintptr(VK_R), 0, 0, 0)
-		time.Sleep(50 * time.Millisecond)
-
-		// Key up: R, then Ctrl
-		procKeybdEvent.Call(uintptr(VK_R), 0, uintptr(KEYEVENTF_KEYUP), 0)
-		procKeybdEvent.Call(uintptr(VK_CONTROL), 0, uintptr(KEYEVENTF_KEYUP), 0)
-		time.Sleep(100 * time.Millisecond)
-	}
-
+	procSetForegroundWindow.Call(uintptr(hwnds[0]))
 	return nil
 }
 
@@ -180,6 +253,11 @@ func GetDefaultAppStoragePath() string {
 		return ""
 	}
 	return filepath.Join(appData, "Antigravity", "app_storage.json")
+}
+
+// PrepatchToS pre-patches app_storage.json to mark Google Cloud ToS as accepted for targetEmail.
+func PrepatchToS(targetEmail string) error {
+	return PrePatchToSAcceptance(targetEmail, "")
 }
 
 // PrePatchToSAcceptance pre-patches app_storage.json to mark Google Cloud ToS as accepted
@@ -240,54 +318,7 @@ func PrePatchToSAcceptance(targetEmail string, storagePath string) error {
 	return nil
 }
 
-// ReloadAntigravitySession performs coordinated session reloading:
-// 1. If client is non-nil, triggers loopback ReAuth RPC.
-// 2. If reloadWindow is true (or if ReAuth fails), finds HWND and sends Ctrl+R.
+// ReloadAntigravitySession is retained as a compatibility bridge, delegating to RecycleLanguageServer.
 func (r *SessionReloader) ReloadAntigravitySession(ctx context.Context, client *connector.Client, reloadWindow bool) error {
-	r.mu.RLock()
-	windowFinder := r.WindowFinder
-	keySender := r.KeySender
-	r.mu.RUnlock()
-
-	if windowFinder == nil {
-		windowFinder = FindAntigravityWindows
-	}
-	if keySender == nil {
-		keySender = ReloadAntigravityWindow
-	}
-
-	var reauthErr error
-	reauthSucceeded := false
-
-	if client != nil {
-		if err := client.TriggerReauth(ctx); err == nil {
-			reauthSucceeded = true
-		} else {
-			reauthErr = err
-		}
-	}
-
-	var windowErr error
-	if reloadWindow || !reauthSucceeded {
-		hwnds, err := windowFinder()
-		if err == nil && len(hwnds) > 0 {
-			windowErr = keySender(hwnds)
-		} else if err != nil {
-			windowErr = err
-		} else {
-			windowErr = ErrNoWindowsFound
-		}
-	}
-
-	if reauthSucceeded || windowErr == nil {
-		return nil
-	}
-
-	if reauthErr != nil && windowErr != nil {
-		return fmt.Errorf("both reauth (%v) and window reload (%v) failed", reauthErr, windowErr)
-	}
-	if windowErr != nil {
-		return windowErr
-	}
-	return reauthErr
+	return r.RecycleLanguageServer(ctx, 2*time.Second)
 }

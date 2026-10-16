@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -123,6 +125,14 @@ func TestGetCurrentActiveEmail(t *testing.T) {
 		Port:      port,
 		CSRFToken: "csrf-token-123",
 	}, server.Client())
+
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       9999,
+			Port:      port,
+			CSRFToken: "test-csrf-token",
+		}, nil
+	}
 
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
 		return client, nil
@@ -241,13 +251,19 @@ func TestSwitchAccount(t *testing.T) {
 	rel.WindowFinder = func() ([]windows.HWND, error) {
 		return []windows.HWND{windows.HWND(101)}, nil
 	}
-	rel.KeySender = func(hwnds []windows.HWND) error {
+	var recycleCount atomic.Int32
+	rel.ProcessKiller = func(ctx context.Context) error {
+		recycleCount.Add(1)
+		return nil
+	}
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error {
 		return nil
 	}
 
 	mgr, _ := NewAccountManager(accStore, rel)
 
 	currentEmail := "current-user@example.com"
+	mockActiveEmail := currentEmail
 	var writtenToken *model.TokenData
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
@@ -258,13 +274,15 @@ func TestSwitchAccount(t *testing.T) {
 		},
 		func(token *model.TokenData) error {
 			writtenToken = token
+			if email := ExtractEmailFromToken(token); email != "" {
+				mockActiveEmail = email
+			}
 			return nil
 		},
 	)
 
 	// Mock language server to track whether AuthLogout is called (P0-02 verification)
 	var authLogoutCount int
-	mockActiveEmail := "current-user@example.com"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "AuthLogout") {
 			authLogoutCount++
@@ -315,6 +333,9 @@ func TestSwitchAccount(t *testing.T) {
 	if authLogoutCount > 0 {
 		t.Fatalf("AuthLogout was invoked (%d times) during SwitchAccount! Expected AuthLogout to be bypassed (P0-02)", authLogoutCount)
 	}
+	if recycleCount.Load() == 0 {
+		t.Fatal("Expected language server to be recycled during SwitchAccount (P0-03 parity)")
+	}
 
 	// 2b. Verify default SwitchAccount (variadic, no forceLogout argument) also bypasses AuthLogout
 	authLogoutCount = 0
@@ -339,6 +360,32 @@ func TestSwitchAccount(t *testing.T) {
 	}
 	if authLogoutCount != 1 {
 		t.Fatalf("Expected AuthLogout to be invoked exactly once when forceLogout=true, got %d", authLogoutCount)
+	}
+
+	// 2d. Verify graceful handling when language server recycling encounters an error
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return nil, errors.New("simulated discover error")
+	}
+	warningEmail := "warning-switch@example.com"
+	_ = accStore.SaveAccount(warningEmail, &model.TokenData{
+		AccessToken: "warning-access-token",
+		IDToken:     makeTestJWT(warningEmail),
+	})
+	resWarn, err := mgr.SwitchAccount(context.Background(), warningEmail)
+	if err != nil || !resWarn.Success {
+		t.Fatalf("SwitchAccount should succeed even with recycle warning, got err=%v, res=%+v", err, resWarn)
+	}
+	if !strings.Contains(resWarn.Message, "cảnh báo khởi động lại Language Server") {
+		t.Errorf("Expected warning in message, got: %s", resWarn.Message)
+	}
+
+	// Restore discoverer for subsequent tests
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       9999,
+			Port:      port,
+			CSRFToken: "test-csrf-token",
+		}, nil
 	}
 
 	// 3. Switch to already active account -> no-op success
