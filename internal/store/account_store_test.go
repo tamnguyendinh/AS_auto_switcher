@@ -355,3 +355,122 @@ func TestModelTokenDataDualSerialization(t *testing.T) {
 		t.Errorf("expected nested token.access_token, got: %v", innerToken)
 	}
 }
+
+func TestGetDefaultStoreDir_CurrentProject(t *testing.T) {
+	// Ensure no env var pollution
+	t.Setenv("ANTIGRAVITY_STORE_DIR", "")
+
+	storeDir := GetDefaultStoreDir()
+	if !filepath.IsAbs(storeDir) {
+		t.Errorf("expected GetDefaultStoreDir to return absolute path, got: %s", storeDir)
+	}
+
+	stat, err := os.Stat(storeDir)
+	if err != nil {
+		t.Fatalf("failed to stat GetDefaultStoreDir result %s: %v", storeDir, err)
+	}
+	if !stat.IsDir() {
+		t.Errorf("expected storeDir to be directory, got non-dir: %s", storeDir)
+	}
+	if filepath.Base(storeDir) != "accounts_store" {
+		t.Errorf("expected directory name to be accounts_store, got: %s", filepath.Base(storeDir))
+	}
+}
+
+func TestGetDefaultStoreDir_SimulatedSubdirBin(t *testing.T) {
+	t.Setenv("ANTIGRAVITY_STORE_DIR", "")
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get current working directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+	}()
+
+	// Determine expected root accounts_store
+	baseStoreDir := GetDefaultStoreDir()
+
+	// Simulate changing working directory to bin/
+	binDir := filepath.Join(filepath.Dir(baseStoreDir), "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create bin directory: %v", err)
+	}
+
+	if err := os.Chdir(binDir); err != nil {
+		t.Fatalf("failed to chdir to binDir %s: %v", binDir, err)
+	}
+
+	// Verify that from bin/, GetDefaultStoreDir() still resolves to root accounts_store
+	resolvedFromBin := GetDefaultStoreDir()
+	if resolvedFromBin != baseStoreDir {
+		t.Errorf("expected resolution from bin/ to return %s, got %s", baseStoreDir, resolvedFromBin)
+	}
+}
+
+func TestGetDefaultStoreDir_MockNestedHierarchy(t *testing.T) {
+	t.Setenv("ANTIGRAVITY_STORE_DIR", "")
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get current working directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+	}()
+
+	// Create mock workspace hierarchy in temp dir
+	mockRoot := t.TempDir()
+	mockMod := filepath.Join(mockRoot, "go.mod")
+	if err := os.WriteFile(mockMod, []byte("module mock-antigravity\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatalf("failed to create mock go.mod: %v", err)
+	}
+	mockStore := filepath.Join(mockRoot, "accounts_store")
+	if err := os.MkdirAll(mockStore, 0755); err != nil {
+		t.Fatalf("failed to create mock accounts_store: %v", err)
+	}
+	mockBin := filepath.Join(mockRoot, "bin")
+	if err := os.MkdirAll(mockBin, 0755); err != nil {
+		t.Fatalf("failed to create mock bin: %v", err)
+	}
+	mockDeepSubdir := filepath.Join(mockRoot, "cmd", "nested", "deep")
+	if err := os.MkdirAll(mockDeepSubdir, 0755); err != nil {
+		t.Fatalf("failed to create mock deep subdir: %v", err)
+	}
+
+	// 1. Test when CWD is mockRoot/bin
+	if err := os.Chdir(mockBin); err != nil {
+		t.Fatalf("failed to chdir to mockBin: %v", err)
+	}
+	resBin := GetDefaultStoreDir()
+	expectedStore, err := filepath.Abs(mockStore)
+	if err != nil {
+		t.Fatalf("failed to get abs of mockStore: %v", err)
+	}
+	if resBin != expectedStore {
+		t.Errorf("expected resolution from mockBin to return %s, got %s", expectedStore, resBin)
+	}
+
+	// 2. Test when CWD is deep subdirectory
+	if err := os.Chdir(mockDeepSubdir); err != nil {
+		t.Fatalf("failed to chdir to mockDeepSubdir: %v", err)
+	}
+	resDeep := GetDefaultStoreDir()
+	if resDeep != expectedStore {
+		t.Errorf("expected resolution from mockDeepSubdir to return %s, got %s", expectedStore, resDeep)
+	}
+}
+
+func TestGetDefaultStoreDir_EnvVarOverride(t *testing.T) {
+	customTemp := t.TempDir()
+	t.Setenv("ANTIGRAVITY_STORE_DIR", customTemp)
+
+	resolved := GetDefaultStoreDir()
+	expected, err := filepath.Abs(customTemp)
+	if err != nil {
+		t.Fatalf("failed to get abs of customTemp: %v", err)
+	}
+	if resolved != expected {
+		t.Errorf("expected env var override %s, got %s", expected, resolved)
+	}
+}
