@@ -1233,7 +1233,7 @@ Following the completion of the Python prototype (Phases P0–P5), the project a
   - Actual-status Update: Transition `internal/reloader`, `internal/manager`, `internal/ui`, `cmd/switcher` to `correct`.
   - Commit Boundary: Commit milestone `feat(P6-C): implement core orchestrator, Fyne native GUI, and CLI entrypoint`.
 
-- [ ] P6-D: Standalone Windows Binary Compilation & Benchmark
+- [x] P6-D: Standalone Windows Binary Compilation & Benchmark
   - Goal: Package, compile, embed Windows resources, and benchmark the standalone `antigravity-switch.exe` binary, verifying size $\le 15\text{MB}$, startup $\le 10\text{ms}$, RAM $\le 12\text{MB}$ (CLI) / $\le 20\text{MB}$ (GUI), and zero external dependencies.
   - Scope Boundary:
     - Editable: `scripts/build_windows.ps1`, Windows resource manifest/icons, `cmd/switcher/main.go`, `docs/plans/2026-10-14-antigravity-multi-account-switcher/`.
