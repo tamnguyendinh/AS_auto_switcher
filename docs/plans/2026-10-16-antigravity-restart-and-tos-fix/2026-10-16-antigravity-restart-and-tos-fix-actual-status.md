@@ -2,7 +2,7 @@
 
 Title: Antigravity Restart & Google Policy Modal Fix Actual Status
 Date: 2026-10-16
-Status: in_progress (Slice 1, 2 & 3 complete ➔ Next: Slice 4 P1-D)
+Status: completed
 Companion plan: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-plan.md`
 Companion rules: `g:\antigravity_auto_switch\.agents\skills\planner\templates\plan.template.md`
 Companion evidence: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-evidence.md`
@@ -59,7 +59,7 @@ Out of scope:
 - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
 - [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (PASS in commit 9492736)
 - [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS in commit b3cd1f8)
-- [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback (Active Next)
+- [x] Slice 4 (P1-D): Civilized Connect-RPC ReAuth Hot-Swap (PASS in commit 8df9f07)
 
 ## Current Status Matrix
 
@@ -83,5 +83,7 @@ Out of scope:
 | `SRL-P1B` | Slice 2 (P1-B: Proactive Token Expiry Verification & Google OAuth Refresh Engine) completion | 3 rows | partial/missing -> correct | `E1-P1B-OAUTH1`, `E1-P1B-TEST3` | Slice 2 (P1-B) PASS. Proceed to Slice 3 (P1-C: Atomic app_storage.json & Session Synchronization). |
 | SRL-P1B-PASS | Slice 2 (P1-B) Supervisor PASS (commit 9492736) | Current Status Matrix | verified correct | E1-P1B-OAUTH1..E1-P1B-MGR1 | Slice 2 PASS. Proceed to Slice 3 (P1-C). |
 | SRL-P1C-PASS | Slice 3 (P1-C) Supervisor PASS (commit b3cd1f8) | Current Status Matrix | verified correct | E3-P1C | Slice 3 PASS. Proceed to Slice 4 (P1-D). |
+| SRL-P1D-PASS | Slice 4 (P1-D) Supervisor PASS (commit 8df9f07) | Current Status Matrix | verified correct | E4-P1D | Slice 4 PASS. All 4 slices of the Antigravity Restart and ToS Fix plan completed successfully. |
+
 
 
