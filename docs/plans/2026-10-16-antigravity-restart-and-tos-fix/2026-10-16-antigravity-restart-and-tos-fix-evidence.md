@@ -162,3 +162,30 @@
   - Refreshed token is written to Windows Credential Manager.
   - Account with valid token (> 5 min left) does not trigger refresh.
   - Network failure on refresh does not crash or abort, but proceeds gracefully with existing token.
+
+### E3-P1C-SYNC1: Atomic app_storage.json Sync with fsync and Rename Retry
+- Source: `internal/reloader/session_reloader.go:283-365` & `internal/reloader/reloader_test.go:TestSyncAppStorageToS_PreservesOtherKeys`, `TestSyncAppStorageToS_RecoveryFromMissingAndCorrupted`, `TestSyncAppStorageToS_AtomicWriteAndCleanup`, `TestSyncAppStorageToS_InvalidEmail`.
+- Verification command: `go test -v ./internal/reloader/... -run "TestSyncAppStorageToS|TestPrePatchToSAcceptance"` -> PASS (0.24s).
+- Evidence:
+  - Atomic temporary file creation (`os.CreateTemp`) in the same directory as `app_storage.json`.
+  - Mandatory physical flush to disk via `tmpFile.Sync()` (fsync) before close and rename.
+  - Atomic rename (`os.Rename`) with 5-retry backoff loop (50ms interval) to tolerate transient Windows file sharing violations (`ERROR_SHARING_VIOLATION`).
+  - Graceful recovery: missing file is auto-created with valid JSON; corrupted JSON and empty files are self-healed into valid structures.
+  - 100% preservation of all existing user configuration keys (`jetski.ui.layout`, `conversations`, `zoomLevel`, `nested`, `telemetry`).
+  - Temporary files (`app_storage_tmp_*`) are strictly cleaned up without leaving orphaned files.
+
+### E3-P1C-GCP1: Dynamic GCP / Consumer ToS Flag Synchronization
+- Source: `internal/reloader/session_reloader.go` & `internal/reloader/reloader_test.go:TestSyncAppStorageToS_BothGcpTosStates`.
+- Verification command: `go test -v ./internal/reloader/... -run TestSyncAppStorageToS_BothGcpTosStates` -> PASS (0.05s).
+- Evidence:
+  - Subtest `GCP account isGcpTos=true`: writes `"jetski.onboarding.lastLoginIsGcpTos": "true"`.
+  - Subtest `Consumer account isGcpTos=false`: writes `"jetski.onboarding.lastLoginIsGcpTos": "false"`.
+  - Conforms 100% with Antigravity Electron frontend contract (`main.js:nCb` / `xCb` / `ACb`).
+
+### E3-P1C-MGR1: SwitchAccount Pre-WinCred Storage Sync Ordering and Key Preservation
+- Source: `internal/manager/account_manager.go:460-471` & `internal/manager/account_manager_test.go:TestSwitchAccount_AtomicAppStorageSync`.
+- Verification command: `go test -v ./internal/manager/... -run TestSwitchAccount_AtomicAppStorageSync` -> PASS (1.45s).
+- Evidence:
+  - `SyncAppStorageToS` executes strictly BEFORE `wincredWriter` and BEFORE reauth/recycle.
+  - Verified by intercepting the exact moment `wincredWriter` is invoked: `app_storage.json` on disk already contains the target email and the matching `isGcpTos` value.
+  - Tested with both `gcp` (`isGcpTos: "true"`) and `consumer` (`isGcpTos: "false"`), with existing UI settings preserved.

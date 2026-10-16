@@ -457,6 +457,18 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		_ = client.AuthLogout(ctx)
 	}
 
+	// 5.1 Pre-sync app_storage.json ToS acceptance to eliminate Google Cloud ToS modal dialog (Slice 3 P1-C)
+	// Must be performed BEFORE writing to Windows Credential Manager and BEFORE reauth/reload.
+	isGcpTos := false
+	if targetToken != nil && strings.EqualFold(targetToken.AuthMethod, "gcp") {
+		isGcpTos = true
+	}
+	storagePath := ""
+	if rel != nil {
+		storagePath = rel.StoragePath
+	}
+	_ = reloader.SyncAppStorageToS(normTarget, isGcpTos, storagePath)
+
 	// 6. Write target token to Windows Credential Manager
 	if writer == nil {
 		return nil, errors.New("wincred writer not configured")
@@ -472,14 +484,7 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}, fmt.Errorf("%w: %v", ErrWriteCredFailed, err)
 	}
 
-	// 7. Pre-patch ToS acceptance to eliminate Google Cloud ToS modal dialog
-	if rel != nil && rel.StoragePath != "" {
-		_ = reloader.PrePatchToSAcceptance(normTarget, rel.StoragePath)
-	} else {
-		_ = reloader.PrepatchToS(normTarget)
-	}
-
-	// 8. Ensure Antigravity window in foreground
+	// 7. Ensure Antigravity window in foreground
 	_ = reloader.EnsureAntigravityForeground()
 
 	// 9. Recycle Language Server: terminates language_server.exe cleanly and waits for

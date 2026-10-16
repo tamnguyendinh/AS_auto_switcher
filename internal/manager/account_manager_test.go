@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -666,5 +668,98 @@ func TestSwitchAccount_ProactiveTokenRefresh(t *testing.T) {
 	}
 	if writtenToken.AccessToken != "offline-access-token" {
 		t.Errorf("Expected existing token to be preserved on refresh failure, got %s", writtenToken.AccessToken)
+	}
+}
+
+func TestSwitchAccount_AtomicAppStorageSync(t *testing.T) {
+	tmpDir := t.TempDir()
+	storagePath := filepath.Join(tmpDir, "app_storage.json")
+
+	// Pre-populate app_storage.json with existing configuration
+	initialConfig := map[string]interface{}{
+		"jetski.ui.layout":                    "split-pane",
+		"zoomLevel":                           1.0,
+		"jetski.onboarding.lastLoginUsername": "old@example.com",
+		"jetski.onboarding.lastLoginIsGcpTos": "false",
+	}
+	raw, _ := json.MarshalIndent(initialConfig, "", "  ")
+	_ = os.WriteFile(storagePath, raw, 0644)
+
+	accStore, _ := store.NewAccountStore(tmpDir)
+
+	gcpEmail := "gcp-developer@company.com"
+	_ = accStore.SaveAccount(gcpEmail, &model.TokenData{
+		AccessToken: "gcp-access-token",
+		Expiry:      time.Now().Add(1 * time.Hour),
+		AuthMethod:  "gcp",
+		IDToken:     makeTestJWT(gcpEmail),
+	})
+
+	consumerEmail := "consumer-user@gmail.com"
+	_ = accStore.SaveAccount(consumerEmail, &model.TokenData{
+		AccessToken: "consumer-access-token",
+		Expiry:      time.Now().Add(1 * time.Hour),
+		AuthMethod:  "consumer",
+		IDToken:     makeTestJWT(consumerEmail),
+	})
+
+	rel := reloader.NewSessionReloader()
+	rel.StoragePath = storagePath
+	rel.ProcessKiller = func(ctx context.Context) error { return nil }
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+
+	mgr, _ := NewAccountManager(accStore, rel)
+
+	// Verify that SyncAppStorageToS runs BEFORE wincredWriter
+	var appStorageDuringWincred map[string]interface{}
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-tok",
+				IDToken:     makeTestJWT("current@example.com"),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			// Read app_storage.json AT THE EXACT MOMENT wincred is written
+			if data, err := os.ReadFile(storagePath); err == nil {
+				_ = json.Unmarshal(data, &appStorageDuringWincred)
+			}
+			return nil
+		},
+	)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, connector.ErrLanguageServerNotFound
+	})
+
+	// 1. Switch to GCP account
+	resGcp, err := mgr.SwitchAccount(context.Background(), gcpEmail, false)
+	if err != nil || !resGcp.Success {
+		t.Fatalf("SwitchAccount to GCP account failed: %v", err)
+	}
+
+	// Verify app_storage was written BEFORE wincred writer ran
+	if appStorageDuringWincred["jetski.onboarding.lastLoginUsername"] != gcpEmail {
+		t.Errorf("Expected app_storage to be synced BEFORE wincred write, got %v", appStorageDuringWincred["jetski.onboarding.lastLoginUsername"])
+	}
+	if appStorageDuringWincred["jetski.onboarding.lastLoginIsGcpTos"] != "true" {
+		t.Errorf("Expected isGcpTos 'true' during wincred write, got %v", appStorageDuringWincred["jetski.onboarding.lastLoginIsGcpTos"])
+	}
+
+	// Verify existing keys preserved
+	if appStorageDuringWincred["jetski.ui.layout"] != "split-pane" {
+		t.Errorf("Expected jetski.ui.layout preserved, got %v", appStorageDuringWincred["jetski.ui.layout"])
+	}
+
+	// 2. Switch to Consumer account
+	resConsumer, err := mgr.SwitchAccount(context.Background(), consumerEmail, false)
+	if err != nil || !resConsumer.Success {
+		t.Fatalf("SwitchAccount to Consumer account failed: %v", err)
+	}
+
+	if appStorageDuringWincred["jetski.onboarding.lastLoginUsername"] != consumerEmail {
+		t.Errorf("Expected consumer email in app_storage, got %v", appStorageDuringWincred["jetski.onboarding.lastLoginUsername"])
+	}
+	if appStorageDuringWincred["jetski.onboarding.lastLoginIsGcpTos"] != "false" {
+		t.Errorf("Expected isGcpTos 'false' for consumer account, got %v", appStorageDuringWincred["jetski.onboarding.lastLoginIsGcpTos"])
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -280,14 +281,15 @@ func GetDefaultAppStoragePath() string {
 	return filepath.Join(appData, "Antigravity", "app_storage.json")
 }
 
-// PrepatchToS pre-patches app_storage.json to mark Google Cloud ToS as accepted for targetEmail.
-func PrepatchToS(targetEmail string) error {
-	return PrePatchToSAcceptance(targetEmail, "")
-}
-
-// PrePatchToSAcceptance pre-patches app_storage.json to mark Google Cloud ToS as accepted
-// for targetEmail, setting lastLoginUsername and lastLoginIsGcpTos = "false" to prevent modal prompts.
-func PrePatchToSAcceptance(targetEmail string, storagePath string) error {
+// SyncAppStorageToS atomically updates Antigravity's app_storage.json to synchronize
+// onboarding and Terms of Service acceptance for targetEmail.
+// It preserves 100% of all other existing configuration keys in the storage file,
+// updates:
+//   data["jetski.onboarding.lastLoginUsername"] = normEmail
+//   data["jetski.onboarding.lastLoginIsGcpTos"] = strconv.FormatBool(isGcpTos)
+// It writes to a temporary file in the same directory, flushes to disk via fsync (tmpFile.Sync()),
+// closes the file, and performs an atomic rename with retry backoff for Windows sharing violations.
+func SyncAppStorageToS(targetEmail string, isGcpTos bool, storagePath string) error {
 	normEmail := strings.TrimSpace(targetEmail)
 	if normEmail == "" {
 		return ErrInvalidEmail
@@ -301,21 +303,28 @@ func PrePatchToSAcceptance(targetEmail string, storagePath string) error {
 		return ErrStorageNotFound
 	}
 
-	// Read existing or create empty
+	// Read existing or initialize clean map
 	data := make(map[string]interface{})
-	if raw, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(raw, &data)
+	if raw, err := os.ReadFile(path); err == nil && len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &data); unmarshalErr != nil {
+			// If corrupted, re-initialize valid clean map to ensure self-healing recovery
+			data = make(map[string]interface{})
+		}
+	}
+	if data == nil {
+		data = make(map[string]interface{})
 	}
 
+	// Overwrite exact keys matching Antigravity React renderer contract (main.js nCb/xCb/ACb)
 	data["jetski.onboarding.lastLoginUsername"] = normEmail
-	data["jetski.onboarding.lastLoginIsGcpTos"] = "false"
+	data["jetski.onboarding.lastLoginIsGcpTos"] = strconv.FormatBool(isGcpTos)
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed creating storage directory: %w", err)
 	}
 
-	// Atomic write
+	// Atomic write: create temp file in the same directory to allow atomic rename across same filesystem
 	tmpFile, err := os.CreateTemp(dir, "app_storage_tmp_*.json")
 	if err != nil {
 		return fmt.Errorf("failed creating temp file for app_storage: %w", err)
@@ -329,18 +338,60 @@ func PrePatchToSAcceptance(targetEmail string, storagePath string) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("failed encoding app_storage: %w", err)
 	}
-	_ = tmpFile.Sync()
-	_ = tmpFile.Close()
 
-	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(path)
-		if retryErr := os.Rename(tmpName, path); retryErr != nil {
-			_ = os.Remove(tmpName)
-			return fmt.Errorf("failed moving temp app_storage to target: %w", retryErr)
-		}
+	// Flush buffers to physical disk (fsync)
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("failed fsyncing temp app_storage: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("failed closing temp app_storage: %w", err)
 	}
 
-	return nil
+	// Atomic rename with retry handling for Windows sharing violations (ERROR_SHARING_VIOLATION)
+	var renameErr error
+	const maxRetries = 5
+	const backoff = 50 * time.Millisecond
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		renameErr = os.Rename(tmpName, path)
+		if renameErr == nil {
+			return nil
+		}
+		time.Sleep(backoff)
+	}
+
+	// Fallback attempt: if rename still failed, attempt os.Remove(path) before rename
+	_ = os.Remove(path)
+	if finalErr := os.Rename(tmpName, path); finalErr == nil {
+		return nil
+	}
+
+	_ = os.Remove(tmpName)
+	return fmt.Errorf("failed moving temp app_storage to target after retries: %w", renameErr)
+}
+
+// SyncAppStorageToS delegates to package-level SyncAppStorageToS using r.StoragePath if set.
+func (r *SessionReloader) SyncAppStorageToS(targetEmail string, isGcpTos bool) error {
+	storagePath := ""
+	if r != nil {
+		storagePath = r.StoragePath
+	}
+	return SyncAppStorageToS(targetEmail, isGcpTos, storagePath)
+}
+
+// PrepatchToS pre-patches app_storage.json to mark Google Cloud ToS as accepted for targetEmail.
+// Deprecated: Use SyncAppStorageToS to specify isGcpTos dynamically.
+func PrepatchToS(targetEmail string) error {
+	return SyncAppStorageToS(targetEmail, false, "")
+}
+
+// PrePatchToSAcceptance pre-patches app_storage.json to mark Google Cloud ToS as accepted
+// for targetEmail, setting lastLoginUsername and lastLoginIsGcpTos = "false" to prevent modal prompts.
+// Deprecated: Use SyncAppStorageToS to specify isGcpTos dynamically.
+func PrePatchToSAcceptance(targetEmail string, storagePath string) error {
+	return SyncAppStorageToS(targetEmail, false, storagePath)
 }
 
 // CaptureActiveThreadsSnapshot captures active conversation threads from Antigravity's layout state.

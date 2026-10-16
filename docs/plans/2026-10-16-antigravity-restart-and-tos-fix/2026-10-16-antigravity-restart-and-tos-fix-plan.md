@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-16`
-- Status: `in_progress (Slice 1 & 2 complete ➔ Next: Slice 3 P1-C)`
+- Status: `in_progress (Slice 1, 2 & 3 complete ➔ Next: Slice 4 P1-D)`
 - Plan: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-plan.md`
 - Evidence: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-evidence.md`
 - Benchmark: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-benchmark.md`
@@ -92,7 +92,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
 - [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (PASS in commit 9492736)
-- [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (Active Next)
+- [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS)
 - [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback
 
 #### - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer
@@ -200,7 +200,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 ---
 
-#### - [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization
+#### - [x] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization (PASS)
 
 - **Goal:** Đồng bộ hóa nguyên tử `%APPDATA%\Antigravity\app_storage.json` (`jetski.onboarding.lastLoginUsername` và `jetski.onboarding.lastLoginIsGcpTos`) trước khi reload/reauth, triệt tiêu hoàn toàn modal Google Policy / ToS popup.
 - **Scope Boundary:**
