@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-16`
-- Status: `ready_for_review`
+- Status: `in_progress (Slice 1 complete ➔ Next: Slice 2 P1-B)`
 - Plan: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-plan.md`
 - Evidence: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-evidence.md`
 - Benchmark: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-benchmark.md`
@@ -90,7 +90,12 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 ### P1: Implementation Slices
 
-#### Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer
+- [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
+- [ ] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (Active Next)
+- [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization
+- [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback
+
+#### - [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer
 
 - **Goal:** Cách ly 100% test suite khỏi hệ điều hành thực tế. Triệt tiêu hoàn toàn lệnh `taskkill` thật trong `TestDefaultKillLanguageServer` và toàn bộ unit test của `internal/reloader/`.
 - **Scope Boundary:**
@@ -131,7 +136,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 ---
 
-#### Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine
+#### - [ ] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine
 
 - **Goal:** Xây dựng cơ chế chủ động kiểm tra thời hạn token và refresh token qua Google OAuth endpoint `https://oauth2.googleapis.com/token` trước khi ghi vào Windows Credential Manager hoặc nạp vào Language Server RAM. Triệt tiêu hoàn toàn sự cố nạp token chết gây crash loop.
 - **Scope Boundary:**
@@ -195,7 +200,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 ---
 
-#### Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization
+#### - [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization
 
 - **Goal:** Đồng bộ hóa nguyên tử `%APPDATA%\Antigravity\app_storage.json` (`jetski.onboarding.lastLoginUsername` và `jetski.onboarding.lastLoginIsGcpTos`) trước khi reload/reauth, triệt tiêu hoàn toàn modal Google Policy / ToS popup.
 - **Scope Boundary:**
@@ -251,7 +256,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 ---
 
-#### Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback
+#### - [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback
 
 - **Goal:** Nâng cấp cơ chế chuyển đổi tài khoản văn minh qua Connect-RPC endpoint `/exa.language_server_pb.LanguageServerService/ReAuth` thay cho hành vi tiêu diệt tiến trình thô bạo (`taskkill /F`). Giữ cho Antigravity IDE hoàn toàn ổn định, không giật màn hình và không reload cửa sổ.
 - **Scope Boundary:**

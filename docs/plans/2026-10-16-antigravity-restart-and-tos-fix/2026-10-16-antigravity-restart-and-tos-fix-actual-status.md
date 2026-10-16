@@ -2,7 +2,7 @@
 
 Title: Antigravity Restart & Google Policy Modal Fix Actual Status
 Date: 2026-10-16
-Status: P0 Complete
+Status: in_progress (Slice 1 complete ➔ Next: Slice 2 P1-B)
 Companion plan: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-plan.md`
 Companion rules: `g:\antigravity_auto_switch\.agents\skills\planner\templates\plan.template.md`
 Companion evidence: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-evidence.md`
@@ -54,11 +54,18 @@ Out of scope:
 - WinCred format low-level API (`internal/wincred/cred.go`).
 - Python core CLI cũ nếu không nằm trong danh mục bàn giao.
 
+## Slice Execution Status
+
+- [x] Slice 1 (P1-A): Test Suite Isolation & Mock Process Killer (PASS in commit `8289c28`)
+- [ ] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine (Active Next)
+- [ ] Slice 3 (P1-C): Atomic app_storage.json & Session Synchronization
+- [ ] Slice 4 (P1-D): Civilized RPC ReAuth Hot-Swap with Safe Fallback
+
 ## Current Status Matrix
 
 | Surface / Path | Current Classification | Reality Summary | Evidence IDs | Touch Mode | Plan Consequence |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `internal/reloader/reloader_test.go::TestDefaultKillLanguageServer` | `wrong` | Test gọi trực tiếp `DefaultKillLanguageServer(ctx)` bắn hạ `language_server.exe` trên máy thật của lập trình viên khi chạy `go test`. | `E0-P0A-SRC1` | Edit | Thay thế bằng mock process killer; bảo vệ 100% IDE khỏi lệnh taskkill trong mọi test. |
+| `internal/reloader/reloader_test.go::TestDefaultKillLanguageServer` | `correct` | Test được cách ly hoàn toàn qua mock process killer và TestMain safety barrier; không lệnh taskkill thật nào được gọi vào OS khi chạy test. | `E1-P1A-MOCK1`, `E1-P1A-TEST1` | Preserve | Slice 1 (P1-A) hoàn thành (commit `8289c28`); bảo vệ 100% IDE khỏi lệnh taskkill trong mọi test. |
 | `internal/reloader/session_reloader.go::DefaultKillLanguageServer` | `partial` | Hiện tại thực thi `taskkill /F /IM language_server.exe`. Đây là cơ chế thô bạo khiến Electron xem là crash và reload all windows. | `E0-P0A-SRC2`, `E0-P0A-LOG1` | Edit | Đổi thành fallback cuối cùng khi RPC ReAuth thất bại; không dùng làm phương thức hot-swap mặc định. |
 | `internal/model/types.go::TokenData` | `partial` | `MarshalJSON()` ưu tiên ghi `RawPayload` nguyên bản, dẫn đến việc nếu cập nhật `AccessToken` và `Expiry` mới thì dữ liệu cũ vẫn bị ghi ra đĩa/WinCred. | `E0-P0A-SRC3` | Edit | Bổ sung hàm cập nhật hoặc xóa `RawPayload` khi refresh token để `MarshalJSON()` xuất ra token mới. |
 | `internal/connector/oauth_refresher.go` | `missing` | Chưa có module chuyên biệt thực hiện HTTP POST `https://oauth2.googleapis.com/token` bằng Google CloudCode Client ID & Secret đã xác minh. | `E0-P0A-API1` | Create | Tạo module `oauth_refresher.go` với Client ID `1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com` và Secret `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`. |
@@ -71,4 +78,5 @@ Out of scope:
 | Refresh ID | Trigger / Slice | Rows Updated | Old Status -> New Status | Evidence IDs | Plan Consequence |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `SRL-P0` | Baseline audit for Antigravity Restart & ToS Fix | All rows | Baseline audit -> P0 Complete | `E0-P0A-RCA1` .. `E0-P0A-RPC1` | Baseline established. Ready for Slice 1 (P1-A). |
+| `SRL-P1A` | Slice 1 (P1-A: Test Suite Isolation & Mock Process Killer) completion (commit `8289c28`) | `internal/reloader/reloader_test.go::TestDefaultKillLanguageServer` | `wrong` -> `correct` | `E1-P1A-MOCK1`, `E1-P1A-TEST1` | Slice 1 (P1-A) PASS. Proceed to Slice 2 (P1-B: Proactive Token Expiry Verification & Google OAuth Refresh Engine). |
 
