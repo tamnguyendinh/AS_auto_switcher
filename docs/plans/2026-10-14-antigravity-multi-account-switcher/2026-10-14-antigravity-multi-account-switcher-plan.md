@@ -1158,7 +1158,7 @@ Following the completion of the Python prototype (Phases P0–P5), the project a
   - Actual-status Update: Transition `internal/scanner` and `internal/connector` to `correct`.
   - Commit Boundary: Commit milestone `feat(P6-B): implement Chrome discovery scanner and language server connector`.
 
-- [ ] P6-C: Core Orchestrator & Fyne Native GUI
+- [x] P6-C: Core Orchestrator & Fyne Native GUI
   - Goal: Implement the coordinated session reloader, multi-account orchestrator (`AccountManager`), and the pure Go native Fyne GUI dashboard (`app.go`, `window.go`, `widgets.go`, `tray.go`), plus CLI/GUI entrypoint `cmd/switcher/main.go`.
   - Scope Boundary:
     - Editable: `internal/reloader/session_reloader.go`, `internal/reloader/reloader_test.go`, `internal/manager/account_manager.go`, `internal/manager/manager_test.go`, `internal/ui/app.go`, `internal/ui/window.go`, `internal/ui/widgets.go`, `internal/ui/tray.go`, `cmd/switcher/main.go`.
