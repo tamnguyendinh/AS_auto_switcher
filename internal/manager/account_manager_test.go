@@ -409,3 +409,115 @@ func TestSwitchAccount(t *testing.T) {
 		t.Errorf("Unexpected no-op message: %s", noopResult.Message)
 	}
 }
+
+
+func TestSwitchAccount_WithSessionContinuation(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, _ := store.NewAccountStore(tmpDir)
+
+	targetEmail := "switch-continuation@example.com"
+	currentEmail := "current-before-switch@example.com"
+	mockActiveEmail := currentEmail
+
+	_ = accStore.SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "target-access-token",
+		IDToken:     makeTestJWT(targetEmail),
+	})
+
+	var snapshotCaptured bool
+	var continuationExecuted bool
+	var continuationThreadID string
+
+	rel := reloader.NewSessionReloader()
+	rel.WindowFinder = func() ([]windows.HWND, error) {
+		return []windows.HWND{windows.HWND(101)}, nil
+	}
+	rel.ProcessKiller = func(ctx context.Context) error { return nil }
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+
+	rel.SnapshotCapturer = func(storagePath, brainDir, outputDir string) (string, []reloader.ActiveThread, error) {
+		snapshotCaptured = true
+		return "test_snapshot.json", []reloader.ActiveThread{
+			{ThreadID: "thread-active-999", Project: "G:/project", IsMainPane: true},
+		}, nil
+	}
+	rel.ContinuationRunner = func(ctx context.Context, client *connector.Client, activeThreads []reloader.ActiveThread, promptText string) error {
+		continuationExecuted = true
+		if len(activeThreads) > 0 {
+			continuationThreadID = activeThreads[0].ThreadID
+		}
+		return nil
+	}
+
+	mgr, _ := NewAccountManager(accStore, rel)
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-access-token",
+				IDToken:     makeTestJWT(mockActiveEmail),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			if email := ExtractEmailFromToken(token); email != "" {
+				mockActiveEmail = email
+			}
+			return nil
+		},
+	)
+
+	// Mock language server for GetUserStatus
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "GetUserStatus") || strings.Contains(r.URL.Path, "user_status") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"email":"` + mockActiveEmail + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	parts := strings.Split(server.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	client := connector.NewClientWithHTTP(&connector.ServerInfo{
+		PID:       8888,
+		Port:      port,
+		CSRFToken: "test-csrf-token",
+	}, server.Client())
+
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       8888,
+			Port:      port,
+			CSRFToken: "test-csrf-token",
+		}, nil
+	}
+
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return client, nil
+	})
+
+	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
+	if err != nil {
+		t.Fatalf("SwitchAccount failed: %v", err)
+	}
+
+	if !result.Success {
+		t.Fatalf("Expected switch to succeed, message: %s", result.Message)
+	}
+
+	if !snapshotCaptured {
+		t.Error("Expected active threads snapshot to be captured before recycle (P0-04)")
+	}
+
+	if !continuationExecuted {
+		t.Error("Expected continuation to be executed after language server restart (P0-04)")
+	}
+
+	if continuationThreadID != "thread-active-999" {
+		t.Errorf("Expected continuation on thread-active-999, got %s", continuationThreadID)
+	}
+
+	if len(result.ActiveThreads) != 1 || result.ActiveThreads[0].ThreadID != "thread-active-999" {
+		t.Errorf("Expected result.ActiveThreads to contain thread-active-999, got %+v", result.ActiveThreads)
+	}
+}

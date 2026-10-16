@@ -49,11 +49,12 @@ type AccountOverview struct {
 
 // SwitchResult contains the outcome and latency of an account hot-swap operation.
 type SwitchResult struct {
-	Success       bool          `json:"success"`
-	Message       string        `json:"message"`
-	TargetEmail   string        `json:"target_email"`
-	PreviousEmail string        `json:"previous_email"`
-	Duration      time.Duration `json:"duration"`
+	Success       bool                    `json:"success"`
+	Message       string                  `json:"message"`
+	TargetEmail   string                  `json:"target_email"`
+	PreviousEmail string                  `json:"previous_email"`
+	Duration      time.Duration           `json:"duration"`
+	ActiveThreads []reloader.ActiveThread `json:"active_threads,omitempty"`
 }
 
 // AccountManager orchestrates AccountStore, WinCred, ChromeScanner, Connector, and Reloader.
@@ -118,6 +119,12 @@ func (m *AccountManager) SetChromeDir(dir string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.chromeDir = dir
+}
+
+func (m *AccountManager) SetReloader(rel *reloader.SessionReloader) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reloader = rel
 }
 
 // Store returns the underlying AccountStore instance.
@@ -345,15 +352,18 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 
 // SwitchAccount performs a closed-loop hot-swap:
 // 1. Probe live RAM -> verify if already active on targetEmail (no-op).
-// 2. Auto-capture active session to ensure credentials are safe.
-// 3. Load target token from store.
-// 4. Parity with Python core/state_resolver.py:380-425:
+// 2. Snapshot active threads BEFORE switch to preserve in-flight conversation state (P0-04).
+// 3. Auto-capture active session to ensure credentials are safe.
+// 4. Load target token from store.
+// 5. Parity with Python core/state_resolver.py:380-425:
 //    Default is False (smooth zero-chrome hot-swap without OAuth popups).
-//    NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true!
-// 5. Write target token from accounts_store/<email>.json to Windows Credential Manager.
-// 6. Pre-patch ToS in app_storage.json (jetski.onboarding.lastLoginIsGcpTos = "false").
-// 7. Recycle language_server.exe via taskkill /F and wait for monitorLsCrashInternal to respawn.
-// 8. Re-probe fresh Language Server instance and verify active identity via GetUserStatus.
+//    NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true! (P0-02).
+// 6. Write target token from accounts_store/<email>.json to Windows Credential Manager.
+// 7. Pre-patch ToS in app_storage.json (jetski.onboarding.lastLoginIsGcpTos = "false").
+// 8. Ensure Antigravity window in foreground.
+// 9. Recycle language_server.exe via taskkill /F and wait for monitorLsCrashInternal to respawn (P0-03).
+// 10. Re-probe fresh Language Server instance and verify active identity via GetUserStatus.
+// 11. In-Flight Session Continuation (SmartFocus -> LoadTrajectory -> SendUserCascadeMessage) (P0-04).
 func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, forceLogout ...bool) (*SwitchResult, error) {
 	start := time.Now()
 	normTarget := strings.ToLower(strings.TrimSpace(targetEmail))
@@ -389,10 +399,18 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}, nil
 	}
 
-	// 2. Auto-capture active session before switching
+	// 2. Snapshot active threads BEFORE recycling to preserve in-flight conversation state (P0-04)
+	var activeThreads []reloader.ActiveThread
+	if rel != nil {
+		_, activeThreads, _ = rel.CaptureActiveThreadsSnapshot("", "", "")
+	} else {
+		_, activeThreads, _ = reloader.CaptureActiveThreadsSnapshot("", "", "")
+	}
+
+	// 3. Auto-capture active session before switching
 	_, _ = m.CaptureCurrentSession()
 
-	// 3. Load target token from store
+	// 4. Load target token from store
 	targetToken, err := m.store.GetAccount(normTarget)
 	if err != nil {
 		return &SwitchResult{
@@ -401,17 +419,18 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
+			ActiveThreads: activeThreads,
 		}, ErrTargetNotFound
 	}
 
-	// 4. Parity with Python core/state_resolver.py:380-425:
+	// 5. Parity with Python core/state_resolver.py:380-425:
 	// Default is False (smooth zero-chrome hot-swap without OAuth popups).
-	// NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true!
+	// NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true! (P0-02)
 	if shouldLogout && client != nil {
 		_ = client.AuthLogout(ctx)
 	}
 
-	// 5. Write target token to Windows Credential Manager
+	// 6. Write target token to Windows Credential Manager
 	if writer == nil {
 		return nil, errors.New("wincred writer not configured")
 	}
@@ -422,14 +441,22 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
+			ActiveThreads: activeThreads,
 		}, fmt.Errorf("%w: %v", ErrWriteCredFailed, err)
 	}
 
-	// 6. Pre-patch ToS acceptance to eliminate Google Cloud ToS modal dialog
-	_ = reloader.PrepatchToS(normTarget)
+	// 7. Pre-patch ToS acceptance to eliminate Google Cloud ToS modal dialog
+	if rel != nil && rel.StoragePath != "" {
+		_ = reloader.PrePatchToSAcceptance(normTarget, rel.StoragePath)
+	} else {
+		_ = reloader.PrepatchToS(normTarget)
+	}
 
-	// 7. Recycle Language Server: terminates language_server.exe cleanly and waits for
-	// Antigravity's monitorLsCrashInternal to respawn fresh instance with new credentials
+	// 8. Ensure Antigravity window in foreground
+	_ = reloader.EnsureAntigravityForeground()
+
+	// 9. Recycle Language Server: terminates language_server.exe cleanly and waits for
+	// Antigravity's monitorLsCrashInternal to respawn fresh instance with new credentials (P0-03)
 	var recycleErr error
 	if rel != nil {
 		recycleErr = rel.RecycleLanguageServer(ctx, 2*time.Second)
@@ -443,10 +470,11 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
+			ActiveThreads: activeThreads,
 		}, nil
 	}
 
-	// 8. Re-probe fresh Language Server & verify new active email via GetUserStatus
+	// 10. Re-probe fresh Language Server (new PID, new Port, new CSRF token)
 	var newClient *connector.Client
 	if finder != nil {
 		newClient, _ = finder(ctx)
@@ -456,6 +484,16 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}
 	}
 
+	// 11. In-Flight Session Continuation (Pure Native Connect-RPC: SmartFocus -> LoadTrajectory -> SendUserCascadeMessage) (P0-04)
+	if newClient != nil && len(activeThreads) > 0 {
+		if rel != nil {
+			_ = rel.PerformSessionContinuation(ctx, newClient, activeThreads, "")
+		} else {
+			_ = reloader.PerformSessionContinuation(ctx, newClient, activeThreads, "")
+		}
+	}
+
+	// 12. Re-verify new active email via GetUserStatus
 	if newClient != nil {
 		if status, err := newClient.GetUserStatus(ctx); err == nil && status != nil && status.Email != "" {
 			confirmedEmail := strings.ToLower(strings.TrimSpace(status.Email))
@@ -466,6 +504,7 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 					TargetEmail:   normTarget,
 					PreviousEmail: currentEmail,
 					Duration:      time.Since(start),
+					ActiveThreads: activeThreads,
 				}, nil
 			}
 		}
@@ -477,5 +516,6 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		TargetEmail:   normTarget,
 		PreviousEmail: currentEmail,
 		Duration:      time.Since(start),
+		ActiveThreads: activeThreads,
 	}, nil
 }

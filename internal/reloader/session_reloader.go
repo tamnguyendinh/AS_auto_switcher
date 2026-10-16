@@ -45,6 +45,11 @@ type SessionReloader struct {
 	ServerDiscoverer func() (*connector.ServerInfo, error)
 	Sleeper          func(ctx context.Context, d time.Duration) error
 	StoragePath      string
+	BrainDir         string
+	OutputDir        string
+
+	SnapshotCapturer   func(storagePath, brainDir, outputDir string) (string, []ActiveThread, error)
+	ContinuationRunner func(ctx context.Context, client *connector.Client, activeThreads []ActiveThread, promptText string) error
 }
 
 // NewSessionReloader creates a default SessionReloader.
@@ -152,7 +157,7 @@ func nilPort(i *connector.ServerInfo) int {
 func FindAntigravityPIDs() ([]int, error) {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed creating toolhelp snapshot: %w", err)
+		return nil, fmt.Errorf("error creating toolhelp snapshot: %w", err)
 	}
 	defer windows.CloseHandle(snapshot)
 
@@ -316,6 +321,36 @@ func PrePatchToSAcceptance(targetEmail string, storagePath string) error {
 	}
 
 	return nil
+}
+
+// CaptureActiveThreadsSnapshot captures active conversation threads from Antigravity's layout state.
+func (r *SessionReloader) CaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir string) (string, []ActiveThread, error) {
+	if r == nil {
+		return defaultReloader.CaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir)
+	}
+	r.mu.RLock()
+	capturer := r.SnapshotCapturer
+	if storagePath == "" {
+		storagePath = r.StoragePath
+	}
+	if brainDir == "" {
+		brainDir = r.BrainDir
+	}
+	if outputDir == "" {
+		outputDir = r.OutputDir
+	}
+	r.mu.RUnlock()
+
+	if capturer != nil {
+		return capturer(storagePath, brainDir, outputDir)
+	}
+
+	return defaultCaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir)
+}
+
+// CaptureActiveThreadsSnapshot is the package-level entry point delegating to defaultReloader.
+func CaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir string) (string, []ActiveThread, error) {
+	return defaultReloader.CaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir)
 }
 
 // ReloadAntigravitySession is retained as a compatibility bridge, delegating to RecycleLanguageServer.
