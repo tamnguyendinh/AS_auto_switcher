@@ -14,16 +14,18 @@ import (
 )
 
 var (
-	// Catppuccin Mocha-inspired Dark Palette
-	ColorDarkBg     = color.NRGBA{R: 0x18, G: 0x18, B: 0x25, A: 0xff} // #181825
-	ColorCard       = color.NRGBA{R: 0x1e, G: 0x1e, B: 0x2e, A: 0xff} // #1e1e2e
-	ColorCardActive = color.NRGBA{R: 0x24, G: 0x2b, B: 0x3d, A: 0xff} // #242b3d
-	ColorGreen      = color.NRGBA{R: 0xa6, G: 0xe3, B: 0xa1, A: 0xff} // #a6e3a1
-	ColorYellow     = color.NRGBA{R: 0xf9, G: 0xe2, B: 0xaf, A: 0xff} // #f9e2af
-	ColorBlue       = color.NRGBA{R: 0x89, G: 0xb4, B: 0xfa, A: 0xff} // #89b4fa
-	ColorMuted      = color.NRGBA{R: 0xa6, G: 0xad, B: 0xc8, A: 0xff} // #a6adc8
-	ColorText       = color.NRGBA{R: 0xcd, G: 0xd6, B: 0xf4, A: 0xff} // #cdd6f4
-	ColorWhite      = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+	// Catppuccin Mocha-inspired Dark Palette with Elevation Depth Tokens
+	ColorDarkBg       = color.NRGBA{R: 0x11, G: 0x11, B: 0x1b, A: 0xff} // #11111b (Deep Crust Canvas)
+	ColorCard         = color.NRGBA{R: 0x18, G: 0x18, B: 0x25, A: 0xff} // #181825 (Surface Mantle)
+	ColorCardActive   = color.NRGBA{R: 0x1e, G: 0x1e, B: 0x2e, A: 0xff} // #1e1e2e (Surface Base Active)
+	ColorBorderSubtle = color.NRGBA{R: 0x31, G: 0x32, B: 0x44, A: 0xff} // #313244 (Surface0 - Specular Highlight)
+	ColorBorderActive = color.NRGBA{R: 0xa6, G: 0xe3, B: 0xa1, A: 0xdd} // #a6e3a1 (Green Ambient Accent)
+	ColorGreen        = color.NRGBA{R: 0xa6, G: 0xe3, B: 0xa1, A: 0xff} // #a6e3a1
+	ColorYellow       = color.NRGBA{R: 0xf9, G: 0xe2, B: 0xaf, A: 0xff} // #f9e2af
+	ColorBlue         = color.NRGBA{R: 0x89, G: 0xb4, B: 0xfa, A: 0xff} // #89b4fa
+	ColorMuted        = color.NRGBA{R: 0xa6, G: 0xad, B: 0xc8, A: 0xff} // #a6adc8
+	ColorText         = color.NRGBA{R: 0xcd, G: 0xd6, B: 0xf4, A: 0xff} // #cdd6f4
+	ColorWhite        = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
 )
 
 // SwitcherTheme implements a custom modern dark theme matching Antigravity aesthetics.
@@ -131,14 +133,18 @@ func NewAccountCard(item manager.AccountDisplayItem, onSwitch func(email string)
 
 	cardContent := container.NewBorder(nil, nil, leftSection, actionWidget)
 
-	// Card Background
+	// Card Background with Elevation & Micro-Border
 	cardBg := canvas.NewRectangle(ColorCard)
+	cardBg.CornerRadius = 8
 	if item.IsActive {
 		cardBg.FillColor = ColorCardActive
-		cardBg.StrokeColor = ColorGreen
-		cardBg.StrokeWidth = 1
+		cardBg.StrokeColor = ColorBorderActive
+		cardBg.StrokeWidth = 1.5
+	} else {
+		cardBg.FillColor = ColorCard
+		cardBg.StrokeColor = ColorBorderSubtle
+		cardBg.StrokeWidth = 1.0
 	}
-	cardBg.CornerRadius = 6
 
 	return container.NewStack(cardBg, container.NewPadded(cardContent))
 }

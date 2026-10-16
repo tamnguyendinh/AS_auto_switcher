@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
 
 	"antigravity-switch/internal/connector"
@@ -76,6 +78,17 @@ func TestNewAppAndInit(t *testing.T) {
 	}
 	if app.refreshBtn == nil || app.saveBtn == nil || app.failoverBtn == nil {
 		t.Fatal("expected control buttons to be initialized")
+	}
+
+	if app.headerCard == nil || len(app.headerCard.Objects) == 0 {
+		t.Fatal("expected headerCard to have objects")
+	}
+	headerBg, ok := app.headerCard.Objects[0].(*canvas.Rectangle)
+	if !ok {
+		t.Fatal("expected headerBg to be canvas.Rectangle")
+	}
+	if headerBg.StrokeColor != ColorBorderSubtle || headerBg.StrokeWidth != 1 || headerBg.CornerRadius != 8 {
+		t.Errorf("unexpected headerBg styling: strokeColor=%#v strokeWidth=%f cornerRadius=%f", headerBg.StrokeColor, headerBg.StrokeWidth, headerBg.CornerRadius)
 	}
 }
 
@@ -260,5 +273,80 @@ func TestAppLogoResourceAndWindowIcon(t *testing.T) {
 	}
 	if app.Logo() != AppLogoResource {
 		t.Errorf("expected app logo to match AppLogoResource")
+	}
+}
+
+func TestElevationTokensAndBorders(t *testing.T) {
+	// 1. Verify color tokens
+	if ColorDarkBg.R != 0x11 || ColorDarkBg.G != 0x11 || ColorDarkBg.B != 0x1b || ColorDarkBg.A != 0xff {
+		t.Errorf("unexpected ColorDarkBg: %#v", ColorDarkBg)
+	}
+	if ColorCard.R != 0x18 || ColorCard.G != 0x18 || ColorCard.B != 0x25 || ColorCard.A != 0xff {
+		t.Errorf("unexpected ColorCard: %#v", ColorCard)
+	}
+	if ColorCardActive.R != 0x1e || ColorCardActive.G != 0x1e || ColorCardActive.B != 0x2e || ColorCardActive.A != 0xff {
+		t.Errorf("unexpected ColorCardActive: %#v", ColorCardActive)
+	}
+	if ColorBorderSubtle.R != 0x31 || ColorBorderSubtle.G != 0x32 || ColorBorderSubtle.B != 0x44 || ColorBorderSubtle.A != 0xff {
+		t.Errorf("unexpected ColorBorderSubtle: %#v", ColorBorderSubtle)
+	}
+	if ColorBorderActive.R != 0xa6 || ColorBorderActive.G != 0xe3 || ColorBorderActive.B != 0xa1 || ColorBorderActive.A != 0xdd {
+		t.Errorf("unexpected ColorBorderActive: %#v", ColorBorderActive)
+	}
+
+	// 2. Verify Ready account card background
+	readyItem := manager.AccountDisplayItem{
+		Email:    "ready@example.com",
+		State:    model.StateReady,
+		IsActive: false,
+	}
+	readyCard := NewAccountCard(readyItem, nil, nil)
+	stack, ok := readyCard.(*fyne.Container)
+	if !ok || len(stack.Objects) == 0 {
+		t.Fatalf("expected container stack for account card")
+	}
+	rect, ok := stack.Objects[0].(*canvas.Rectangle)
+	if !ok {
+		t.Fatalf("expected canvas.Rectangle background")
+	}
+	if rect.CornerRadius != 8 {
+		t.Errorf("expected ready card CornerRadius 8, got %f", rect.CornerRadius)
+	}
+	if rect.FillColor != ColorCard {
+		t.Errorf("expected ready card FillColor ColorCard, got %#v", rect.FillColor)
+	}
+	if rect.StrokeColor != ColorBorderSubtle {
+		t.Errorf("expected ready card StrokeColor ColorBorderSubtle, got %#v", rect.StrokeColor)
+	}
+	if rect.StrokeWidth != 1.0 {
+		t.Errorf("expected ready card StrokeWidth 1.0, got %f", rect.StrokeWidth)
+	}
+
+	// 3. Verify Active account card background
+	activeItem := manager.AccountDisplayItem{
+		Email:    "active@example.com",
+		State:    model.StateActive,
+		IsActive: true,
+	}
+	activeCard := NewAccountCard(activeItem, nil, nil)
+	activeStack, ok := activeCard.(*fyne.Container)
+	if !ok || len(activeStack.Objects) == 0 {
+		t.Fatalf("expected container stack for active account card")
+	}
+	activeRect, ok := activeStack.Objects[0].(*canvas.Rectangle)
+	if !ok {
+		t.Fatalf("expected canvas.Rectangle background for active card")
+	}
+	if activeRect.CornerRadius != 8 {
+		t.Errorf("expected active card CornerRadius 8, got %f", activeRect.CornerRadius)
+	}
+	if activeRect.FillColor != ColorCardActive {
+		t.Errorf("expected active card FillColor ColorCardActive, got %#v", activeRect.FillColor)
+	}
+	if activeRect.StrokeColor != ColorBorderActive {
+		t.Errorf("expected active card StrokeColor ColorBorderActive, got %#v", activeRect.StrokeColor)
+	}
+	if activeRect.StrokeWidth != 1.5 {
+		t.Errorf("expected active card StrokeWidth 1.5, got %f", activeRect.StrokeWidth)
 	}
 }

@@ -10,7 +10,7 @@ import (
 
 // setupLayout builds the main compact 440x560 window layout.
 func (a *App) setupLayout() {
-	// 1. Header Card with Brand Logo
+	// 1. Header Card with Brand Logo & Specular Keyline Border
 	logoImg := canvas.NewImageFromResource(AppLogoResource)
 	logoImg.FillMode = canvas.ImageFillContain
 	logoContainer := container.NewGridWrap(fyne.NewSize(34, 34), logoImg)
@@ -31,6 +31,8 @@ func (a *App) setupLayout() {
 	)
 
 	headerBg := canvas.NewRectangle(ColorCard)
+	headerBg.StrokeColor = ColorBorderSubtle
+	headerBg.StrokeWidth = 1
 	headerBg.CornerRadius = 8
 	a.headerCard = container.NewStack(headerBg, container.NewPadded(headerBox))
 
@@ -48,10 +50,12 @@ func (a *App) setupLayout() {
 
 	ctrlGrid := container.NewGridWithColumns(3, a.refreshBtn, a.saveBtn, a.failoverBtn)
 
-	// 3. Legend / Status Info Bar
+	// 3. Legend / Status Info Bar with Specular Keyline Border
 	legendLabel := widget.NewLabelWithStyle("🟢 Sẵn sàng chuyển đổi ngầm   |   🟡 Chưa có file JSON", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
 	legendBg := canvas.NewRectangle(ColorCard)
-	legendBg.CornerRadius = 4
+	legendBg.StrokeColor = ColorBorderSubtle
+	legendBg.StrokeWidth = 1
+	legendBg.CornerRadius = 6
 	legendCard := container.NewStack(legendBg, container.NewPadded(legendLabel))
 
 	topSection := container.NewVBox(
@@ -64,10 +68,12 @@ func (a *App) setupLayout() {
 	a.accountListContainer = container.NewVBox()
 	scrollList := container.NewVScroll(a.accountListContainer)
 
-	// 5. Status Bar Footer
+	// 5. Status Bar Footer with Specular Keyline Border
 	a.statusBarLabel = widget.NewLabelWithStyle("Sẵn sàng", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 	statusBg := canvas.NewRectangle(ColorCard)
-	statusBg.CornerRadius = 4
+	statusBg.StrokeColor = ColorBorderSubtle
+	statusBg.StrokeWidth = 1
+	statusBg.CornerRadius = 6
 	bottomSection := container.NewStack(statusBg, container.NewPadded(a.statusBarLabel))
 
 	// Main Layout
