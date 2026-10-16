@@ -133,3 +133,32 @@
 - `E4-P1D-FALLBACK1`: Unit test verifying fallback to `RecycleLanguageServer` occurs only when `TriggerReauth` fails or LS is absent.
 - `E4-P1D-VERIFY1`: Integration test confirming `SwitchResult` returns success without window reload when RPC ReAuth succeeds.
 
+
+---
+
+## Phase 1 Execution Evidence
+
+### E1-P1B-OAUTH1: TokenData.UpdateTokens Invalidation of RawPayload
+- Source: `internal/model/types.go:168-187` & `internal/model/types_test.go:TestTokenData_UpdateTokens`.
+- Verification command: `go test -v ./internal/model/... -run TestTokenData_UpdateTokens` -> PASS (0.00s).
+- Evidence: `UpdateTokens` correctly replaces AccessToken, RefreshToken, IDToken, Expiry and resets `RawPayload = nil`. Subsequent `json.Marshal` produces valid dual-envelope JSON containing the refreshed access token and does not emit old RawPayload bytes.
+
+### E1-P1B-REFRESH1: Google OAuth Refresh Engine Implementation & Test Suite
+- Source: `internal/connector/oauth_refresher.go` & `internal/connector/oauth_refresher_test.go`.
+- Verification command: `go test -v ./internal/connector/... -run TestGoogleOAuthRefresher` -> PASS (5 sub-tests, 0.00s).
+- Tests passed:
+  - `TestGoogleOAuthRefresher_Success`: verifies HTTP POST form encoding with Google CloudCode client credentials and parsing of access_token, expires_in, token_type, and expiry.
+  - `TestGoogleOAuthRefresher_HttpError`: handles HTTP 400 with invalid_grant properly.
+  - `TestGoogleOAuthRefresher_NetworkFailure`: handles transport/network errors gracefully.
+  - `TestGoogleOAuthRefresher_MalformedJSON`: handles unparseable JSON without panicking.
+  - `TestGoogleOAuthRefresher_EmptyRefreshToken`: rejects empty refresh token with ErrEmptyRefreshToken.
+
+### E1-P1B-MGR1: Proactive Expiry Check & Disk/WinCred Auto-Refresh in SwitchAccount
+- Source: `internal/manager/account_manager.go:433-455` & `internal/manager/account_manager_test.go:TestSwitchAccount_ProactiveTokenRefresh`.
+- Verification command: `go test -v ./internal/manager/... -run TestSwitchAccount_ProactiveTokenRefresh` -> PASS (5.13s).
+- Evidence:
+  - Account with expired token triggers proactive refresh call via OAuthRefresher.
+  - Refreshed token is saved to account store on disk (`accounts_store/<email>.json`) with updated expiry.
+  - Refreshed token is written to Windows Credential Manager.
+  - Account with valid token (> 5 min left) does not trigger refresh.
+  - Network failure on refresh does not crash or abort, but proceeds gracefully with existing token.

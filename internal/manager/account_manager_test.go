@@ -521,3 +521,150 @@ func TestSwitchAccount_WithSessionContinuation(t *testing.T) {
 		t.Errorf("Expected result.ActiveThreads to contain thread-active-999, got %+v", result.ActiveThreads)
 	}
 }
+
+
+type mockOAuthRefresher struct {
+	callCount int
+	fn        func(ctx context.Context, refreshToken string) (*connector.TokenRefreshResult, error)
+}
+
+func (m *mockOAuthRefresher) RefreshToken(ctx context.Context, refreshToken string) (*connector.TokenRefreshResult, error) {
+	m.callCount++
+	if m.fn != nil {
+		return m.fn(ctx, refreshToken)
+	}
+	return &connector.TokenRefreshResult{
+		AccessToken:  "mock-new-access-token",
+		RefreshToken: refreshToken,
+		ExpiresIn:    3600,
+		Expiry:       time.Now().Add(1 * time.Hour),
+	}, nil
+}
+
+func TestSwitchAccount_ProactiveTokenRefresh(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, err := store.NewAccountStore(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed creating store: %v", err)
+	}
+
+	rel := reloader.NewSessionReloader()
+	rel.WindowFinder = func() ([]windows.HWND, error) {
+		return []windows.HWND{windows.HWND(101)}, nil
+	}
+	rel.ProcessKiller = func(ctx context.Context) error { return nil }
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       9999,
+			Port:      12345,
+			CSRFToken: "test-csrf-token",
+		}, nil
+	}
+
+	mgr, err := NewAccountManager(accStore, rel)
+	if err != nil {
+		t.Fatalf("Failed creating manager: %v", err)
+	}
+
+	var writtenToken *model.TokenData
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-active",
+				IDToken:     makeTestJWT("current@example.com"),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			writtenToken = token
+			return nil
+		},
+	)
+
+	mockRef := &mockOAuthRefresher{}
+	mgr.SetOAuthRefresher(mockRef)
+
+	// 1. Expired token -> must proactively refresh and save to store + WinCred
+	expiredEmail := "expired-user@example.com"
+	pastExpiry := time.Now().Add(-10 * time.Minute)
+	err = accStore.SaveAccount(expiredEmail, &model.TokenData{
+		AccessToken:  "stale-access-token",
+		RefreshToken: "valid-refresh-token",
+		Expiry:       pastExpiry,
+		IDToken:      makeTestJWT(expiredEmail),
+	})
+	if err != nil {
+		t.Fatalf("Failed saving expired account: %v", err)
+	}
+
+	res, err := mgr.SwitchAccount(context.Background(), expiredEmail, false)
+	if err != nil || !res.Success {
+		t.Fatalf("SwitchAccount failed for expired account: %v, res=%+v", err, res)
+	}
+
+	if mockRef.callCount != 1 {
+		t.Fatalf("Expected mockRefresher to be called 1 time, got %d", mockRef.callCount)
+	}
+	if writtenToken == nil || writtenToken.AccessToken != "mock-new-access-token" {
+		t.Fatalf("Expected fresh access token written to wincred, got %+v", writtenToken)
+	}
+
+	// Verify disk store was updated
+	diskToken, err := accStore.GetAccount(expiredEmail)
+	if err != nil {
+		t.Fatalf("Failed getting account from store: %v", err)
+	}
+	if diskToken.AccessToken != "mock-new-access-token" {
+		t.Errorf("Expected store to have fresh access token, got %s", diskToken.AccessToken)
+	}
+	if time.Until(diskToken.Expiry) < 50*time.Minute {
+		t.Errorf("Expected store token expiry to be updated to future, got %v", diskToken.Expiry)
+	}
+
+	// 2. Token with > 5 minutes remaining -> MUST NOT refresh
+	mockRef.callCount = 0
+	validEmail := "valid-user@example.com"
+	futureExpiry := time.Now().Add(30 * time.Minute)
+	_ = accStore.SaveAccount(validEmail, &model.TokenData{
+		AccessToken:  "valid-access-token",
+		RefreshToken: "valid-refresh-token",
+		Expiry:       futureExpiry,
+		IDToken:      makeTestJWT(validEmail),
+	})
+
+	resValid, err := mgr.SwitchAccount(context.Background(), validEmail, false)
+	if err != nil || !resValid.Success {
+		t.Fatalf("SwitchAccount failed for valid account: %v", err)
+	}
+	if mockRef.callCount != 0 {
+		t.Fatalf("Expected 0 refresh calls for valid token, got %d", mockRef.callCount)
+	}
+	if writtenToken.AccessToken != "valid-access-token" {
+		t.Errorf("Expected valid-access-token to be preserved, got %s", writtenToken.AccessToken)
+	}
+
+	// 3. Refresh failure (e.g. offline/network failure) -> graceful fallback, keeps existing token
+	mockRef.callCount = 0
+	mockRef.fn = func(ctx context.Context, refreshToken string) (*connector.TokenRefreshResult, error) {
+		return nil, errors.New("network unreachable")
+	}
+
+	offlineEmail := "offline-user@example.com"
+	_ = accStore.SaveAccount(offlineEmail, &model.TokenData{
+		AccessToken:  "offline-access-token",
+		RefreshToken: "offline-refresh-token",
+		Expiry:       time.Now().Add(-5 * time.Minute),
+		IDToken:      makeTestJWT(offlineEmail),
+	})
+
+	resOffline, err := mgr.SwitchAccount(context.Background(), offlineEmail, false)
+	if err != nil || !resOffline.Success {
+		t.Fatalf("SwitchAccount should proceed gracefully on refresh network error, got err=%v", err)
+	}
+	if mockRef.callCount != 1 {
+		t.Fatalf("Expected 1 refresh attempt, got %d", mockRef.callCount)
+	}
+	if writtenToken.AccessToken != "offline-access-token" {
+		t.Errorf("Expected existing token to be preserved on refresh failure, got %s", writtenToken.AccessToken)
+	}
+}

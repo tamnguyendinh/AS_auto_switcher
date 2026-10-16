@@ -165,6 +165,27 @@ func (t *TokenData) IsValid() bool {
 	return strings.TrimSpace(t.AccessToken) != "" || strings.TrimSpace(t.RefreshToken) != ""
 }
 
+// UpdateTokens updates the token fields and clears RawPayload to ensure subsequent JSON serialization
+// outputs the newly refreshed tokens.
+func (t *TokenData) UpdateTokens(accessToken, refreshToken, idToken string, expiry time.Time) {
+	if t == nil {
+		return
+	}
+	if accessToken != "" {
+		t.AccessToken = accessToken
+	}
+	if refreshToken != "" {
+		t.RefreshToken = refreshToken
+	}
+	if idToken != "" {
+		t.IDToken = idToken
+	}
+	if !expiry.IsZero() {
+		t.Expiry = expiry
+	}
+	t.RawPayload = nil
+}
+
 // AccountRecord represents a single account managed by Antigravity Switcher.
 type AccountRecord struct {
 	Email                  string       `json:"email"`

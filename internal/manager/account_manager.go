@@ -66,6 +66,7 @@ type AccountManager struct {
 	clientFinder  func(ctx context.Context) (*connector.Client, error)
 	wincredReader func() (*model.TokenData, error)
 	wincredWriter func(token *model.TokenData) error
+	oauthRefresher connector.OAuthRefresher
 }
 
 // NewAccountManager creates a fully initialized AccountManager with default production dependencies.
@@ -87,6 +88,7 @@ func NewAccountManager(accStore *store.AccountStore, sessionReloader *reloader.S
 		chromeDir:     scanner.GetDefaultChromeUserDataDir(),
 		wincredReader: wincred.ReadToken,
 		wincredWriter: wincred.WriteToken,
+		oauthRefresher: connector.NewGoogleOAuthRefresher(nil),
 		clientFinder: func(ctx context.Context) (*connector.Client, error) {
 			proc, err := connector.DiscoverLanguageServer()
 			if err != nil {
@@ -112,6 +114,13 @@ func (m *AccountManager) SetWincredHandlers(reader func() (*model.TokenData, err
 	defer m.mu.Unlock()
 	m.wincredReader = reader
 	m.wincredWriter = writer
+}
+
+// SetOAuthRefresher overrides the OAuth token refresher (useful for unit testing).
+func (m *AccountManager) SetOAuthRefresher(refresher connector.OAuthRefresher) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.oauthRefresher = refresher
 }
 
 // SetChromeDir overrides the Chrome User Data path.
@@ -380,6 +389,7 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	finder := m.clientFinder
 	writer := m.wincredWriter
 	rel := m.reloader
+	refresher := m.oauthRefresher
 	m.mu.RUnlock()
 
 	// 1. Probe live RAM / current active email
@@ -421,6 +431,23 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 			Duration:      time.Since(start),
 			ActiveThreads: activeThreads,
 		}, ErrTargetNotFound
+	}
+
+	// 4.1 Proactive Token Expiry Verification & Auto-Refresh (Slice 2 P1-B)
+	// If target token is expired or within 5 minutes of expiration, proactively refresh via Google OAuth
+	// and update both disk store and in-memory targetToken before writing to Windows Credential Manager.
+	if targetToken != nil && (targetToken.Expiry.IsZero() || time.Until(targetToken.Expiry) < 5*time.Minute) {
+		if targetToken.RefreshToken != "" {
+			activeRefresher := refresher
+			if activeRefresher == nil {
+				activeRefresher = connector.NewGoogleOAuthRefresher(nil)
+			}
+			refreshRes, refErr := activeRefresher.RefreshToken(ctx, targetToken.RefreshToken)
+			if refErr == nil && refreshRes != nil && refreshRes.AccessToken != "" {
+				targetToken.UpdateTokens(refreshRes.AccessToken, refreshRes.RefreshToken, refreshRes.IDToken, refreshRes.Expiry)
+				_ = m.store.SaveAccount(normTarget, targetToken)
+			}
+		}
 	}
 
 	// 5. Parity with Python core/state_resolver.py:380-425:

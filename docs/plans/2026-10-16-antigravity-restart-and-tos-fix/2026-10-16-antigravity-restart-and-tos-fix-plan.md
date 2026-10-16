@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-16`
-- Status: `in_progress (Slice 1 complete ➔ Next: Slice 2 P1-B)`
+- Status: `in_progress (Slice 1 & 2 complete ➔ Next: Slice 3 P1-C)`
 - Plan: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-plan.md`
 - Evidence: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-evidence.md`
 - Benchmark: `docs/plans/2026-10-16-antigravity-restart-and-tos-fix/2026-10-16-antigravity-restart-and-tos-fix-benchmark.md`
@@ -136,7 +136,7 @@ Theo điều tra chuyên sâu từ RCA `reports/architect/2026-10-16-antigravity
 
 ---
 
-#### - [ ] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine
+#### - [x] Slice 2 (P1-B): Proactive Token Expiry Verification & Google OAuth Refresh Engine
 
 - **Goal:** Xây dựng cơ chế chủ động kiểm tra thời hạn token và refresh token qua Google OAuth endpoint `https://oauth2.googleapis.com/token` trước khi ghi vào Windows Credential Manager hoặc nạp vào Language Server RAM. Triệt tiêu hoàn toàn sự cố nạp token chết gây crash loop.
 - **Scope Boundary:**
