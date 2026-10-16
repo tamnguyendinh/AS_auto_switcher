@@ -171,7 +171,7 @@ func (a *App) SwitchAccount(targetEmail string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		res, err := a.mgr.SwitchAccount(ctx, targetEmail, false)
+		res, err := a.mgr.SwitchAccount(ctx, targetEmail, false) // forceLogout = false: smooth zero-chrome hot-swap
 
 		fyne.Do(func() {
 			if err != nil {

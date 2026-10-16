@@ -262,13 +262,43 @@ func TestSwitchAccount(t *testing.T) {
 		},
 	)
 
+	// Mock language server to track whether AuthLogout is called (P0-02 verification)
+	var authLogoutCount int
+	mockActiveEmail := "current-user@example.com"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "AuthLogout") {
+			authLogoutCount++
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if strings.Contains(r.URL.Path, "GetUserStatus") || strings.Contains(r.URL.Path, "user_status") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"email":"` + mockActiveEmail + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	parts := strings.Split(server.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	client := connector.NewClientWithHTTP(&connector.ServerInfo{
+		PID:       9999,
+		Port:      port,
+		CSRFToken: "test-csrf-token",
+	}, server.Client())
+
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return client, nil
+	})
+
 	// 1. Switch to missing account -> fails
 	_, errMissing := mgr.SwitchAccount(context.Background(), "non-existent@example.com", false)
 	if errMissing == nil {
 		t.Fatal("Expected error switching to non-existent account, got nil")
 	}
 
-	// 2. Switch to target account -> succeeds
+	// 2. Switch to target account -> succeeds and MUST NOT call AuthLogout (P0-02 parity)
 	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
 	if err != nil {
 		t.Fatalf("SwitchAccount failed: %v", err)
@@ -282,8 +312,37 @@ func TestSwitchAccount(t *testing.T) {
 	if writtenToken == nil || writtenToken.AccessToken != "target-access-token" {
 		t.Errorf("Expected target token written to wincred, got %+v", writtenToken)
 	}
+	if authLogoutCount > 0 {
+		t.Fatalf("AuthLogout was invoked (%d times) during SwitchAccount! Expected AuthLogout to be bypassed (P0-02)", authLogoutCount)
+	}
+
+	// 2b. Verify default SwitchAccount (variadic, no forceLogout argument) also bypasses AuthLogout
+	authLogoutCount = 0
+	anotherEmail := "another-switch@example.com"
+	_ = accStore.SaveAccount(anotherEmail, &model.TokenData{
+		AccessToken: "another-access-token",
+		IDToken:     makeTestJWT(anotherEmail),
+	})
+	resDefault, err := mgr.SwitchAccount(context.Background(), anotherEmail)
+	if err != nil || !resDefault.Success {
+		t.Fatalf("Default SwitchAccount failed: %v", err)
+	}
+	if authLogoutCount > 0 {
+		t.Fatalf("AuthLogout was invoked (%d times) during default SwitchAccount! Expected AuthLogout to be bypassed", authLogoutCount)
+	}
+
+	// 2c. Verify that when forceLogout=true is explicitly requested, AuthLogout is called
+	authLogoutCount = 0
+	resForce, err := mgr.SwitchAccount(context.Background(), targetEmail, true)
+	if err != nil || !resForce.Success {
+		t.Fatalf("Force logout SwitchAccount failed: %v", err)
+	}
+	if authLogoutCount != 1 {
+		t.Fatalf("Expected AuthLogout to be invoked exactly once when forceLogout=true, got %d", authLogoutCount)
+	}
 
 	// 3. Switch to already active account -> no-op success
+	mockActiveEmail = targetEmail
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
 			return &model.TokenData{

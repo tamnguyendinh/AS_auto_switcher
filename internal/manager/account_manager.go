@@ -343,17 +343,25 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 	return overview, nil
 }
 
-// SwitchAccount performs a closed-loop 4-step hot-swap:
+// SwitchAccount performs a closed-loop hot-swap:
 // 1. Probe live RAM -> verify if already active on targetEmail (no-op).
 // 2. Auto-capture active session to ensure credentials are safe.
-// 3. Clear RAM via AuthLogout (unless skipLogout is true).
-// 4. Write target token from accounts_store/<email>.json to Windows Credential Manager.
-// 5. Pre-patch ToS in app_storage.json and trigger coordinated reauth/reload.
-func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, skipLogout bool) (*SwitchResult, error) {
+// 3. Load target token from store.
+// 4. Parity with Python core/state_resolver.py:380-425:
+//    Default is False (smooth zero-chrome hot-swap without OAuth popups).
+//    NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true!
+// 5. Write target token from accounts_store/<email>.json to Windows Credential Manager.
+// 6. Pre-patch ToS in app_storage.json and trigger coordinated reauth/reload.
+func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, forceLogout ...bool) (*SwitchResult, error) {
 	start := time.Now()
 	normTarget := strings.ToLower(strings.TrimSpace(targetEmail))
 	if normTarget == "" {
 		return nil, ErrEmptyTargetEmail
+	}
+
+	var shouldLogout bool
+	if len(forceLogout) > 0 {
+		shouldLogout = forceLogout[0]
 	}
 
 	m.mu.RLock()
@@ -394,8 +402,10 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}, ErrTargetNotFound
 	}
 
-	// 4. Clear RAM via AuthLogout if not skipLogout
-	if !skipLogout && client != nil {
+	// 4. Parity with Python core/state_resolver.py:380-425:
+	// Default is False (smooth zero-chrome hot-swap without OAuth popups).
+	// NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true!
+	if shouldLogout && client != nil {
 		_ = client.AuthLogout(ctx)
 	}
 

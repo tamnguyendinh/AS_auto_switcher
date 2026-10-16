@@ -88,7 +88,7 @@ func runCLI(mgr *manager.AccountManager, showStatus, showList, doCapture bool, s
 
 	if switchTarget != "" {
 		fmt.Printf("[INFO] Initiating hot-swap to target account: %s...\n", switchTarget)
-		res, err := mgr.SwitchAccount(ctx, switchTarget, false)
+		res, err := mgr.SwitchAccount(ctx, switchTarget, false) // forceLogout = false: smooth zero-chrome hot-swap
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[ERROR] Hot-swap failed: %v\n", err)
 			os.Exit(1)
