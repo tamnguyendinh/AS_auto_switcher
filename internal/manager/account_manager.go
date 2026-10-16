@@ -62,7 +62,6 @@ type AccountManager struct {
 	store         *store.AccountStore
 	reloader      *reloader.SessionReloader
 	chromeDir     string
-	blacklist     []string
 	clientFinder  func(ctx context.Context) (*connector.Client, error)
 	wincredReader func() (*model.TokenData, error)
 	wincredWriter func(token *model.TokenData) error
@@ -85,7 +84,6 @@ func NewAccountManager(accStore *store.AccountStore, sessionReloader *reloader.S
 		store:         accStore,
 		reloader:      sessionReloader,
 		chromeDir:     scanner.GetDefaultChromeUserDataDir(),
-		blacklist:     scanner.DefaultBlacklist,
 		wincredReader: wincred.ReadToken,
 		wincredWriter: wincred.WriteToken,
 		clientFinder: func(ctx context.Context) (*connector.Client, error) {
@@ -240,12 +238,11 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 
 	m.mu.RLock()
 	cDir := m.chromeDir
-	bList := m.blacklist
 	finder := m.clientFinder
 	m.mu.RUnlock()
 
 	// Discover Chrome accounts
-	chromeAccounts, _ := scanner.ScanChromeAccountDetails(cDir, bList)
+	chromeAccounts, _ := scanner.ScanChromeAccountDetails(cDir)
 
 	// Discover stored JSON accounts
 	storedEmails, _ := m.store.ListAccounts()

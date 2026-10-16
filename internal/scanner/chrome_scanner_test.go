@@ -36,30 +36,6 @@ func TestIsValidEmail(t *testing.T) {
 	}
 }
 
-func TestIsBlacklisted(t *testing.T) {
-	testCases := []struct {
-		email     string
-		blacklist []string
-		expected  bool
-	}{
-		{"anvien@gmail.com", nil, true},
-		{"ANVIEN@gmail.com", nil, true},
-		{"User.AnVien.2026@domain.com", nil, true},
-		{"prefix-anvien-suffix@gmail.com", []string{"anvien"}, true},
-		{"john.doe@gmail.com", nil, false},
-		{"developer@company.com", []string{"anvien"}, false},
-		{"corp@restricted.com", []string{"restricted"}, true},
-		{"clean@example.com", []string{"restricted"}, false},
-	}
-
-	for _, tc := range testCases {
-		actual := IsBlacklisted(tc.email, tc.blacklist)
-		if actual != tc.expected {
-			t.Errorf("IsBlacklisted(%q, %v) = %v; expected %v", tc.email, tc.blacklist, actual, tc.expected)
-		}
-	}
-}
-
 func TestExtractEmailsFromPreferences(t *testing.T) {
 	tmpDir := t.TempDir()
 	prefPath := filepath.Join(tmpDir, "Preferences")
@@ -97,7 +73,7 @@ func TestExtractEmailsFromPreferences(t *testing.T) {
 	}
 }
 
-func TestScanChromeAccountDetailsAndBlacklist(t *testing.T) {
+func TestScanChromeAccountDetails(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// 1. Create Local State
@@ -110,7 +86,7 @@ func TestScanChromeAccountDetailsAndBlacklist(t *testing.T) {
 					"last_downloaded_gaia_picture_url_with_size": "https://avatar.google.com/alpha.png",
 				},
 				"Profile 1": map[string]interface{}{
-					"user_name": "beta.anvien@gmail.com", // Blacklisted!
+					"user_name": "beta.anvien@gmail.com",
 					"gaia_name": "Beta Anvien",
 				},
 				"Profile 2": map[string]interface{}{
@@ -138,8 +114,8 @@ func TestScanChromeAccountDetailsAndBlacklist(t *testing.T) {
 				"full_name": "Delta User",
 			},
 			{
-				"email":     "blocked.ANVIEN.test@domain.com", // Blacklisted!
-				"full_name": "Blocked Account",
+				"email":     "owner.anvien.test@domain.com",
+				"full_name": "Owner Account",
 			},
 		},
 	}
@@ -157,20 +133,20 @@ func TestScanChromeAccountDetailsAndBlacklist(t *testing.T) {
 	_ = os.MkdirAll(ignoredDir, 0700)
 
 	// Run scanner
-	details, err := ScanChromeAccountDetails(tmpDir, []string{"anvien"})
+	details, err := ScanChromeAccountDetails(tmpDir)
 	if err != nil {
 		t.Fatalf("ScanChromeAccountDetails failed: %v", err)
 	}
 
-	// Verify blacklisted accounts were completely excluded
-	for _, acc := range details {
-		if IsBlacklisted(acc.Email, []string{"anvien"}) {
-			t.Errorf("Blacklisted account found in output: %s", acc.Email)
-		}
+	// Verify all valid accounts including ones containing anvien are discovered
+	expectedEmails := []string{
+		"alpha@gmail.com",
+		"beta.anvien@gmail.com",
+		"delta@gmail.com",
+		"epsilon@gmail.com",
+		"gamma@gmail.com",
+		"owner.anvien.test@domain.com",
 	}
-
-	// Verify expected accounts
-	expectedEmails := []string{"alpha@gmail.com", "delta@gmail.com", "epsilon@gmail.com", "gamma@gmail.com"}
 	var actualEmails []string
 	for _, acc := range details {
 		actualEmails = append(actualEmails, acc.Email)
@@ -181,7 +157,7 @@ func TestScanChromeAccountDetailsAndBlacklist(t *testing.T) {
 	}
 
 	// Verify ScanChromeProfiles helper returns same email list
-	profiles, err := ScanChromeProfiles(tmpDir, []string{"anvien"})
+	profiles, err := ScanChromeProfiles(tmpDir)
 	if err != nil {
 		t.Fatalf("ScanChromeProfiles failed: %v", err)
 	}
@@ -206,6 +182,21 @@ func TestScanChromeAccountDetailsAndBlacklist(t *testing.T) {
 	if alphaAcc.AvatarURL != "https://avatar.google.com/alpha.png" {
 		t.Errorf("alpha AvatarURL = %q; expected 'https://avatar.google.com/alpha.png'", alphaAcc.AvatarURL)
 	}
+
+	// Verify beta.anvien account is included and has correct metadata
+	var betaAcc *ChromeAccountInfo
+	for i := range details {
+		if details[i].Email == "beta.anvien@gmail.com" {
+			betaAcc = &details[i]
+			break
+		}
+	}
+	if betaAcc == nil {
+		t.Fatalf("beta.anvien@gmail.com not found in details")
+	}
+	if betaAcc.Name != "Beta Anvien" {
+		t.Errorf("beta Name = %q; expected 'Beta Anvien'", betaAcc.Name)
+	}
 }
 
 func TestLiveChromeDiscovery(t *testing.T) {
@@ -225,9 +216,6 @@ func TestLiveChromeDiscovery(t *testing.T) {
 	}
 
 	for _, email := range accounts {
-		if IsBlacklisted(email, DefaultBlacklist) {
-			t.Errorf("Live scan returned blacklisted email: %s", email)
-		}
 		if !IsValidEmail(email) {
 			t.Errorf("Live scan returned invalid email: %s", email)
 		}

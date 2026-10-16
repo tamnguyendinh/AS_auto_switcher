@@ -16,9 +16,6 @@ var EmailRegex = regexp.MustCompile(`^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9
 // EmailExtractRegex scans raw strings for potential Google/Workspace email occurrences.
 var EmailExtractRegex = regexp.MustCompile(`[a-zA-Z0-9_.+-]+@gmail\.com|[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+`)
 
-// DefaultBlacklist defines mandatory excluded account keywords.
-var DefaultBlacklist = []string{"anvien"}
-
 // ChromeAccountInfo holds rich metadata for a signed-in Google Chrome account.
 type ChromeAccountInfo struct {
 	Email      string `json:"email"`
@@ -56,22 +53,6 @@ func IsValidEmail(email string) bool {
 	}
 
 	return EmailRegex.MatchString(norm)
-}
-
-// IsBlacklisted performs strict case-insensitive filtering against blacklisted terms.
-func IsBlacklisted(email string, blacklist []string) bool {
-	if len(blacklist) == 0 {
-		blacklist = DefaultBlacklist
-	}
-
-	norm := strings.ToLower(strings.TrimSpace(email))
-	for _, term := range blacklist {
-		cleanTerm := strings.ToLower(strings.TrimSpace(term))
-		if cleanTerm != "" && strings.Contains(norm, cleanTerm) {
-			return true
-		}
-	}
-	return false
 }
 
 // ExtractEmailsFromPreferences extracts valid Google account emails from a Chrome profile Preferences file.
@@ -137,9 +118,8 @@ func ExtractEmailsFromPreferences(prefPath string) []string {
 	return emails
 }
 
-// ScanChromeAccountDetails scans all Chrome profiles and returns rich account details,
-// filtering out any accounts matching the blacklist.
-func ScanChromeAccountDetails(userDataDir string, blacklist []string) ([]ChromeAccountInfo, error) {
+// ScanChromeAccountDetails scans all Chrome profiles and returns rich account details.
+func ScanChromeAccountDetails(userDataDir string) ([]ChromeAccountInfo, error) {
 	targetDir := userDataDir
 	if targetDir == "" {
 		targetDir = GetDefaultChromeUserDataDir()
@@ -178,7 +158,7 @@ func ScanChromeAccountDetails(userDataDir string, blacklist []string) ([]ChromeA
 
 					userName, _ := pData["user_name"].(string)
 					norm := strings.ToLower(strings.TrimSpace(userName))
-					if !IsValidEmail(norm) || IsBlacklisted(norm, blacklist) {
+					if !IsValidEmail(norm) {
 						continue
 					}
 
@@ -241,7 +221,7 @@ func ScanChromeAccountDetails(userDataDir string, blacklist []string) ([]ChromeA
 					}
 					rawEmail, _ := accMap["email"].(string)
 					norm := strings.ToLower(strings.TrimSpace(rawEmail))
-					if !IsValidEmail(norm) || IsBlacklisted(norm, blacklist) {
+					if !IsValidEmail(norm) {
 						continue
 					}
 
@@ -286,7 +266,7 @@ func ScanChromeAccountDetails(userDataDir string, blacklist []string) ([]ChromeA
 					}
 					rawEmail, _ := accMap["email"].(string)
 					norm := strings.ToLower(strings.TrimSpace(rawEmail))
-					if !IsValidEmail(norm) || IsBlacklisted(norm, blacklist) {
+					if !IsValidEmail(norm) {
 						continue
 					}
 
@@ -324,7 +304,7 @@ func ScanChromeAccountDetails(userDataDir string, blacklist []string) ([]ChromeA
 		regexEmails := ExtractEmailsFromPreferences(prefPath)
 		for _, email := range regexEmails {
 			norm := strings.ToLower(strings.TrimSpace(email))
-			if !IsValidEmail(norm) || IsBlacklisted(norm, blacklist) {
+			if !IsValidEmail(norm) {
 				continue
 			}
 
@@ -342,7 +322,7 @@ func ScanChromeAccountDetails(userDataDir string, blacklist []string) ([]ChromeA
 	// Filter and convert to sorted slice
 	result := make([]ChromeAccountInfo, 0, len(accountsMap))
 	for _, acc := range accountsMap {
-		if IsValidEmail(acc.Email) && !IsBlacklisted(acc.Email, blacklist) {
+		if IsValidEmail(acc.Email) {
 			result = append(result, *acc)
 		}
 	}
@@ -354,10 +334,9 @@ func ScanChromeAccountDetails(userDataDir string, blacklist []string) ([]ChromeA
 	return result, nil
 }
 
-// ScanChromeProfiles scans Chrome profiles and returns a unique, sorted list of signed-in emails,
-// strictly excluding any blacklisted emails.
-func ScanChromeProfiles(userDataDir string, blacklist []string) ([]string, error) {
-	details, err := ScanChromeAccountDetails(userDataDir, blacklist)
+// ScanChromeProfiles scans Chrome profiles and returns a unique, sorted list of signed-in emails.
+func ScanChromeProfiles(userDataDir string) ([]string, error) {
+	details, err := ScanChromeAccountDetails(userDataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +348,7 @@ func ScanChromeProfiles(userDataDir string, blacklist []string) ([]string, error
 	return emails, nil
 }
 
-// GetChromeSignedInAccounts returns all signed-in Google accounts using DefaultBlacklist.
+// GetChromeSignedInAccounts returns all signed-in Google accounts found in Chrome profiles.
 func GetChromeSignedInAccounts(userDataDir string) ([]string, error) {
-	return ScanChromeProfiles(userDataDir, DefaultBlacklist)
+	return ScanChromeProfiles(userDataDir)
 }
