@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 
 	"antigravity-switch/internal/connector"
 	"antigravity-switch/internal/manager"
@@ -76,7 +77,7 @@ func TestNewAppAndInit(t *testing.T) {
 	if app.activeStatusLabel == nil || app.statusBarLabel == nil {
 		t.Fatal("expected status labels to be initialized")
 	}
-	if app.refreshBtn == nil || app.saveBtn == nil || app.failoverBtn == nil {
+	if app.refreshBtn == nil || app.saveBtn == nil || app.alwaysOnTopBtn == nil {
 		t.Fatal("expected control buttons to be initialized")
 	}
 
@@ -92,32 +93,75 @@ func TestNewAppAndInit(t *testing.T) {
 	}
 }
 
-func TestToggleAutoFailover(t *testing.T) {
+func TestToggleAlwaysOnTop(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	app := NewAppWithFyne(testApp, mgr)
 	app.Init()
 
-	if !app.autoFailover {
-		t.Error("expected autoFailover to be true initially")
+	if !app.IsAlwaysOnTop() {
+		t.Error("expected alwaysOnTop to be true initially")
+	}
+	if app.alwaysOnTopBtn.Text != "📌 Ghim: BẬT" {
+		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
+	}
+	if app.alwaysOnTopBtn.Importance != widget.HighImportance {
+		t.Errorf("unexpected button importance: %v", app.alwaysOnTopBtn.Importance)
 	}
 
 	// Toggle OFF
-	app.ToggleAutoFailover()
-	if app.autoFailover {
-		t.Error("expected autoFailover to be false after first toggle")
+	app.ToggleAlwaysOnTop()
+	if app.IsAlwaysOnTop() {
+		t.Error("expected alwaysOnTop to be false after first toggle")
 	}
-	if app.failoverBtn.Text != "⚡ Auto-Failover: TẮT" {
-		t.Errorf("unexpected button text: %s", app.failoverBtn.Text)
+	if app.alwaysOnTopBtn.Text != "📌 Ghim: TẮT" {
+		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
+	}
+	if app.alwaysOnTopBtn.Importance != widget.MediumImportance {
+		t.Errorf("unexpected button importance: %v", app.alwaysOnTopBtn.Importance)
 	}
 
 	// Toggle ON
-	app.ToggleAutoFailover()
-	if !app.autoFailover {
-		t.Error("expected autoFailover to be true after second toggle")
+	app.ToggleAlwaysOnTop()
+	if !app.IsAlwaysOnTop() {
+		t.Error("expected alwaysOnTop to be true after second toggle")
 	}
-	if app.failoverBtn.Text != "⚡ Auto-Failover: BẬT" {
-		t.Errorf("unexpected button text: %s", app.failoverBtn.Text)
+	if app.alwaysOnTopBtn.Text != "📌 Ghim: BẬT" {
+		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
+	}
+	if app.alwaysOnTopBtn.Importance != widget.HighImportance {
+		t.Errorf("unexpected button importance: %v", app.alwaysOnTopBtn.Importance)
+	}
+
+	// Direct SetAlwaysOnTop verification
+	app.SetAlwaysOnTop(false)
+	if app.IsAlwaysOnTop() {
+		t.Error("expected alwaysOnTop to be false after SetAlwaysOnTop(false)")
+	}
+	if app.alwaysOnTopBtn.Text != "📌 Ghim: TẮT" {
+		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
+	}
+
+	app.SetAlwaysOnTop(true)
+	if !app.IsAlwaysOnTop() {
+		t.Error("expected alwaysOnTop to be true after SetAlwaysOnTop(true)")
+	}
+	if app.alwaysOnTopBtn.Text != "📌 Ghim: BẬT" {
+		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
+	}
+
+	// Verify window interface SetAlwaysOnTop
+	if customWin, ok := app.Window().(Window); ok {
+		customWin.SetAlwaysOnTop(false)
+		if customWin.IsAlwaysOnTop() {
+			t.Error("expected customWin.IsAlwaysOnTop to be false")
+		}
+		customWin.SetAlwaysOnTop(true)
+		if !customWin.IsAlwaysOnTop() {
+			t.Error("expected customWin.IsAlwaysOnTop to be true")
+		}
+	} else {
+		t.Fatal("expected app.Window() to implement Window interface")
 	}
 }
 

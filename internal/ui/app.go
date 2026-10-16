@@ -17,13 +17,13 @@ import (
 
 // App manages the Fyne GUI runtime lifecycle, state, and UI bindings.
 type App struct {
-	mu           sync.RWMutex
-	app          fyne.App
-	win          fyne.Window
-	mgr          *manager.AccountManager
-	overview     *manager.AccountOverview
-	autoFailover bool
-	isBusy       bool
+	mu          sync.RWMutex
+	app         fyne.App
+	win         Window
+	mgr         *manager.AccountManager
+	overview    *manager.AccountOverview
+	alwaysOnTop bool
+	isBusy      bool
 
 	// Dynamic UI Widgets
 	activeDotContainer   *fyne.Container
@@ -33,7 +33,7 @@ type App struct {
 	statusBarLabel       *widget.Label
 	refreshBtn           *widget.Button
 	saveBtn              *widget.Button
-	failoverBtn          *widget.Button
+	alwaysOnTopBtn       *widget.Button
 	headerCard           *fyne.Container
 }
 
@@ -54,9 +54,9 @@ func NewApp(mgr *manager.AccountManager) (*App, error) {
 // NewAppWithFyne creates a GUI Application instance with an injected Fyne app instance (useful for unit testing).
 func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	a := &App{
-		app:          fyneApp,
-		mgr:          mgr,
-		autoFailover: true,
+		app:         fyneApp,
+		mgr:         mgr,
+		alwaysOnTop: true,
 	}
 	return a
 }
@@ -66,9 +66,14 @@ func (a *App) Init() {
 	a.app.Settings().SetTheme(&SwitcherTheme{})
 	a.app.SetIcon(AppLogoResource)
 
-	a.win = a.app.NewWindow("⚡ Antigravity Multi-Account Switcher")
-	a.win.SetIcon(AppLogoResource)
-	a.win.Resize(fyne.NewSize(440, 560))
+	rawWin := a.app.NewWindow("⚡ Antigravity Multi-Account Switcher")
+	rawWin.SetIcon(AppLogoResource)
+	rawWin.Resize(fyne.NewSize(440, 560))
+
+	a.win = newSwitcherWindow(rawWin)
+	if a.alwaysOnTop {
+		a.win.SetAlwaysOnTop(true)
+	}
 
 	a.setupLayout()
 	a.setupTray()
@@ -241,30 +246,64 @@ func (a *App) SaveSession() {
 	}()
 }
 
-// ToggleAutoFailover switches the state of the auto-failover flag.
-func (a *App) ToggleAutoFailover() {
+// ToggleAlwaysOnTop switches the state of the Always-on-Top flag.
+func (a *App) ToggleAlwaysOnTop() {
 	a.mu.Lock()
-	a.autoFailover = !a.autoFailover
-	enabled := a.autoFailover
+	a.alwaysOnTop = !a.alwaysOnTop
+	enabled := a.alwaysOnTop
 	a.mu.Unlock()
 
-	if a.failoverBtn != nil {
+	if a.win != nil {
+		a.win.SetAlwaysOnTop(enabled)
+	}
+
+	if a.alwaysOnTopBtn != nil {
 		if enabled {
-			a.failoverBtn.SetText("⚡ Auto-Failover: BẬT")
-			a.failoverBtn.Importance = widget.HighImportance
+			a.alwaysOnTopBtn.SetText("📌 Ghim: BẬT")
+			a.alwaysOnTopBtn.Importance = widget.HighImportance
 		} else {
-			a.failoverBtn.SetText("⚡ Auto-Failover: TẮT")
-			a.failoverBtn.Importance = widget.LowImportance
+			a.alwaysOnTopBtn.SetText("📌 Ghim: TẮT")
+			a.alwaysOnTopBtn.Importance = widget.MediumImportance
 		}
+		a.alwaysOnTopBtn.Refresh()
 	}
 
 	if a.statusBarLabel != nil {
 		if enabled {
-			a.statusBarLabel.SetText("Đã kích hoạt chế độ tự động chuyển đổi Quota (Auto-Failover)")
+			a.statusBarLabel.SetText("Đã bật chế độ Ghim trên cùng (Always on Top)")
 		} else {
-			a.statusBarLabel.SetText("Đã tắt chế độ tự động chuyển đổi Quota")
+			a.statusBarLabel.SetText("Đã tắt chế độ Ghim trên cùng")
 		}
 	}
+}
+
+// SetAlwaysOnTop explicitly sets the Always-on-Top state.
+func (a *App) SetAlwaysOnTop(enabled bool) {
+	a.mu.Lock()
+	a.alwaysOnTop = enabled
+	a.mu.Unlock()
+
+	if a.win != nil {
+		a.win.SetAlwaysOnTop(enabled)
+	}
+
+	if a.alwaysOnTopBtn != nil {
+		if enabled {
+			a.alwaysOnTopBtn.SetText("📌 Ghim: BẬT")
+			a.alwaysOnTopBtn.Importance = widget.HighImportance
+		} else {
+			a.alwaysOnTopBtn.SetText("📌 Ghim: TẮT")
+			a.alwaysOnTopBtn.Importance = widget.MediumImportance
+		}
+		a.alwaysOnTopBtn.Refresh()
+	}
+}
+
+// IsAlwaysOnTop returns whether Always-on-Top is currently enabled.
+func (a *App) IsAlwaysOnTop() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.alwaysOnTop
 }
 
 // updateUI refreshes all visual components based on the given overview.
