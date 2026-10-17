@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,7 +9,19 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
+
+	"antigravity-switch/internal/telemetry"
 )
+
+func assertColorMatches(t *testing.T, themeName, tokenName string, actual color.Color, expected color.NRGBA) {
+	t.Helper()
+	r, g, b, a := actual.RGBA()
+	expR, expG, expB, expA := expected.RGBA()
+	if r != expR || g != expG || b != expB || a != expA {
+		t.Errorf("[%s] %s mismatch: got RGBA(%d,%d,%d,%d), expected RGBA(%d,%d,%d,%d)",
+			themeName, tokenName, r, g, b, a, expR, expG, expB, expA)
+	}
+}
 
 func TestThemeColorTokens(t *testing.T) {
 	// 1. DarkPalette
@@ -43,47 +56,29 @@ func TestThemeColorTokens(t *testing.T) {
 }
 
 func TestThemeInterfaceImplementations(t *testing.T) {
-	themes := map[string]fyne.Theme{
-		ThemeDark:  &DarkTheme{},
-		ThemeLight: &LightTheme{},
-		ThemeWarm:  &WarmTheme{},
+	themes := map[string]struct {
+		theme   fyne.Theme
+		palette ThemePalette
+	}{
+		ThemeDark:  {theme: &DarkTheme{}, palette: DarkPalette},
+		ThemeLight: {theme: &LightTheme{}, palette: LightPalette},
+		ThemeWarm:  {theme: &WarmTheme{}, palette: WarmPalette},
 	}
 
-	for name, th := range themes {
+	for name, tc := range themes {
 		t.Run(name, func(t *testing.T) {
-			// Color tests
-			bg := th.Color(theme.ColorNameBackground, theme.VariantDark)
-			if bg == nil {
-				t.Errorf("%s: ColorNameBackground returned nil", name)
-			}
-			fg := th.Color(theme.ColorNameForeground, theme.VariantDark)
-			if fg == nil {
-				t.Errorf("%s: ColorNameForeground returned nil", name)
-			}
-			pri := th.Color(theme.ColorNamePrimary, theme.VariantDark)
-			if pri == nil {
-				t.Errorf("%s: ColorNamePrimary returned nil", name)
-			}
-			card := th.Color(theme.ColorNameInputBackground, theme.VariantDark)
-			if card == nil {
-				t.Errorf("%s: ColorNameInputBackground returned nil", name)
-			}
-			btn := th.Color(theme.ColorNameButton, theme.VariantDark)
-			if btn == nil {
-				t.Errorf("%s: ColorNameButton returned nil", name)
-			}
-			succ := th.Color(theme.ColorNameSuccess, theme.VariantDark)
-			if succ == nil {
-				t.Errorf("%s: ColorNameSuccess returned nil", name)
-			}
-			warn := th.Color(theme.ColorNameWarning, theme.VariantDark)
-			if warn == nil {
-				t.Errorf("%s: ColorNameWarning returned nil", name)
-			}
-			errC := th.Color(theme.ColorNameError, theme.VariantDark)
-			if errC == nil {
-				t.Errorf("%s: ColorNameError returned nil", name)
-			}
+			th := tc.theme
+			pal := tc.palette
+
+			// Exact RGBA token checks per FINDING-03
+			assertColorMatches(t, name, "Background", th.Color(theme.ColorNameBackground, theme.VariantDark), pal.Background)
+			assertColorMatches(t, name, "InputBackground (Card)", th.Color(theme.ColorNameInputBackground, theme.VariantDark), pal.Card)
+			assertColorMatches(t, name, "Button", th.Color(theme.ColorNameButton, theme.VariantDark), pal.Button)
+			assertColorMatches(t, name, "Foreground (Text)", th.Color(theme.ColorNameForeground, theme.VariantDark), pal.Text)
+			assertColorMatches(t, name, "Primary", th.Color(theme.ColorNamePrimary, theme.VariantDark), pal.Primary)
+			assertColorMatches(t, name, "Success", th.Color(theme.ColorNameSuccess, theme.VariantDark), pal.Success)
+			assertColorMatches(t, name, "Warning", th.Color(theme.ColorNameWarning, theme.VariantDark), pal.Warning)
+			assertColorMatches(t, name, "Error", th.Color(theme.ColorNameError, theme.VariantDark), pal.Danger)
 
 			// Font, Icon, Size
 			font := th.Font(fyne.TextStyle{})
@@ -160,28 +155,33 @@ func TestAppSetThemeRuntime(t *testing.T) {
 	app := NewAppWithFyne(fyneApp, nil)
 	tmpDir := t.TempDir()
 	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
+	app.SetQuotaCache(telemetry.NewQuotaCache(filepath.Join(tmpDir, ".quota_cache.json")))
 
 	app.Init()
 
 	if app.CurrentTheme() != ThemeDark {
 		t.Errorf("expected initial theme %s, got %s", ThemeDark, app.CurrentTheme())
 	}
+	assertColorMatches(t, "Init(Dark)", "headerBg.FillColor", app.headerBg.FillColor, DarkPalette.Card)
 
-	// Switch to Light
+	// Switch to Light (UI-TR-06)
 	app.SetTheme(ThemeLight)
 	if app.CurrentTheme() != ThemeLight {
 		t.Errorf("expected theme %s, got %s", ThemeLight, app.CurrentTheme())
 	}
+	assertColorMatches(t, "SetTheme(Light)", "headerBg.FillColor", app.headerBg.FillColor, LightPalette.Card)
 
-	// Switch to Warm
+	// Switch to Warm (UI-TR-07)
 	app.SetTheme(ThemeWarm)
 	if app.CurrentTheme() != ThemeWarm {
 		t.Errorf("expected theme %s, got %s", ThemeWarm, app.CurrentTheme())
 	}
+	assertColorMatches(t, "SetTheme(Warm)", "headerBg.FillColor", app.headerBg.FillColor, WarmPalette.Card)
 
 	// Switch back to Dark
 	app.SetTheme(ThemeDark)
 	if app.CurrentTheme() != ThemeDark {
 		t.Errorf("expected theme %s, got %s", ThemeDark, app.CurrentTheme())
 	}
+	assertColorMatches(t, "SetTheme(Dark)", "headerBg.FillColor", app.headerBg.FillColor, DarkPalette.Card)
 }

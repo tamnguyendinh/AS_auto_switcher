@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -81,8 +82,14 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 		currentTheme:    ThemeDark,
 	}
 
+	cachePath := telemetry.DefaultQuotaCachePath
+	if mgr != nil && mgr.Store() != nil && mgr.Store().GetStoreDir() != "" {
+		cachePath = filepath.Join(mgr.Store().GetStoreDir(), ".quota_cache.json")
+		a.preferencesPath = filepath.Join(mgr.Store().GetStoreDir(), ".ui_preferences.json")
+	}
+
 	// 1. Initialize Quota Cache
-	a.quotaCache = telemetry.NewQuotaCache(telemetry.DefaultQuotaCachePath)
+	a.quotaCache = telemetry.NewQuotaCache(cachePath)
 	_ = a.quotaCache.LoadFromDisk()
 
 	// 2. Load UI Preferences (Theme)
@@ -118,6 +125,10 @@ func (a *App) SetPreferencesPath(path string) {
 func (a *App) SetTelemetryPool(pool *telemetry.TelemetryPool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.autoLoop != nil {
+		a.autoLoop.Stop()
+		a.autoLoop = nil
+	}
 	a.telemetryPool = pool
 	if pool != nil && pool.Cache() != nil {
 		a.quotaCache = pool.Cache()
@@ -136,6 +147,11 @@ func (a *App) CurrentTheme() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.currentTheme
+}
+
+// IsQuotaRefreshing returns whether a quota refresh pass is actively in flight.
+func (a *App) IsQuotaRefreshing() bool {
+	return a.isQuotaRefreshing.Load()
 }
 
 // SetTheme switches the application theme at runtime and persists the preference.
@@ -274,14 +290,17 @@ func (a *App) RefreshAllQuota() {
 	}
 
 	go func() {
+		completed := false
 		defer func() {
-			a.isQuotaRefreshing.Store(false)
-			fyne.Do(func() {
-				if a.quotaRefreshAllBtn != nil {
-					a.quotaRefreshAllBtn.SetText("📊 Làm mới Quota Tất cả")
-					a.quotaRefreshAllBtn.Enable()
-				}
-			})
+			if !completed {
+				fyne.Do(func() {
+					if a.quotaRefreshAllBtn != nil {
+						a.quotaRefreshAllBtn.SetText("📊 Làm mới Quota Tất cả")
+						a.quotaRefreshAllBtn.Enable()
+					}
+					a.isQuotaRefreshing.Store(false)
+				})
+			}
 		}()
 
 		if a.telemetryPool == nil {
@@ -300,6 +319,7 @@ func (a *App) RefreshAllQuota() {
 		a.lastQuotaRefresh = time.Now()
 		a.mu.Unlock()
 
+		completed = true
 		fyne.Do(func() {
 			a.mu.RLock()
 			overview := a.overview
@@ -341,8 +361,11 @@ func (a *App) RefreshSingleQuota(email string) {
 	}
 
 	go func() {
+		completed := false
 		defer func() {
-			a.isQuotaRefreshing.Store(false)
+			if !completed {
+				a.isQuotaRefreshing.Store(false)
+			}
 		}()
 
 		if a.telemetryPool == nil {
@@ -357,6 +380,7 @@ func (a *App) RefreshSingleQuota(email string) {
 			_ = a.quotaCache.SaveToDisk()
 		}
 
+		completed = true
 		fyne.Do(func() {
 			a.mu.RLock()
 			overview := a.overview
@@ -690,5 +714,4 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 func (a *App) Logo() fyne.Resource {
 	return AppLogoResource
 }
-
 

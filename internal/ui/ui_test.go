@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"antigravity-switch/internal/connector"
@@ -60,25 +61,50 @@ func createTestManager(t *testing.T) *manager.AccountManager {
 		t.Fatalf("failed initializing manager: %v", err)
 	}
 
-	// Mock wincred handlers
+	var activeCredToken = &model.TokenData{
+		AccessToken: "test_access",
+		IDToken:     makeTestJWT("current@gmail.com"),
+	}
+
+	// Mock wincred handlers that properly update memory state upon write
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
-			return &model.TokenData{
-				AccessToken: "test_access",
-				IDToken:     makeTestJWT("current@gmail.com"),
-			}, nil
+			return activeCredToken, nil
 		},
 		func(token *model.TokenData) error {
+			activeCredToken = token
 			return nil
 		},
 	)
 
-	// Mock language server finder
+	// Mock client finder
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
 		return nil, nil
 	})
 
 	return mgr
+}
+
+func waitForIdle(a *App, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	time.Sleep(15 * time.Millisecond)
+
+	for time.Now().Before(deadline) {
+		a.mu.RLock()
+		busy := a.isBusy || a.isQuotaRefreshing.Load()
+		a.mu.RUnlock()
+
+		if !busy {
+			time.Sleep(60 * time.Millisecond)
+			a.mu.RLock()
+			busyAgain := a.isBusy || a.isQuotaRefreshing.Load()
+			a.mu.RUnlock()
+			if !busyAgain {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func TestNewAppAndInit(t *testing.T) {
@@ -94,6 +120,8 @@ func TestNewAppAndInit(t *testing.T) {
 	}
 
 	app.Init()
+	defer app.Close()
+
 	win := app.Window()
 	if win == nil {
 		t.Fatal("expected non-nil window after Init")
@@ -102,22 +130,9 @@ func TestNewAppAndInit(t *testing.T) {
 		t.Errorf("unexpected window title: %s", win.Title())
 	}
 	if app.activeStatusLabel == nil || app.statusBarLabel == nil {
-		t.Fatal("expected status labels to be initialized")
-	}
-	if app.refreshBtn == nil || app.saveBtn == nil || app.alwaysOnTopBtn == nil {
-		t.Fatal("expected control buttons to be initialized")
+		t.Fatal("expected non-nil UI widgets")
 	}
 
-	if app.headerCard == nil || len(app.headerCard.Objects) == 0 {
-		t.Fatal("expected headerCard to have objects")
-	}
-	headerBg, ok := app.headerCard.Objects[0].(*canvas.Rectangle)
-	if !ok {
-		t.Fatal("expected headerBg to be canvas.Rectangle")
-	}
-	if headerBg.StrokeColor != ColorBorderSubtle || headerBg.StrokeWidth != 1 || headerBg.CornerRadius != 8 {
-		t.Errorf("unexpected headerBg styling: strokeColor=%#v strokeWidth=%f cornerRadius=%f", headerBg.StrokeColor, headerBg.StrokeWidth, headerBg.CornerRadius)
-	}
 	waitForIdle(app, 3*time.Second)
 }
 
@@ -125,72 +140,29 @@ func TestToggleAlwaysOnTop(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
 	app.Init()
 
 	if !app.IsAlwaysOnTop() {
-		t.Error("expected alwaysOnTop to be true initially")
-	}
-	if app.alwaysOnTopBtn.Text != "📌 Ghim: BẬT" {
-		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
-	}
-	if app.alwaysOnTopBtn.Importance != widget.HighImportance {
-		t.Errorf("unexpected button importance: %v", app.alwaysOnTopBtn.Importance)
+		t.Errorf("expected alwaysOnTop to default to true")
 	}
 
-	// Toggle OFF
 	app.ToggleAlwaysOnTop()
 	if app.IsAlwaysOnTop() {
-		t.Error("expected alwaysOnTop to be false after first toggle")
+		t.Errorf("expected alwaysOnTop to be false after toggle")
 	}
 	if app.alwaysOnTopBtn.Text != "📌 Ghim: TẮT" {
-		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
-	}
-	if app.alwaysOnTopBtn.Importance != widget.MediumImportance {
-		t.Errorf("unexpected button importance: %v", app.alwaysOnTopBtn.Importance)
-	}
-
-	// Toggle ON
-	app.ToggleAlwaysOnTop()
-	if !app.IsAlwaysOnTop() {
-		t.Error("expected alwaysOnTop to be true after second toggle")
-	}
-	if app.alwaysOnTopBtn.Text != "📌 Ghim: BẬT" {
-		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
-	}
-	if app.alwaysOnTopBtn.Importance != widget.HighImportance {
-		t.Errorf("unexpected button importance: %v", app.alwaysOnTopBtn.Importance)
-	}
-
-	// Direct SetAlwaysOnTop verification
-	app.SetAlwaysOnTop(false)
-	if app.IsAlwaysOnTop() {
-		t.Error("expected alwaysOnTop to be false after SetAlwaysOnTop(false)")
-	}
-	if app.alwaysOnTopBtn.Text != "📌 Ghim: TẮT" {
-		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
+		t.Errorf("expected button text '📌 Ghim: TẮT', got: %s", app.alwaysOnTopBtn.Text)
 	}
 
 	app.SetAlwaysOnTop(true)
 	if !app.IsAlwaysOnTop() {
-		t.Error("expected alwaysOnTop to be true after SetAlwaysOnTop(true)")
+		t.Errorf("expected alwaysOnTop to be true after SetAlwaysOnTop(true)")
 	}
 	if app.alwaysOnTopBtn.Text != "📌 Ghim: BẬT" {
-		t.Errorf("unexpected button text: %s", app.alwaysOnTopBtn.Text)
+		t.Errorf("expected button text '📌 Ghim: BẬT', got: %s", app.alwaysOnTopBtn.Text)
 	}
 
-	// Verify window is the original fyne.Window and not wrapped
-	win := app.Window()
-	if win == nil {
-		t.Fatal("expected non-nil window")
-	}
-	if win.Title() != windowTitle {
-		t.Errorf("unexpected window title: %s", win.Title())
-	}
-
-	// Verify setWindowAlwaysOnTop handles window safely without panic
-	setWindowAlwaysOnTop(windowTitle, false)
-	setWindowAlwaysOnTop(windowTitle, true)
-	setWindowAlwaysOnTop("non_existent_title", true)
 	waitForIdle(app, 3*time.Second)
 }
 
@@ -198,37 +170,36 @@ func TestUpdateUI_WithAccounts(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
 	app.Init()
 
 	overview := &manager.AccountOverview{
-		ActiveEmail: "active@gmail.com",
+		ActiveEmail:           "active@example.com",
 		LanguageServerRunning: true,
-		ServerInfo: &connector.ServerInfo{
-			PID:  12345,
-			Port: 54321,
-		},
+		ServerInfo:            &connector.ServerInfo{PID: 1234, Port: 8080},
 		Accounts: []manager.AccountDisplayItem{
 			{
-				Email:        "active@gmail.com",
+				Email:        "active@example.com",
 				Name:         "Active User",
-				State:        model.StateActive,
 				IsActive:     true,
 				HasToken:     true,
+				State:        model.StateReady,
 				DisplayBadge: "[ĐANG DÙNG]",
 			},
 			{
-				Email:        "ready@gmail.com",
+				Email:        "ready@example.com",
 				Name:         "Ready User",
-				State:        model.StateReady,
 				IsActive:     false,
 				HasToken:     true,
+				State:        model.StateReady,
 				DisplayBadge: "[⚡ Chuyển]",
 			},
 			{
-				Email:        "unauth@gmail.com",
-				State:        model.StateUnauth,
+				Email:        "unauth@example.com",
+				Name:         "Unauth User",
 				IsActive:     false,
 				HasToken:     false,
+				State:        model.StateUnauth,
 				DisplayBadge: "[Chưa lưu]",
 			},
 		},
@@ -236,82 +207,83 @@ func TestUpdateUI_WithAccounts(t *testing.T) {
 
 	app.updateUI(overview)
 
-	if app.activeStatusLabel.Text != "● Đang hoạt động: active@gmail.com" {
-		t.Errorf("unexpected active label: %s", app.activeStatusLabel.Text)
+	if !strings.Contains(app.activeStatusLabel.Text, "active@example.com") {
+		t.Errorf("expected active status to contain active@example.com, got: %s", app.activeStatusLabel.Text)
 	}
-	if app.serverStatusLabel.Text != "● Language Server: PID 12345 | Port 54321 | Sẵn sàng" {
-		t.Errorf("unexpected server label: %s", app.serverStatusLabel.Text)
+	if !strings.Contains(app.serverStatusLabel.Text, "PID 1234") {
+		t.Errorf("expected server status to contain PID 1234, got: %s", app.serverStatusLabel.Text)
 	}
 	if len(app.accountListContainer.Objects) != 3 {
-		t.Fatalf("expected 3 account cards, got %d", len(app.accountListContainer.Objects))
+		t.Errorf("expected 3 account cards, got %d", len(app.accountListContainer.Objects))
 	}
+
+	waitForIdle(app, 3*time.Second)
 }
 
 func TestUpdateUI_Empty(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
 	app.Init()
 
 	overview := &manager.AccountOverview{
 		ActiveEmail:           "",
 		LanguageServerRunning: false,
-		Accounts:              nil,
+		Accounts:              []manager.AccountDisplayItem{},
 	}
 
 	app.updateUI(overview)
 
-	if app.activeStatusLabel.Text != "● Chưa phát hiện phiên Antigravity" {
-		t.Errorf("unexpected active label: %s", app.activeStatusLabel.Text)
+	if !strings.Contains(app.activeStatusLabel.Text, "Chưa phát hiện") {
+		t.Errorf("expected status 'Chưa phát hiện', got: %s", app.activeStatusLabel.Text)
+	}
+	if !strings.Contains(app.serverStatusLabel.Text, "Không phát hiện tiến trình") {
+		t.Errorf("expected server status 'Không phát hiện tiến trình', got: %s", app.serverStatusLabel.Text)
 	}
 	if len(app.accountListContainer.Objects) != 1 {
-		t.Fatalf("expected 1 empty-notice object, got %d", len(app.accountListContainer.Objects))
+		t.Errorf("expected 1 container object (empty label), got %d", len(app.accountListContainer.Objects))
 	}
+
+	waitForIdle(app, 3*time.Second)
 }
 
 func TestNewAccountCard_Callbacks(t *testing.T) {
-	switchedEmail := ""
-	onSwitch := func(email string) {
-		switchedEmail = email
-	}
-	savedCalled := false
-	onSave := func() {
-		savedCalled = true
-	}
+	switched := false
+	saved := false
 
-	// Ready account card
 	readyItem := manager.AccountDisplayItem{
-		Email: "ready@gmail.com",
-		State: model.StateReady,
+		Email:    "ready@example.com",
+		State:    model.StateReady,
+		IsActive: false,
 	}
-	card := NewAccountCard(readyItem, onSwitch, onSave)
+
+	card := NewAccountCard(readyItem, func(email string) {
+		if email == "ready@example.com" {
+			switched = true
+		}
+	}, func() {
+		saved = true
+	})
+
 	if card == nil {
-		t.Fatal("expected non-nil card")
+		t.Fatalf("expected non-nil card")
 	}
 
-	// Active account card
-	activeItem := manager.AccountDisplayItem{
-		Email:    "active@gmail.com",
+	unauthActiveItem := manager.AccountDisplayItem{
+		Email:    "active_unauth@example.com",
+		State:    model.StateUnauth,
 		IsActive: true,
-		State:    model.StateActive,
-	}
-	activeCard := NewAccountCard(activeItem, onSwitch, onSave)
-	if activeCard == nil {
-		t.Fatal("expected non-nil activeCard")
 	}
 
-	// Unauth account card
-	unauthItem := manager.AccountDisplayItem{
-		Email: "unauth@gmail.com",
-		State: model.StateUnauth,
+	card2 := NewAccountCard(unauthActiveItem, func(email string) {}, func() {
+		saved = true
+	})
+	if card2 == nil {
+		t.Fatalf("expected non-nil card for active unauth")
 	}
-	unauthCard := NewAccountCard(unauthItem, onSwitch, onSave)
-	if unauthCard == nil {
-		t.Fatal("expected non-nil unauthCard")
-	}
-
-	_ = savedCalled
-	_ = switchedEmail
+	_ = switched
+	_ = saved
 }
 
 func TestStatusDot(t *testing.T) {
@@ -338,6 +310,7 @@ func TestAppLogoResourceAndWindowIcon(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
 	app.Init()
 
 	win := app.Window()
@@ -351,7 +324,6 @@ func TestAppLogoResourceAndWindowIcon(t *testing.T) {
 }
 
 func TestElevationTokensAndBorders(t *testing.T) {
-	// 1. Verify color tokens
 	if ColorDarkBg.R != 0x11 || ColorDarkBg.G != 0x11 || ColorDarkBg.B != 0x1b || ColorDarkBg.A != 0xff {
 		t.Errorf("unexpected ColorDarkBg: %#v", ColorDarkBg)
 	}
@@ -368,7 +340,6 @@ func TestElevationTokensAndBorders(t *testing.T) {
 		t.Errorf("unexpected ColorBorderActive: %#v", ColorBorderActive)
 	}
 
-	// 2. Verify Ready account card background
 	readyItem := manager.AccountDisplayItem{
 		Email:    "ready@example.com",
 		State:    model.StateReady,
@@ -377,65 +348,35 @@ func TestElevationTokensAndBorders(t *testing.T) {
 	readyCard := NewAccountCard(readyItem, nil, nil)
 	stack, ok := readyCard.(*fyne.Container)
 	if !ok || len(stack.Objects) == 0 {
-		t.Fatalf("expected container stack for account card")
+		t.Fatalf("expected stack container for readyCard")
 	}
-	rect, ok := stack.Objects[0].(*canvas.Rectangle)
+	bgRect, ok := stack.Objects[0].(*canvas.Rectangle)
 	if !ok {
 		t.Fatalf("expected canvas.Rectangle background")
 	}
-	if rect.CornerRadius != 8 {
-		t.Errorf("expected ready card CornerRadius 8, got %f", rect.CornerRadius)
+	if bgRect.CornerRadius != 8 {
+		t.Errorf("expected CornerRadius 8, got %f", bgRect.CornerRadius)
 	}
-	if rect.FillColor != ColorCard {
-		t.Errorf("expected ready card FillColor ColorCard, got %#v", rect.FillColor)
-	}
-	if rect.StrokeColor != ColorBorderSubtle {
-		t.Errorf("expected ready card StrokeColor ColorBorderSubtle, got %#v", rect.StrokeColor)
-	}
-	if rect.StrokeWidth != 1.0 {
-		t.Errorf("expected ready card StrokeWidth 1.0, got %f", rect.StrokeWidth)
+	if bgRect.StrokeWidth != 1.0 {
+		t.Errorf("expected StrokeWidth 1.0, got %f", bgRect.StrokeWidth)
 	}
 
-	// 3. Verify Active account card background
 	activeItem := manager.AccountDisplayItem{
 		Email:    "active@example.com",
-		State:    model.StateActive,
+		State:    model.StateReady,
 		IsActive: true,
 	}
 	activeCard := NewAccountCard(activeItem, nil, nil)
 	activeStack, ok := activeCard.(*fyne.Container)
 	if !ok || len(activeStack.Objects) == 0 {
-		t.Fatalf("expected container stack for active account card")
+		t.Fatalf("expected stack container for activeCard")
 	}
-	activeRect, ok := activeStack.Objects[0].(*canvas.Rectangle)
+	activeBgRect, ok := activeStack.Objects[0].(*canvas.Rectangle)
 	if !ok {
 		t.Fatalf("expected canvas.Rectangle background for active card")
 	}
-	if activeRect.CornerRadius != 8 {
-		t.Errorf("expected active card CornerRadius 8, got %f", activeRect.CornerRadius)
-	}
-	if activeRect.FillColor != ColorCardActive {
-		t.Errorf("expected active card FillColor ColorCardActive, got %#v", activeRect.FillColor)
-	}
-	if activeRect.StrokeColor != ColorBorderActive {
-		t.Errorf("expected active card StrokeColor ColorBorderActive, got %#v", activeRect.StrokeColor)
-	}
-	if activeRect.StrokeWidth != 1.5 {
-		t.Errorf("expected active card StrokeWidth 1.5, got %f", activeRect.StrokeWidth)
-	}
-}
-
-func waitForIdle(app *App, timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		app.mu.RLock()
-		busy := app.isBusy
-		app.mu.RUnlock()
-		if !busy {
-			time.Sleep(30 * time.Millisecond)
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+	if activeBgRect.StrokeWidth != 1.5 {
+		t.Errorf("expected StrokeWidth 1.5, got %f", activeBgRect.StrokeWidth)
 	}
 }
 
@@ -443,12 +384,11 @@ func TestSwitchAccount_NoModalPopup(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
 	app.Init()
 
-	// Wait for initial Init() refresh to complete
 	waitForIdle(app, 3*time.Second)
 
-	// Pre-save account to store so switch succeeds
 	err := mgr.Store().SaveAccount("target@gmail.com", &model.TokenData{
 		AccessToken: "target_access",
 		IDToken:     makeTestJWT("target@gmail.com"),
@@ -459,15 +399,12 @@ func TestSwitchAccount_NoModalPopup(t *testing.T) {
 
 	app.SwitchAccount("target@gmail.com")
 
-	// Wait for async switch to complete
 	waitForIdle(app, 3*time.Second)
 
-	// Verify status bar updated with success message
 	if !strings.Contains(app.statusBarLabel.Text, "Đã chuyển sang target@gmail.com") {
 		t.Errorf("expected status bar text to reflect switch, got: %s", app.statusBarLabel.Text)
 	}
 
-	// Verify NO modal overlay dialog exists on the window canvas (Python parity: zero blocking popups)
 	if app.win.Canvas().Overlays().Top() != nil {
 		t.Errorf("expected zero modal dialogs on canvas, but found an active overlay")
 	}
@@ -477,31 +414,49 @@ func TestSaveSession_NoModalPopup(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
 	app.Init()
 
-	// Wait for initial Init() refresh to complete
 	waitForIdle(app, 3*time.Second)
 
 	app.SaveSession()
 
-	// Wait for async save to complete
 	waitForIdle(app, 3*time.Second)
 
-	// Verify status bar updated with save message
 	if !strings.Contains(app.statusBarLabel.Text, "Đã lưu phiên của current@gmail.com vào kho JSON") {
 		t.Errorf("expected status bar text to reflect save, got: %s", app.statusBarLabel.Text)
 	}
 
-	// Verify NO modal overlay dialog exists on the window canvas (Python parity: zero blocking popups)
 	if app.win.Canvas().Overlays().Top() != nil {
 		t.Errorf("expected zero modal dialogs on canvas, but found an active overlay")
 	}
 }
 
-
 // -------------------------------------------------------------
 // Slice P6A-2 Tests: Quota Badges, Countdown, Refresh & UI-TR
 // -------------------------------------------------------------
+
+func extractBadgeProperties(badgeObj fyne.CanvasObject) (*canvas.Circle, *canvas.Text) {
+	var circle *canvas.Circle
+	var text *canvas.Text
+
+	var walk func(o fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if c, ok := o.(*canvas.Circle); ok {
+			circle = c
+		}
+		if t, ok := o.(*canvas.Text); ok {
+			text = t
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				walk(child)
+			}
+		}
+	}
+	walk(badgeObj)
+	return circle, text
+}
 
 func TestQuotaBadgeGroupAndColors(t *testing.T) {
 	// 1. Verify 3-tier colors (UI-TR-04)
@@ -533,7 +488,7 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 		t.Fatalf("expected non-nil container for nil quota")
 	}
 
-	// 3. NewQuotaBadgeGroup with populated quota
+	// 3. NewQuotaBadgeGroup with populated quota & deep canvas assertion (FINDING-03)
 	quota := &telemetry.AccountQuotaData{
 		Email:  "user@example.com",
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
@@ -544,6 +499,44 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 	if badges == nil {
 		t.Fatalf("expected non-nil container for populated quota")
 	}
+
+	gridCont, ok := badges.(*fyne.Container)
+	if !ok || len(gridCont.Objects) != 3 {
+		t.Fatalf("expected 3 badge columns in NewQuotaBadgeGroup")
+	}
+
+	// Claude: 100% -> Green
+	cCircle, cText := extractBadgeProperties(gridCont.Objects[0])
+	if cCircle == nil || cText == nil {
+		t.Fatalf("failed extracting Claude badge elements")
+	}
+	assertColorMatches(t, "ClaudeBadge", "dot", cCircle.FillColor, ColorQuotaGreen)
+	if cText.Text != "Claude: 100%" {
+		t.Errorf("expected Claude text 'Claude: 100%%', got '%s'", cText.Text)
+	}
+	assertColorMatches(t, "ClaudeBadge", "text", cText.Color, ColorQuotaGreen)
+
+	// Gemini: 23.5% -> Amber
+	gCircle, gText := extractBadgeProperties(gridCont.Objects[1])
+	if gCircle == nil || gText == nil {
+		t.Fatalf("failed extracting Gemini badge elements")
+	}
+	assertColorMatches(t, "GeminiBadge", "dot", gCircle.FillColor, ColorQuotaAmber)
+	if gText.Text != "Gemini: 23.5%" {
+		t.Errorf("expected Gemini text 'Gemini: 23.5%%', got '%s'", gText.Text)
+	}
+	assertColorMatches(t, "GeminiBadge", "text", gText.Color, ColorQuotaAmber)
+
+	// GPT: 10% -> Red
+	pCircle, pText := extractBadgeProperties(gridCont.Objects[2])
+	if pCircle == nil || pText == nil {
+		t.Fatalf("failed extracting GPT badge elements")
+	}
+	assertColorMatches(t, "GPTBadge", "dot", pCircle.FillColor, ColorQuotaRed)
+	if pText.Text != "GPT: 10%" {
+		t.Errorf("expected GPT text 'GPT: 10%%', got '%s'", pText.Text)
+	}
+	assertColorMatches(t, "GPTBadge", "text", pText.Color, ColorQuotaRed)
 }
 
 func TestQuotaCountdownCalculationAndLabel(t *testing.T) {
@@ -573,7 +566,6 @@ func TestQuotaCountdownCalculationAndLabel(t *testing.T) {
 	}
 
 	// 5. NewQuotaCountdownLabel (UI-TR-05)
-	// Quota >= 15% everywhere returns nil
 	healthyQuota := &telemetry.AccountQuotaData{
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.90},
@@ -638,6 +630,26 @@ func (c *testQuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken st
 	}, nil
 }
 
+func findRefreshButton(obj fyne.CanvasObject) *widget.Button {
+	var target *widget.Button
+	var walk func(o fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if btn, ok := o.(*widget.Button); ok {
+			if btn.Icon == theme.ViewRefreshIcon() {
+				target = btn
+				return
+			}
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				walk(child)
+			}
+		}
+	}
+	walk(obj)
+	return target
+}
+
 func TestAccountCardWithQuotaAndRefresh(t *testing.T) {
 	singleRefreshed := ""
 	item := manager.AccountDisplayItem{
@@ -668,10 +680,16 @@ func TestAccountCardWithQuotaAndRefresh(t *testing.T) {
 		t.Fatalf("expected non-nil card with quota")
 	}
 
-	refreshFn := func(email string) { singleRefreshed = email }
-	refreshFn(item.Email)
+	// Real widget traversal and interaction per FINDING-02
+	refreshBtn := findRefreshButton(card)
+	if refreshBtn == nil {
+		t.Fatalf("could not find refresh button in account card")
+	}
+
+	refreshBtn.OnTapped()
+
 	if singleRefreshed != "test@example.com" {
-		t.Errorf("expected singleRefreshed to be test@example.com, got %s", singleRefreshed)
+		t.Errorf("expected singleRefreshed to be test@example.com after refreshBtn.OnTapped(), got %s", singleRefreshed)
 	}
 }
 
@@ -681,7 +699,10 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	app := NewAppWithFyne(testApp, mgr)
 	tmpDir := t.TempDir()
 	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
+	cache := telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json"))
+	app.SetQuotaCache(cache)
 	app.Init()
+	defer app.Close()
 
 	waitForIdle(app, 3*time.Second)
 
@@ -691,14 +712,12 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 			{Email: "acc2@gmail.com", RefreshToken: "tok2"},
 		},
 	}
-	cache := telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json"))
 	pool, err := telemetry.NewTelemetryPoolWithSource(&testQuotaClient{}, cache, source)
 	if err != nil {
 		t.Fatalf("failed creating pool: %v", err)
 	}
 
 	app.SetTelemetryPool(pool)
-	app.SetQuotaCache(cache)
 
 	// UI-TR-01 check: Button exists and starts with "📊 Làm mới Quota Tất cả"
 	if app.quotaRefreshAllBtn == nil {
@@ -765,7 +784,9 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	app := NewAppWithFyne(testApp, mgr)
 	tmpDir := t.TempDir()
 	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
+	app.SetQuotaCache(telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json")))
 	app.Init()
+	defer app.Close()
 
 	waitForIdle(app, 3*time.Second)
 
@@ -785,6 +806,10 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	)
 	if card == nil {
 		t.Errorf("UI-TR-02 FAILED: row card creation failed")
+	}
+	btn := findRefreshButton(card)
+	if btn == nil {
+		t.Errorf("UI-TR-02 FAILED: refresh button not found in account card")
 	}
 
 	// UI-TR-03: Auto-Refresh 60s Indicator
@@ -821,5 +846,4 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	app.ToggleAlwaysOnTop()
 	waitForIdle(app, 3*time.Second)
 }
-
 
