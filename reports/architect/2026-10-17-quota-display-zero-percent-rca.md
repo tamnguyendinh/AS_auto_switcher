@@ -4,8 +4,8 @@
 **Ngày thực hiện:** 2026-10-17  
 **Làn đảm nhiệm:** Senior System Architect (Kiến Trúc Sư Hệ Thống)  
 **Cơ quan chỉ đạo:** CEO Agent (Thread ID: `01a14378-4a08-77c1-88d5-666ad8c3592d`)  
-**Thẩm quyền & Căn cứ:** Chỉ đạo trực tiếp từ Human Owner, hình ảnh bằng chứng thực tế `reports/problem/images/screenshot_1792236267.png`, mã nguồn Go (`internal/ui/`, `internal/telemetry/`, `internal/store/`, `internal/connector/`, `cmd/switcher/`), bộ nhớ đệm `accounts_store/.quota_cache.json`, và runtime thực tế của Antigravity `language_server.exe`.  
-**Trạng thái thẩm tra:** HOÀN TẤT & ĐỐI SOÁT BẰNG CHỨNG THỰC NGHIỆM 100% (ZERO SPECULATION)
+**Thẩm quyền & Phê duyệt:** Chỉ đạo và phê duyệt trực tiếp từ **Human Owner** (2026-10-17 18:42), hình ảnh bằng chứng thực tế `reports/problem/images/screenshot_1792236267.png`, mã nguồn Go (`internal/ui/`, `internal/telemetry/`, `internal/store/`, `internal/connector/`, `cmd/switcher/`), bộ nhớ đệm `accounts_store/.quota_cache.json`, và runtime thực tế của Antigravity `language_server.exe`.  
+**Trạng thái thẩm tra:** HOÀN TẤT & ĐÃ ĐỐI SOÁT THỰC NGHIỆM 100% — ĐÃ ĐƯỢC HUMAN OWNER PHÊ DUYỆT ĐỊNH HƯỚNG SỬA LỖI
 
 ---
 
@@ -286,78 +286,39 @@ telemetry.QuotaClient.RetrieveUserQuota(ctx, token)
 
 ---
 
-## 5. Đề Xuất Giải Pháp Kỹ Thuật Sửa Lỗi Toàn Diện (Architectural Remedy Specification)
+## 5. Chỉ Thị Kỹ Thuật Cụ Thể Được Human Owner Phê Duyệt (Directive for Coder Lane)
 
-Để khắc phục triệt để và bảo đảm tính chịu lỗi cao theo tiêu chuẩn Production, Kiến trúc sư ban hành đặc tả giải pháp 5 trụ cột kỹ thuật cho Coder Lane triển khai:
+Căn cứ thảo luận và phê duyệt trực tiếp từ Human Owner vào lúc 18:42 ngày 2026-10-17, Coder Lane được yêu cầu tiến hành chỉnh sửa mã nguồn sản phẩm theo đúng 4 điểm cốt lõi sau:
 
-### Trụ cột 1: Bổ sung Header `User-Agent: antigravity/2.24.0` (Root Protocol Fix)
-Trong `internal/telemetry/client.go`:
-- Khai báo hằng số chuẩn:
-  ```go
-  const DefaultUserAgent = "antigravity/2.24.0"
-  ```
-- Thêm trường `userAgent string` vào struct `QuotaClient`. Khởi tạo mặc định `DefaultUserAgent`.
+### Điểm 1: Sửa Header phía Client (`internal/telemetry/client.go`)
+- Bổ sung cố định `User-Agent: antigravity/2.24.0` vào mọi HTTP request gửi tới Google Cloud Code endpoint.
+- Khai báo hằng số `DefaultUserAgent = "antigravity/2.24.0"`.
 - Trong hàm `RetrieveUserQuota`:
   ```go
-  req.Header.Set("User-Agent", c.userAgent)
+  req.Header.Set("User-Agent", "antigravity/2.24.0")
   ```
-- Kiểm tra tính tương thích ngược trong unit test với mock server.
+- **Kết quả nghiệm thu:** Toàn bộ 7/7 tài khoản khi quét qua Google API đều nhận mã HTTP 200 OK và lấy đúng số % thực tế.
 
-### Trụ cột 2: Phân tách Trạng thái Lỗi (`StatusError`) khỏi Trạng thái Hết Quota (`Depleted`) trên UI
-Trong `internal/ui/quota_badge.go` & `internal/ui/widgets.go`:
-- Trong hàm `NewQuotaBadgeGroup(quota *telemetry.AccountQuotaData)`:
-  Kiểm tra thêm:
-  ```go
-  if quota == nil {
-      // Hiển thị --% (Màu xám/Muted)
-  }
-  if quota.Status == telemetry.StatusError {
-      // Hiển thị trạng thái lỗi kết nối:
-      // Claude: [!] | Gemini: [!] | GPT: [!] (Màu cam Warning hoặc xám Muted có tooltip/nhãn lỗi)
-      // HOẶC hiển thị nhãn: "Lỗi kết nối Quota" thay vì hiển thị 0%
-  }
+### Điểm 2: Sửa logic hiển thị UI (`internal/ui/quota_badge.go`)
+- Phân định rõ ràng giữa "Hết hạn ngạch thật (0%)" và "Lỗi kết nối (Error)".
+- Nếu tài khoản bị lỗi (`quota.Status == telemetry.StatusError` hoặc `quota.ErrorMessage != ""`):
+  - Hiển thị nhãn: `[!] Lỗi kết nối` (màu cam Warning hoặc xám Muted).
+  - Tuyệt đối **không hiển thị 0% màu đỏ**.
+  - **Bỏ hoàn toàn cảnh báo "Sắp cạn"** (trong `NewQuotaCountdownLabel`, nếu `Status == StatusError` thì trả về `nil`).
+
+### Điểm 3: Hiển thị lỗi trung thực trên Status Bar (`internal/telemetry/pool.go` & `internal/ui/app.go`)
+- Trong `TelemetryPool.PollAll()`: Theo dõi số lượng tài khoản thành công và số lượng tài khoản thất bại.
+- Trong `App.RefreshAllQuota()`: Nếu có tài khoản bị lỗi mạng thì thanh trạng thái dưới cùng phải báo rõ:
+  ```text
+  "Quét quota: X tài khoản thành công, Y tài khoản lỗi"
   ```
-- Trong hàm `NewQuotaCountdownLabel(quota *telemetry.AccountQuotaData)`:
-  **BẮT BUỘC bỏ qua** nếu `quota.Status == telemetry.StatusError` hoặc `quota.ErrorMessage != ""`:
-  ```go
-  if quota == nil || quota.Status == telemetry.StatusError {
-      return nil
-  }
-  ```
-  Điều này triệt tiêu hoàn toàn cảnh báo sai lệch *"Sắp cạn (Đang chờ thông tin hồi phục)"* khi hệ thống gặp lỗi mạng hoặc lỗi phân quyền.
+  để người dùng nắm được trạng thái kết nối thực tế.
 
-### Trụ cột 3: Xử lý Lỗi Toàn Diện & Phản Hồi Trực Quan (Eliminate Error Swallowing)
-1. **Trong `internal/telemetry/pool.go`:**
-   - Thay đổi `PollAll` để gom góp các lỗi con (aggregate errors) hoặc đếm số lượng tài khoản lỗi:
-     ```go
-     // Trả về error tổng hợp nếu có ít nhất một tài khoản bị lỗi,
-     // hoặc trả về chi tiết thống kê (successCount, failCount).
-     ```
-2. **Trong `internal/ui/app.go`:**
-   - Khi `RefreshAllQuota` hoàn tất:
-     Đếm trong `results` số tài khoản `Status == StatusError`.
-     Nếu có lỗi, hiển thị cảnh báo rõ ràng trên thanh trạng thái:
-     `"Làm mới quota: X thành công, Y lỗi kết nối (Xem chi tiết)"`.
-   - Lưu trữ `lastErrorMessage` để hiển thị dialog cảnh báo nếu người dùng bấm thủ công.
-
-### Trụ cột 4: Kiến Trúc Thu Thập Quota Lai (Hybrid Quota Telemetry Engine)
-Tận dụng phát hiện đột phá về Connect-RPC của `language_server.exe`:
-- **Đối với Tài khoản Đang Hoạt Động (Active Account):**
-  Ưu tiên gọi trực tiếp `http://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary` thông qua `internal/connector/Client`.
-  - Ưu điểm: Phản hồi siêu tốc (~45 ms), không cần kết nối mạng internet, không tiêu tốn token refresh, không phụ thuộc vào IP/proxy bên ngoài.
-  - Dự phòng: Nếu `language_server.exe` không chạy hoặc RPC trả về lỗi, tự động fallback sang `v1internal:retrieveUserQuota` của Google.
-- **Đối với Các Tài khoản Còn Lại Trong Kho (Inactive Accounts):**
-  Tiếp tục truy vấn song song qua worker pool tới `daily-cloudcode-pa.googleapis.com` có Header `User-Agent: antigravity/2.24.0`.
-
-### Trụ cột 5: Chuẩn hóa Tuyệt Đối Đường Dẫn Cache (Absolute Cache Path Invariant)
-Trong `internal/telemetry/cache.go`:
-- Thay thế relative constant `DefaultQuotaCachePath` bằng hàm giải quyết đường dẫn động hoặc khởi tạo mặc định liên kết với `store.GetDefaultStoreDir()`:
-  ```go
-  func GetDefaultQuotaCachePath() string {
-      return filepath.Join(store.GetDefaultStoreDir(), ".quota_cache.json")
-  }
-  ```
-- Triệt tiêu 100% tình trạng sinh tệp rác `.quota_cache.json` ở các thư mục con hoặc khi thực thi từ shortcut.
+### Điểm 4: Cơ chế Quota Lai (Hybrid Telemetry Engine)
+- **Tài khoản đang chạy (Active Account):** Ưu tiên đọc siêu tốc qua Connect-RPC của `language_server.exe` trên localhost:
+  `http://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary`
+  thông qua `connector.Client`.
+- **Tài khoản phụ còn lại trong kho (Inactive Accounts):** Quét song song qua Google Cloud Code API với `User-Agent: antigravity/2.24.0`.
 
 ---
 
@@ -366,10 +327,9 @@ Trong `internal/telemetry/cache.go`:
 | Hạng mục cần thực hiện | Làn đảm nhiệm | Tiêu chuẩn nghiệm thu |
 |---|:---:|---|
 | **Patch Code Telemetry Client** | Coder | Thêm `User-Agent: antigravity/2.24.0` vào `internal/telemetry/client.go`. Chạy test suite `internal/telemetry` pass 100%. |
-| **Patch UI Quota Badges & Labels** | Coder | Chặn hiển thị 0% và chặn dòng cảnh báo khi `Status == StatusError` trong `internal/ui/quota_badge.go`. |
-| **Patch Error Propagation** | Coder | Không nuốt lỗi trong `internal/telemetry/pool.go` và hiển thị trạng thái lỗi chuẩn xác trên GUI `internal/ui/app.go`. |
-| **Patch Absolute Cache Path** | Coder | Chuẩn hóa `DefaultQuotaCachePath` thông qua `store.GetDefaultStoreDir()`. |
-| **Triển khai Hybrid RPC (Khuyến nghị)** | Coder | Tích hợp đọc quota của active account qua `LanguageServerClient.RetrieveUserQuotaSummary`. |
+| **Patch UI Quota Badges & Labels** | Coder | Hiển thị `[!] Lỗi kết nối` khi `Status == StatusError`, triệt tiêu nhãn 0% đỏ và cảnh báo "Sắp cạn" giả mạo trong `internal/ui/quota_badge.go`. |
+| **Patch Status Bar Error Notification** | Coder | Báo rõ "Quét quota: X thành công, Y lỗi" trên thanh trạng thái trong `internal/ui/app.go`. |
+| **Triển khai Hybrid Quota Engine** | Coder | Tích hợp đọc quota của active account qua `LanguageServerClient.RetrieveUserQuotaSummary`. |
 | **Kiểm Thử Thực Nghiệm & Visual QA** | QA | Khởi chạy GUI thực tế: xác nhận các tài khoản hiển thị hạn ngạch thật (90-100% màu xanh) thay vì 0% màu đỏ. |
 | **Nghiệm Thu Toàn Diện** | Supervisor | Rà soát zero-regression trên toàn bộ 9 packages, build binary thành công. |
 
@@ -378,7 +338,7 @@ Trong `internal/telemetry/cache.go`:
 ## 7. Kết luận của Kiến trúc sư (Architect Verdict)
 
 - **Kết luận:** Nguyên nhân gốc rễ dẫn đến lỗi hiển thị Quota 0% trên Fyne GUI đã được **làm sáng tỏ 100% với đầy đủ bằng chứng thực nghiệm và đối soát nhị phân**.
-- **Nguyên nhân cốt lõi:** Google Cloud Code API gateway chặn yêu cầu bằng HTTP 403 do thiếu Header `User-Agent: antigravity/2.24.0`, kết hợp với việc Fyne GUI diễn dịch nhầm struct lỗi zero-value `0.0` thành hạn ngạch cạn kiệt và nuốt toàn bộ thông báo lỗi.
-- **Phương án giải quyết:** 5 trụ cột kỹ thuật nêu trên là giải pháp kiến trúc tối ưu, triệt để và an toàn nhất để bàn giao cho Coder Lane thực hiện.
+- **Định hướng giải pháp:** Đã được **Human Owner phê duyệt trực tiếp**.
+- **Yêu cầu hành động:** CEO điều phối Coder Lane bắt tay vào sửa code theo đúng 4 điểm chỉ thị kỹ thuật tại Mục 5.
 
-**TRẠNG THÁI KIẾN TRÚC: APPROVED & READY FOR OWNER / CEO REVIEW**
+**TRẠNG THÁI KIẾN TRÚC: APPROVED BY HUMAN OWNER & READY FOR CODER FIX**
