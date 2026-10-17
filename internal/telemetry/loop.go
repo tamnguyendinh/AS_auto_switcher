@@ -134,7 +134,7 @@ func (l *AutoTelemetryLoop) poll() {
 	pollCtx, cancel := context.WithTimeout(baseCtx, 10*time.Second)
 	defer cancel()
 
-	results, err := l.pool.PollAll(pollCtx)
+	results, _, _, err := l.pool.PollAll(pollCtx)
 	if err == nil {
 		l.onUpdateMu.RLock()
 		cb := l.onUpdate

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"encoding/base64"
 	"encoding/json"
 	"path/filepath"
@@ -847,3 +848,125 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	waitForIdle(app, 3*time.Second)
 }
 
+
+
+func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
+	errQuota := &telemetry.AccountQuotaData{
+		Email:        "err@example.com",
+		Status:       telemetry.StatusError,
+		ErrorMessage: "server returned status 403",
+		Claude:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
+		Gemini:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
+		GPT:          telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
+	}
+
+	// 1. NewQuotaBadgeGroup with StatusError must render [!] Lỗi kết nối and NEVER 0% red
+	badges := NewQuotaBadgeGroup(errQuota)
+	if badges == nil {
+		t.Fatalf("expected non-nil container for error quota badges")
+	}
+
+	gridCont, ok := badges.(*fyne.Container)
+	if !ok || len(gridCont.Objects) == 0 {
+		t.Fatalf("expected container with objects in NewQuotaBadgeGroup")
+	}
+
+	// Assert that first column is the error badge
+	errHBox, ok := gridCont.Objects[0].(*fyne.Container)
+	if !ok {
+		t.Fatalf("expected *fyne.Container for error badge")
+	}
+
+	hasErrorText := false
+	hasMutedColor := false
+	for _, obj := range errHBox.Objects {
+		if txt, ok := obj.(*canvas.Text); ok {
+			if strings.Contains(txt.Text, "[!] Lỗi kết nối") {
+				hasErrorText = true
+			}
+			if txt.Color == ColorQuotaMuted {
+				hasMutedColor = true
+			}
+			if strings.Contains(txt.Text, "0%") {
+				t.Errorf("CRITICAL VIOLATION: error badge must NEVER display 0%%, got: %s", txt.Text)
+			}
+		}
+	}
+	if !hasErrorText {
+		t.Errorf("expected error badge to contain '[!] Lỗi kết nối'")
+	}
+	if !hasMutedColor {
+		t.Errorf("expected error badge text color to be ColorQuotaMuted")
+	}
+
+	// 2. NewQuotaCountdownLabel with StatusError must return nil (NO "Sắp cạn" warning)
+	lbl := NewQuotaCountdownLabel(errQuota)
+	if lbl != nil {
+		t.Errorf("CRITICAL VIOLATION: countdown label must be nil when Status is StatusError, got: %#v", lbl)
+	}
+
+	// 3. BuildActiveQuotaSummary with StatusError must return [!] Lỗi kết nối
+	summary := BuildActiveQuotaSummary(errQuota)
+	if !strings.Contains(summary, "[!] Lỗi kết nối") {
+		t.Errorf("expected active quota summary to report '[!] Lỗi kết nối', got: %s", summary)
+	}
+	if strings.Contains(summary, "0%") {
+		t.Errorf("CRITICAL VIOLATION: active quota summary must NEVER display 0%% when in error status, got: %s", summary)
+	}
+}
+
+func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
+	mgr := createTestManager(t)
+	testApp := test.NewApp()
+	app := NewAppWithFyne(testApp, mgr)
+	tmpDir := t.TempDir()
+
+	cache := telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json"))
+	source := &testAccountSource{
+		accounts: []telemetry.AccountTokenInfo{
+			{Email: "ok@gmail.com", RefreshToken: "tok_ok"},
+			{Email: "err@gmail.com", RefreshToken: ""},
+		},
+	}
+	client := &testQuotaClient{
+		quota: &telemetry.AccountQuotaData{
+			Email:  "ok@gmail.com",
+			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+			GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+		},
+	}
+	pool, err := telemetry.NewTelemetryPoolWithSource(client, cache, source)
+	if err != nil {
+		t.Fatalf("failed creating pool: %v", err)
+	}
+
+	// Set local quota fetcher so err@gmail.com returns error and ok@gmail.com succeeds
+	pool.SetLocalQuotaFetcher(func(ctx context.Context, email string) (*telemetry.AccountQuotaData, error) {
+		if email == "ok@gmail.com" {
+			return &telemetry.AccountQuotaData{
+				Email:  email,
+				Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+				Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+				GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+				Status: telemetry.StatusPristine,
+			}, nil
+		}
+		return nil, errors.New("simulated network failure")
+	})
+
+	app.SetTelemetryPool(pool)
+	app.Init()
+	defer app.Close()
+
+	waitForIdle(app, 3*time.Second)
+	app.RefreshAllQuota()
+	waitForIdle(app, 3*time.Second)
+
+	if app.statusBarLabel != nil {
+		txt := app.statusBarLabel.Text
+		if !strings.Contains(txt, "Quét quota: 1 thành công, 1 lỗi") {
+			t.Errorf("expected status bar text 'Quét quota: 1 thành công, 1 lỗi', got: '%s'", txt)
+		}
+	}
+}

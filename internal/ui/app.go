@@ -310,7 +310,7 @@ func (a *App) RefreshAllQuota() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		results, err := a.telemetryPool.PollAll(ctx)
+		_, successCount, errorCount, err := a.telemetryPool.PollAll(ctx)
 		if a.quotaCache != nil {
 			_ = a.quotaCache.SaveToDisk()
 		}
@@ -336,7 +336,7 @@ func (a *App) RefreshAllQuota() {
 				if err != nil {
 					a.statusBarLabel.SetText(fmt.Sprintf("Lỗi quét quota: %v", err))
 				} else {
-					a.statusBarLabel.SetText(fmt.Sprintf("Đã làm mới quota %d tài khoản lúc %s", len(results), nowStr))
+					a.statusBarLabel.SetText(fmt.Sprintf("Quét quota: %d thành công, %d lỗi", successCount, errorCount))
 				}
 			}
 			if a.quotaRefreshAllBtn != nil {

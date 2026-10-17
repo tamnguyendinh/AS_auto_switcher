@@ -1,13 +1,18 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"antigravity-switch/internal/connector"
 	"antigravity-switch/internal/store"
 )
 
@@ -90,9 +95,43 @@ func (s *StoreAccountSource) GetRefreshToken(email string) (string, error) {
 
 // TelemetryPool manages concurrent querying of quota telemetry across multiple accounts.
 type TelemetryPool struct {
-	client QuotaClientInterface
-	cache  *QuotaCache
-	source AccountSource
+	client            QuotaClientInterface
+	cache             *QuotaCache
+	source            AccountSource
+	localQuotaFetcher func(ctx context.Context, email string) (*AccountQuotaData, error)
+	serverInfoMu      sync.RWMutex
+	cachedServerInfo  *connector.ServerInfo
+	cachedServerTime  time.Time
+}
+
+func (p *TelemetryPool) getServerInfo() (*connector.ServerInfo, error) {
+	p.serverInfoMu.RLock()
+	if time.Since(p.cachedServerTime) < 5*time.Second {
+		info := p.cachedServerInfo
+		p.serverInfoMu.RUnlock()
+		if info == nil {
+			return nil, errors.New("language server not running")
+		}
+		return info, nil
+	}
+	p.serverInfoMu.RUnlock()
+
+	p.serverInfoMu.Lock()
+	defer p.serverInfoMu.Unlock()
+	if time.Since(p.cachedServerTime) < 5*time.Second {
+		if p.cachedServerInfo == nil {
+			return nil, errors.New("language server not running")
+		}
+		return p.cachedServerInfo, nil
+	}
+
+	info, err := connector.DiscoverLanguageServer()
+	p.cachedServerTime = time.Now()
+	p.cachedServerInfo = info
+	if err != nil || info == nil {
+		return nil, errors.New("language server not running")
+	}
+	return info, nil
 }
 
 // QuotaClientInterface allows mocking QuotaClient in tests.
@@ -133,15 +172,94 @@ func NewTelemetryPoolWithSource(client QuotaClientInterface, cache *QuotaCache, 
 	}, nil
 }
 
+// SetLocalQuotaFetcher overrides the local language server quota fetcher (used in unit tests).
+func (p *TelemetryPool) SetLocalQuotaFetcher(fn func(ctx context.Context, email string) (*AccountQuotaData, error)) {
+	p.localQuotaFetcher = fn
+}
+
 // Cache returns the underlying QuotaCache.
 func (p *TelemetryPool) Cache() *QuotaCache {
 	return p.cache
+}
+
+func (p *TelemetryPool) pollFromLanguageServer(ctx context.Context, email string) (*AccountQuotaData, error) {
+	if p.localQuotaFetcher != nil {
+		return p.localQuotaFetcher(ctx, email)
+	}
+
+	// 1. Discover language server (cached)
+	serverInfo, err := p.getServerInfo()
+	if err != nil || serverInfo == nil {
+		return nil, errors.New("language server not running")
+	}
+
+	// 2. Check active user identity
+	client := connector.NewClient(serverInfo)
+	userStatus, err := client.GetUserStatus(ctx)
+	if err != nil || userStatus == nil || strings.TrimSpace(userStatus.Email) == "" {
+		return nil, errors.New("cannot determine active user from language server")
+	}
+
+	// Only active account is queried via Connect-RPC
+	if !strings.EqualFold(strings.TrimSpace(userStatus.Email), strings.TrimSpace(email)) {
+		return nil, errors.New("account is not active in language server")
+	}
+
+	// 3. Query Connect-RPC endpoint
+	url := fmt.Sprintf("%s/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary", serverInfo.BaseURL())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBufferString("{}"))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Csrf-Token", serverInfo.CSRFToken)
+	req.Header.Set("x-codeium-csrf-token", serverInfo.CSRFToken)
+
+	httpClient := &http.Client{Timeout: 3 * time.Second}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("language server returned HTTP %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	claude, gemini, gpt, resetTime, status, err := ParseQuotaSummary(bodyBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AccountQuotaData{
+		Email:       email,
+		Claude:      claude,
+		Gemini:      gemini,
+		GPT:         gpt,
+		ResetTime:   resetTime,
+		Status:      status,
+		LastUpdated: time.Now().UTC(),
+	}, nil
 }
 
 func (p *TelemetryPool) pollAccountWithToken(ctx context.Context, email, refreshToken string) (*AccountQuotaData, error) {
 	cleanEmail := strings.TrimSpace(email)
 	cleanToken := strings.TrimSpace(refreshToken)
 
+	// Hybrid Telemetry Step 1: For active account running in language_server.exe,
+	// query Connect-RPC /exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary
+	if data, err := p.pollFromLanguageServer(ctx, cleanEmail); err == nil && data != nil {
+		data.Email = cleanEmail
+		p.cache.Update(data)
+		return data, nil
+	}
+
+	// Step 2: Fallback or inactive account -> Google Cloud Code API with dynamic User-Agent
 	if cleanToken == "" {
 		err := fmt.Errorf("no refresh token available for account %s", cleanEmail)
 		errData := &AccountQuotaData{
@@ -187,6 +305,14 @@ func (p *TelemetryPool) PollAccount(ctx context.Context, email string) (*Account
 
 	refreshToken, err := p.source.GetRefreshToken(cleanEmail)
 	if err != nil {
+		// Even if store lookup fails, check local language server if this is the active user
+		if data, lsErr := p.pollFromLanguageServer(pollCtx, cleanEmail); lsErr == nil && data != nil {
+			data.Email = cleanEmail
+			p.cache.Update(data)
+			_ = p.cache.SaveToDisk()
+			return data, nil
+		}
+
 		errData := &AccountQuotaData{
 			Email:        cleanEmail,
 			Status:       StatusError,
@@ -205,7 +331,8 @@ func (p *TelemetryPool) PollAccount(ctx context.Context, email string) (*Account
 
 // PollAll concurrently queries quota telemetry for all stored accounts.
 // Enforces a 5-second per-batch deadline to guarantee total completion in < 2s for normal operations.
-func (p *TelemetryPool) PollAll(ctx context.Context) ([]*AccountQuotaData, error) {
+// Returns results, count of successful polls, count of errors, and fatal error.
+func (p *TelemetryPool) PollAll(ctx context.Context) ([]*AccountQuotaData, int, int, error) {
 	pollCtx := ctx
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
@@ -215,22 +342,29 @@ func (p *TelemetryPool) PollAll(ctx context.Context) ([]*AccountQuotaData, error
 
 	accounts, err := p.source.ListAccounts()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list accounts: %w", err)
+		return nil, 0, 0, fmt.Errorf("failed to list accounts: %w", err)
 	}
 
 	if len(accounts) == 0 {
-		return []*AccountQuotaData{}, nil
+		return []*AccountQuotaData{}, 0, 0, nil
 	}
 
 	results := make([]*AccountQuotaData, len(accounts))
 	var wg sync.WaitGroup
+	var successCount atomic.Int32
+	var errorCount atomic.Int32
 
 	for i, acc := range accounts {
 		wg.Add(1)
 		go func(idx int, info AccountTokenInfo) {
 			defer wg.Done()
-			data, _ := p.pollAccountWithToken(pollCtx, info.Email, info.RefreshToken)
+			data, err := p.pollAccountWithToken(pollCtx, info.Email, info.RefreshToken)
 			results[idx] = data
+			if err != nil || (data != nil && data.Status == StatusError) {
+				errorCount.Add(1)
+			} else {
+				successCount.Add(1)
+			}
 		}(i, acc)
 	}
 
@@ -239,5 +373,5 @@ func (p *TelemetryPool) PollAll(ctx context.Context) ([]*AccountQuotaData, error
 	// Persist snapshot to disk
 	_ = p.cache.SaveToDisk()
 
-	return results, nil
+	return results, int(successCount.Load()), int(errorCount.Load()), nil
 }

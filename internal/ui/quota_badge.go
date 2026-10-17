@@ -92,13 +92,31 @@ func createModelBadge(modelName string, fraction float64, hasData bool) fyne.Can
 	return container.NewHBox(container.NewCenter(dotWrap), txt)
 }
 
+// createErrorBadge creates a compact badge indicating a connection error in muted gray.
+func createErrorBadge() fyne.CanvasObject {
+	dot := canvas.NewCircle(ColorQuotaMuted)
+	dotWrap := container.NewGridWrap(fyne.NewSize(8, 8), dot)
+	txt := canvas.NewText("[!] Lỗi kết nối", ColorQuotaMuted)
+	txt.TextSize = 11
+	txt.TextStyle = fyne.TextStyle{Bold: true}
+	return container.NewHBox(container.NewCenter(dotWrap), txt)
+}
+
 // NewQuotaBadgeGroup constructs a 3-column widget containing mini quota badges for Claude, Gemini, and GPT.
+// If quota is nil or has an Error status, displays muted placeholders or error badges (never 0% red).
 func NewQuotaBadgeGroup(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
 	if quota == nil {
 		c1 := createModelBadge("Claude", 0, false)
 		c2 := createModelBadge("Gemini", 0, false)
 		c3 := createModelBadge("GPT", 0, false)
 		return container.NewGridWithColumns(3, c1, c2, c3)
+	}
+
+	if quota.Status == telemetry.StatusError || quota.ErrorMessage != "" {
+		errBadge := createErrorBadge()
+		c2 := createModelBadge("Gemini", 0, false)
+		c3 := createModelBadge("GPT", 0, false)
+		return container.NewGridWithColumns(3, errBadge, c2, c3)
 	}
 
 	claudeBadge := createModelBadge("Claude", quota.Claude.RemainingFraction, true)
@@ -109,9 +127,9 @@ func NewQuotaBadgeGroup(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
 }
 
 // NewQuotaCountdownLabel returns a countdown warning text if any model has quota < 15%.
-// Returns nil if all models have >= 15% quota or if quota is nil.
+// Returns nil if all models have >= 15% quota, if quota is nil, or if quota is in Error status.
 func NewQuotaCountdownLabel(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
-	if quota == nil {
+	if quota == nil || quota.Status == telemetry.StatusError || quota.ErrorMessage != "" {
 		return nil
 	}
 
@@ -168,6 +186,9 @@ func NewQuotaCountdownLabel(quota *telemetry.AccountQuotaData) fyne.CanvasObject
 func BuildActiveQuotaSummary(quota *telemetry.AccountQuotaData) string {
 	if quota == nil {
 		return "Hạn ngạch: Chưa tải dữ liệu"
+	}
+	if quota.Status == telemetry.StatusError || quota.ErrorMessage != "" {
+		return "Hạn ngạch: [!] Lỗi kết nối"
 	}
 	return fmt.Sprintf("Hạn ngạch: 🟣 Claude: %s | 🔵 Gemini: %s | ⚪ GPT: %s",
 		formatFraction(quota.Claude.RemainingFraction),

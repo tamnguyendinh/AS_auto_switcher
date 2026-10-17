@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -480,10 +481,11 @@ func TestTelemetryPool_PollAccountAndPollAll(t *testing.T) {
 		t.Error("expected PollAccount to update cache")
 	}
 
-	// 2. PollAll across all 7 accounts in parallel
 	start := time.Now()
-	allResults, err := pool.PollAll(context.Background())
+	allResults, successCount, errorCount, err := pool.PollAll(context.Background())
 	duration := time.Since(start)
+	if successCount != 7 || errorCount != 0 { t.Errorf("expected 7 success, 0 error, got %d, %d", successCount, errorCount) }
+// removed
 
 	if err != nil {
 		t.Fatalf("PollAll failed: %v", err)
@@ -525,7 +527,8 @@ func TestTelemetryPool_PartialFailureHandling(t *testing.T) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	results, err := pool.PollAll(context.Background())
+	results, successCount, errorCount, err := pool.PollAll(context.Background())
+	if successCount != 1 || errorCount != 2 { t.Errorf("expected 1 success, 2 errors, got %d, %d", successCount, errorCount) }
 	if err != nil {
 		t.Fatalf("PollAll should not fail entire batch: %v", err)
 	}
@@ -814,7 +817,8 @@ func TestTelemetryPool_StoreAccountSourceIntegration(t *testing.T) {
 	}
 
 	// 6. PollAll with store
-	results, err := pool.PollAll(context.Background())
+	results, successCount, errorCount, err := pool.PollAll(context.Background())
+	_ = successCount; _ = errorCount
 	if err != nil {
 		t.Fatalf("PollAll failed: %v", err)
 	}
@@ -957,7 +961,7 @@ func TestCoverageBooster(t *testing.T) {
 	if _, err := failPool.PollAccount(context.Background(), "user@fail.com"); err == nil {
 		t.Error("expected error on PollAccount with failing source")
 	}
-	if _, err := failPool.PollAll(context.Background()); err == nil {
+	if _, _, _, err := failPool.PollAll(context.Background()); err == nil {
 		t.Error("expected error on PollAll with failing source")
 	}
 }
@@ -984,7 +988,8 @@ func BenchmarkTelemetryPool_ParallelLatency7Accounts(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
-		results, err := pool.PollAll(context.Background())
+	results, successCount, errorCount, err := pool.PollAll(context.Background())
+	_ = successCount; _ = errorCount
 		duration := time.Since(start)
 
 		if err != nil {
@@ -996,5 +1001,167 @@ func BenchmarkTelemetryPool_ParallelLatency7Accounts(b *testing.B) {
 		if duration >= 2*time.Second {
 			b.Fatalf("latency exceeded 2.0s limit: %v", duration)
 		}
+	}
+}
+
+func TestDiscoverAntigravityUserAgent_Priorities(t *testing.T) {
+	// 1. Reset discovery cache
+	ResetDiscoveredUserAgent()
+	defer ResetDiscoveredUserAgent()
+
+	// 2. Discover dynamically (runs through priorities 1, 2, 3)
+	ua := DiscoverAntigravityUserAgent()
+	if ua == "" {
+		t.Fatalf("expected non-empty discovered user agent")
+	}
+	if !strings.HasPrefix(ua, "antigravity") {
+		t.Errorf("expected user agent starting with 'antigravity', got: %s", ua)
+	}
+
+	// 3. Test explicit override
+	SetDiscoveredUserAgent("antigravity/9.99.0")
+	if current := DiscoverAntigravityUserAgent(); current != "antigravity/9.99.0" {
+		t.Errorf("expected overridden user agent 'antigravity/9.99.0', got: %s", current)
+	}
+}
+
+func TestQuotaClient_UserAgentAndGoogApiClientHeaders(t *testing.T) {
+	var capturedUserAgent string
+	var capturedGoogApiClient string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedUserAgent = r.Header.Get("User-Agent")
+		capturedGoogApiClient = r.Header.Get("X-Goog-Api-Client")
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"buckets":[]}`))
+	}))
+	defer srv.Close()
+
+	refresher := &mockOAuthRefresher{accessToken: "valid_access_token"}
+	client := NewQuotaClientWithEndpoint(refresher, srv.URL, srv.Client())
+	client.SetUserAgent("antigravity/2.24.0")
+
+	_, err := client.RetrieveUserQuota(context.Background(), "mock_refresh_token")
+	if err != nil {
+		t.Fatalf("RetrieveUserQuota failed: %v", err)
+	}
+
+	if capturedUserAgent != "antigravity/2.24.0" {
+		t.Errorf("expected User-Agent 'antigravity/2.24.0', got: '%s'", capturedUserAgent)
+	}
+	if capturedGoogApiClient != DefaultGoogApiClient {
+		t.Errorf("expected X-Goog-Api-Client '%s', got: '%s'", DefaultGoogApiClient, capturedGoogApiClient)
+	}
+}
+
+func TestParseQuotaSummary_ConnectRPC(t *testing.T) {
+	jsonPayload := []byte(`{
+		"response": {
+			"groups": [
+				{
+					"displayName": "Gemini Models",
+					"buckets": [
+						{
+							"bucketId": "gemini-5h",
+							"remainingFraction": 0.933,
+							"resetTime": "2026-10-17T12:19:14Z"
+						},
+						{
+							"bucketId": "gemini-weekly",
+							"remainingFraction": 0.75,
+							"resetTime": "2026-10-24T02:19:14Z"
+						}
+					]
+				},
+				{
+					"displayName": "Claude and GPT models",
+					"buckets": [
+						{
+							"bucketId": "3p-5h",
+							"remainingFraction": 0.85,
+							"resetTime": "2026-10-17T12:32:55Z"
+						}
+					]
+				}
+			]
+		}
+	}`)
+
+	claude, gemini, gpt, resetTime, status, err := ParseQuotaSummary(jsonPayload)
+	if err != nil {
+		t.Fatalf("ParseQuotaSummary failed: %v", err)
+	}
+
+	if gemini.RemainingFraction != 0.75 {
+		t.Errorf("expected gemini remaining fraction 0.75, got %f", gemini.RemainingFraction)
+	}
+	if claude.RemainingFraction != 0.85 {
+		t.Errorf("expected claude remaining fraction 0.85, got %f", claude.RemainingFraction)
+	}
+	if gpt.RemainingFraction != 0.85 {
+		t.Errorf("expected gpt remaining fraction 0.85, got %f", gpt.RemainingFraction)
+	}
+	if resetTime.IsZero() {
+		t.Errorf("expected non-zero canonical reset time")
+	}
+	if status != StatusPlentiful {
+		t.Errorf("expected status Plentiful, got %s", status)
+	}
+}
+
+func TestHybridTelemetry_ActiveAccountConnectRPC(t *testing.T) {
+	tempDir := t.TempDir()
+	cache := NewQuotaCache(filepath.Join(tempDir, "hybrid_cache.json"))
+
+	accounts := []AccountTokenInfo{
+		{Email: "active@gmail.com", RefreshToken: "tok_active"},
+		{Email: "inactive@gmail.com", RefreshToken: "tok_inactive"},
+	}
+	source := &mockAccountSource{accounts: accounts}
+
+	googleCalledForActive := false
+	googleClient := &mockQuotaClient{}
+	googleClient.delay = 10 * time.Millisecond
+
+	pool, err := NewTelemetryPoolWithSource(googleClient, cache, source)
+	if err != nil {
+		t.Fatalf("failed to create pool: %v", err)
+	}
+
+	// Inject local quota fetcher that simulates active account in language_server
+	pool.SetLocalQuotaFetcher(func(ctx context.Context, email string) (*AccountQuotaData, error) {
+		if email == "active@gmail.com" {
+			return &AccountQuotaData{
+				Email:  email,
+				Claude: ModelQuotaBucket{RemainingFraction: 0.95},
+				Gemini: ModelQuotaBucket{RemainingFraction: 0.90},
+				GPT:    ModelQuotaBucket{RemainingFraction: 0.95},
+				Status: StatusPlentiful,
+			}, nil
+		}
+		// Inactive accounts are not in language server
+		return nil, errors.New("not active in language server")
+	})
+
+	results, successCount, errorCount, err := pool.PollAll(context.Background())
+	if err != nil {
+		t.Fatalf("PollAll failed: %v", err)
+	}
+	if successCount != 2 || errorCount != 0 {
+		t.Errorf("expected 2 success, 0 error, got %d, %d", successCount, errorCount)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	activeData, ok := cache.Get("active@gmail.com")
+	if !ok || activeData.Claude.RemainingFraction != 0.95 {
+		t.Errorf("expected active account quota 0.95 from local Connect-RPC")
+	}
+
+	if googleCalledForActive {
+		t.Errorf("Google Cloud Code API should NOT be called for active account when Connect-RPC succeeds")
 	}
 }

@@ -8,15 +8,32 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
+	"unsafe"
 
 	"antigravity-switch/internal/connector"
+
+	"golang.org/x/sys/windows"
 )
 
 const (
 	// DefaultGoogleQuotaURL is the authoritative Google Cloud Code quota endpoint.
 	DefaultGoogleQuotaURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
+
+	// DefaultUserAgent is the default fallback User-Agent when discovery is inactive.
+	DefaultUserAgent = "antigravity/2.24.0"
+
+	// DefaultGoogApiClient is the required Google API client header.
+	DefaultGoogApiClient = "gl-go/1.22.0 gdcl/20261017"
+
+	// FallbackUserAgent is the emergency fallback user agent when discovery finds nothing.
+	FallbackUserAgent = "antigravity/2.24.0"
 
 	// Standard health statuses for accounts.
 	StatusPristine  = "Pristine"
@@ -39,6 +56,170 @@ var (
 	// ErrNilRefresher is returned when the OAuth refresher is nil.
 	ErrNilRefresher = errors.New("oauth refresher cannot be nil")
 )
+
+var (
+	reUserAgentName = regexp.MustCompile(`--override_user_agent_name(?:=|\s+)(?:["']?)([a-zA-Z0-9_.-]+)(?:["']?)`)
+	reIdeVersion    = regexp.MustCompile(`--override_ide_version(?:=|\s+)(?:["']?)([a-zA-Z0-9_.-]+)(?:["']?)`)
+)
+
+var (
+	modVersion                  = windows.NewLazySystemDLL("version.dll")
+	procGetFileVersionInfoSizeW = modVersion.NewProc("GetFileVersionInfoSizeW")
+	procGetFileVersionInfoW     = modVersion.NewProc("GetFileVersionInfoW")
+	procVerQueryValueW          = modVersion.NewProc("VerQueryValueW")
+)
+
+type vsFixedFileInfo struct {
+	Signature        uint32
+	StrucVersion     uint32
+	FileVersionMS    uint32
+	FileVersionLS    uint32
+	ProductVersionMS uint32
+	ProductVersionLS uint32
+	FileFlagsMask    uint32
+	FileFlags        uint32
+	FileOS           uint32
+	FileType         uint32
+	FileSubtype      uint32
+	FileDateMS       uint32
+	FileDateLS       uint32
+}
+
+func readPEFileVersion(exePath string) (string, error) {
+	if runtime.GOOS != "windows" {
+		return "", errors.New("PE version inspection only supported on windows")
+	}
+	cleanPath := filepath.Clean(strings.TrimSpace(exePath))
+	if cleanPath == "" {
+		return "", errors.New("empty executable path")
+	}
+	if _, err := os.Stat(cleanPath); err != nil {
+		return "", err
+	}
+
+	utfPath, err := windows.UTF16PtrFromString(cleanPath)
+	if err != nil {
+		return "", err
+	}
+
+	var dummy uint32
+	size, _, _ := procGetFileVersionInfoSizeW.Call(uintptr(unsafe.Pointer(utfPath)), uintptr(unsafe.Pointer(&dummy)))
+	if size == 0 {
+		return "", errors.New("GetFileVersionInfoSizeW returned 0")
+	}
+
+	buf := make([]byte, size)
+	r1, _, _ := procGetFileVersionInfoW.Call(uintptr(unsafe.Pointer(utfPath)), 0, size, uintptr(unsafe.Pointer(&buf[0])))
+	if r1 == 0 {
+		return "", errors.New("GetFileVersionInfoW failed")
+	}
+
+	subBlock, err := windows.UTF16PtrFromString(`\`)
+	if err != nil {
+		return "", err
+	}
+
+	var ptr uintptr
+	var length uint32
+	r1, _, _ = procVerQueryValueW.Call(
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(unsafe.Pointer(subBlock)),
+		uintptr(unsafe.Pointer(&ptr)),
+		uintptr(unsafe.Pointer(&length)),
+	)
+	if r1 == 0 || length < uint32(unsafe.Sizeof(vsFixedFileInfo{})) {
+		return "", errors.New("VerQueryValueW failed")
+	}
+
+	ffi := (*vsFixedFileInfo)(unsafe.Pointer(ptr))
+	major := ffi.FileVersionMS >> 16
+	minor := ffi.FileVersionMS & 0xFFFF
+	build := ffi.FileVersionLS >> 16
+	rev := ffi.FileVersionLS & 0xFFFF
+
+	if rev == 0 {
+		return fmt.Sprintf("%d.%d.%d", major, minor, build), nil
+	}
+	return fmt.Sprintf("%d.%d.%d.%d", major, minor, build, rev), nil
+}
+
+var (
+	cachedUserAgent string
+	userAgentMutex  sync.RWMutex
+)
+
+// DiscoverAntigravityUserAgent dynamically scans for the running or installed Antigravity version across 3 priority levels.
+func DiscoverAntigravityUserAgent() string {
+	userAgentMutex.RLock()
+	if cachedUserAgent != "" {
+		ua := cachedUserAgent
+		userAgentMutex.RUnlock()
+		return ua
+	}
+	userAgentMutex.RUnlock()
+
+	userAgentMutex.Lock()
+	defer userAgentMutex.Unlock()
+	if cachedUserAgent != "" {
+		return cachedUserAgent
+	}
+
+	cachedUserAgent = resolveAntigravityUserAgent()
+	return cachedUserAgent
+}
+
+// SetDiscoveredUserAgent overrides the dynamically discovered User-Agent (useful in testing).
+func SetDiscoveredUserAgent(ua string) {
+	userAgentMutex.Lock()
+	defer userAgentMutex.Unlock()
+	cachedUserAgent = ua
+}
+
+// ResetDiscoveredUserAgent clears the cached User-Agent so the next call performs a fresh scan.
+func ResetDiscoveredUserAgent() {
+	userAgentMutex.Lock()
+	defer userAgentMutex.Unlock()
+	cachedUserAgent = ""
+}
+
+func resolveAntigravityUserAgent() string {
+	// Priority 1: Running language_server.exe process command-line arguments
+	if procs, err := connector.QueryLanguageServerProcesses(); err == nil && len(procs) > 0 {
+		for _, p := range procs {
+			if strings.TrimSpace(p.CommandLine) == "" {
+				continue
+			}
+			verMatches := reIdeVersion.FindStringSubmatch(p.CommandLine)
+			if len(verMatches) > 1 && strings.TrimSpace(verMatches[1]) != "" {
+				version := strings.TrimSpace(verMatches[1])
+				appName := "antigravity"
+				nameMatches := reUserAgentName.FindStringSubmatch(p.CommandLine)
+				if len(nameMatches) > 1 && strings.TrimSpace(nameMatches[1]) != "" {
+					appName = strings.TrimSpace(nameMatches[1])
+				}
+				return fmt.Sprintf("%s/%s", appName, version)
+			}
+		}
+	}
+
+	// Priority 2: PE FileVersion from Antigravity.exe
+	candidatePaths := []string{}
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		candidatePaths = append(candidatePaths, filepath.Join(localAppData, "Programs", "antigravity", "Antigravity.exe"))
+	}
+	if progFiles := os.Getenv("ProgramFiles"); progFiles != "" {
+		candidatePaths = append(candidatePaths, filepath.Join(progFiles, "Antigravity", "Antigravity.exe"))
+	}
+
+	for _, p := range candidatePaths {
+		if ver, err := readPEFileVersion(p); err == nil && ver != "" {
+			return fmt.Sprintf("antigravity/%s", ver)
+		}
+	}
+
+	// Priority 3: Fallback safe constant
+	return FallbackUserAgent
+}
 
 // ModelQuotaBucket represents quota status for an individual model or aggregated model family.
 type ModelQuotaBucket struct {
@@ -67,6 +248,7 @@ type QuotaClient struct {
 	refresher  connector.OAuthRefresher
 	endpoint   string
 	httpClient *http.Client
+	userAgent  string
 }
 
 // NewQuotaClient creates a QuotaClient with default Google Cloud Code endpoint.
@@ -89,6 +271,19 @@ func NewQuotaClientWithEndpoint(refresher connector.OAuthRefresher, endpoint str
 		endpoint:   endpoint,
 		httpClient: httpClient,
 	}
+}
+
+// SetUserAgent sets a custom User-Agent for this client instance (useful for testing).
+func (c *QuotaClient) SetUserAgent(ua string) {
+	c.userAgent = ua
+}
+
+// UserAgent returns the configured or dynamically discovered User-Agent.
+func (c *QuotaClient) UserAgent() string {
+	if c.userAgent != "" {
+		return c.userAgent
+	}
+	return DiscoverAntigravityUserAgent()
 }
 
 type rawQuotaResponse struct {
@@ -147,9 +342,6 @@ func parseResetTime(raw json.RawMessage) time.Time {
 	// 3. Epoch numeric seconds: 1792056078
 	var epoch int64
 	if err := json.Unmarshal(raw, &epoch); err == nil && epoch > 0 {
-		if epoch > 1e11 { // milliseconds
-			return time.UnixMilli(epoch).UTC()
-		}
 		return time.Unix(epoch, 0).UTC()
 	}
 
@@ -158,6 +350,7 @@ func parseResetTime(raw json.RawMessage) time.Time {
 
 func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
 	b := ModelQuotaBucket{}
+
 	if r.ModelID != "" {
 		b.ModelID = r.ModelID
 	} else {
@@ -188,8 +381,12 @@ func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
 		} else {
 			b.RemainingFraction = 1.0
 		}
-	} else {
-		b.RemainingFraction = 1.0
+	}
+
+	if r.RemainingAmount != nil {
+		b.RemainingAmount = *r.RemainingAmount
+	} else if r.RemainingAmountSnake != nil {
+		b.RemainingAmount = *r.RemainingAmountSnake
 	}
 
 	if len(r.ResetTimeRaw) > 0 {
@@ -202,8 +399,7 @@ func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
 	return b
 }
 
-// AggregateBuckets parses raw buckets and aggregates them into the three model families:
-// Claude 4.6 (Opus/Sonnet), Gemini 2.5 Pro/Flash, and GPT-OSS.
+// AggregateBuckets parses raw buckets into standard Claude, Gemini, and GPT families, and computes status.
 func AggregateBuckets(rawBuckets []ModelQuotaBucket) (claude, gemini, gpt ModelQuotaBucket, canonicalReset time.Time, status string) {
 	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 1.0}
 	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 1.0}
@@ -320,6 +516,8 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 	req.Header.Set("Authorization", "Bearer "+tokenResult.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.UserAgent())
+	req.Header.Set("X-Goog-Api-Client", DefaultGoogApiClient)
 
 	// 3. Execute HTTP request
 	resp, err := c.httpClient.Do(req)
@@ -361,4 +559,129 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 		Status:      status,
 		LastUpdated: time.Now().UTC(),
 	}, nil
+}
+
+// rawQuotaSummaryResponse represents the Connect-RPC RetrieveUserQuotaSummary structure.
+type rawQuotaSummaryResponse struct {
+	Response rawQuotaSummaryBody `json:"response"`
+}
+
+type rawQuotaSummaryBody struct {
+	Groups []rawQuotaGroup `json:"groups"`
+}
+
+type rawQuotaGroup struct {
+	DisplayName string           `json:"displayName"`
+	Description string           `json:"description"`
+	Buckets     []rawQuotaBucket `json:"buckets"`
+}
+
+type rawQuotaBucket struct {
+	BucketID          string   `json:"bucketId"`
+	DisplayName       string   `json:"displayName"`
+	Window            string   `json:"window"`
+	RemainingFraction *float64 `json:"remainingFraction"`
+	ResetTime         string   `json:"resetTime"`
+}
+
+// ParseQuotaSummary parses the Connect-RPC RetrieveUserQuotaSummary JSON payload.
+func ParseQuotaSummary(bodyBytes []byte) (claude, gemini, gpt ModelQuotaBucket, canonicalReset time.Time, status string, err error) {
+	var resp rawQuotaSummaryResponse
+	if err := json.Unmarshal(bodyBytes, &resp); err != nil {
+		return claude, gemini, gpt, canonicalReset, StatusError, fmt.Errorf("failed to parse quota summary JSON: %w", err)
+	}
+
+	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 1.0}
+	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 1.0}
+	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: 1.0}
+
+	hasGemini := false
+	hasClaudeGPT := false
+
+	for _, g := range resp.Response.Groups {
+		lowerGroup := strings.ToLower(g.DisplayName)
+		for _, b := range g.Buckets {
+			frac := 1.0
+			if b.RemainingFraction != nil {
+				frac = *b.RemainingFraction
+			}
+			var resetT time.Time
+			if strings.TrimSpace(b.ResetTime) != "" {
+				if t, err := time.Parse(time.RFC3339Nano, b.ResetTime); err == nil {
+					resetT = t.UTC()
+				} else if t, err := time.Parse(time.RFC3339, b.ResetTime); err == nil {
+					resetT = t.UTC()
+				}
+			}
+
+			if strings.Contains(lowerGroup, "gemini") {
+				if !hasGemini || frac < gemini.RemainingFraction {
+					gemini.RemainingFraction = frac
+					gemini.ResetTime = resetT
+					gemini.ModelID = b.BucketID
+					hasGemini = true
+				}
+			} else if strings.Contains(lowerGroup, "claude") || strings.Contains(lowerGroup, "gpt") || strings.Contains(lowerGroup, "3p") {
+				if !hasClaudeGPT || frac < claude.RemainingFraction {
+					claude.RemainingFraction = frac
+					claude.ResetTime = resetT
+					claude.ModelID = b.BucketID
+
+					gpt.RemainingFraction = frac
+					gpt.ResetTime = resetT
+					gpt.ModelID = b.BucketID
+					hasClaudeGPT = true
+				}
+			}
+		}
+	}
+
+	minFrac := claude.RemainingFraction
+	canonicalReset = claude.ResetTime
+
+	if gemini.RemainingFraction < minFrac {
+		minFrac = gemini.RemainingFraction
+		if !gemini.ResetTime.IsZero() {
+			canonicalReset = gemini.ResetTime
+		}
+	} else if canonicalReset.IsZero() && !gemini.ResetTime.IsZero() {
+		canonicalReset = gemini.ResetTime
+	}
+
+	if gpt.RemainingFraction < minFrac {
+		minFrac = gpt.RemainingFraction
+		if !gpt.ResetTime.IsZero() {
+			canonicalReset = gpt.ResetTime
+		}
+	} else if canonicalReset.IsZero() && !gpt.ResetTime.IsZero() {
+		canonicalReset = gpt.ResetTime
+	}
+
+	if minFrac < 0.15 {
+		if claude.RemainingFraction < 0.15 && gemini.RemainingFraction < 0.15 && gpt.RemainingFraction < 0.15 {
+			status = StatusDepleted
+		} else if gemini.RemainingFraction < 0.15 {
+			status = StatusLowGemini
+		} else if claude.RemainingFraction < 0.15 {
+			status = StatusLowClaude
+		} else {
+			status = StatusLowGPT
+		}
+	} else if minFrac <= 0.50 {
+		if gemini.RemainingFraction <= 0.50 && claude.RemainingFraction > 0.50 {
+			status = StatusLowGemini
+		} else if claude.RemainingFraction <= 0.50 && gemini.RemainingFraction > 0.50 {
+			status = StatusLowClaude
+		} else if gpt.RemainingFraction <= 0.50 {
+			status = StatusLowGPT
+		} else {
+			status = StatusLow
+		}
+	} else if claude.RemainingFraction >= 1.0 && gemini.RemainingFraction >= 1.0 && gpt.RemainingFraction >= 1.0 {
+		status = StatusPristine
+	} else {
+		status = StatusPlentiful
+	}
+
+	return claude, gemini, gpt, canonicalReset, status, nil
 }

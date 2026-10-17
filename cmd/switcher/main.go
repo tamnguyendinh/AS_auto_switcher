@@ -248,7 +248,7 @@ func runQuotaCLI(w io.Writer, mgr *manager.AccountManager, ctx context.Context) 
 	if needsRefresh && pool != nil {
 		fmt.Fprintln(w, "[INFO] Fetching latest quota telemetry from Google Cloud Code API...")
 		pollCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
-		_, _ = pool.PollAll(pollCtx)
+		_, _, _, _ = pool.PollAll(pollCtx)
 		cancel()
 	}
 
