@@ -2,7 +2,7 @@
 
 Title: Phase 6A: Multi-Account Quota Telemetry Engine, Live Dashboard & Multi-Theme System Actual Status
 Date: 2026-10-17
-Status: in_progress (Slice P6A-1 Complete -> Next Slice: P6A-2)
+Status: in_progress (Slice P6A-2 Complete -> Next Slice: P6A-3)
 Companion plan: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 Companion rules: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 Companion evidence: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-evidence.md`
@@ -53,11 +53,11 @@ Out of scope:
 | `internal/telemetry/` | Quota telemetry client for Google `v1internal:retrieveUserQuota`, concurrent worker pool, two-tier cache, and 60s loop | `correct` | E1-P1A-CODE1..CODE4, E1-P1A-TEST1..TEST3 | Preserve-only / Reusable | Quota telemetry engine, two-tier cache, parallel worker pool, and 60s loop fully operational and accepted by Supervisor (commit `c87939b`). Ready for Slice P6A-2 (UI Dashboard & Multi-Theme). |
 | `internal/connector/oauth_refresher.go` | Google CloudCode OAuth2 token refresher with verified client credentials | `correct` | E0-P0A-SRC2 | Preserve-only / Reusable | Reuse existing `GoogleOAuthRefresher` in `internal/telemetry/client.go` to obtain fresh access tokens for quota queries. |
 | `accounts_store/*.json` | 7 stored accounts with valid refresh tokens | `correct` | E0-P0A-STORE1 | Preserve-only / Read-only | Use as credential source for worker pool parallel quota queries; do not corrupt existing credentials. |
-| `internal/ui/themes.go` | Multi-Theme System: Dark (Catppuccin Mocha), Light (Paper Slate), Warm (Amber/Sepia) satisfying `fyne.Theme` | `missing` | E0-P0A-SRC3 | Editable | Implement in Slice P6A-2 with hot-switch capability and persistence in `accounts_store/.ui_preferences.json`. |
-| `internal/ui/quota_badge.go` | Visual mini quota progress bars / badges with 3-tier color coding and countdown text | `missing` | E0-P0A-SRC3 | Editable | Implement in Slice P6A-2: badges for Claude 4.6, Gemini 2.5, GPT-OSS with Green (>50%), Amber (15-50%), Red (<15%). |
-| `internal/ui/widgets.go` | Account row card embedding mini quota badges and per-row `[🔄]` single refresh button | `partial` | E0-P0A-SRC3 | Editable | Update `NewAccountCard` in Slice P6A-2 to display quota badges and individual refresh trigger. |
-| `internal/ui/window.go` | Header Toolbar with `[📊 Làm mới Quota Tất cả]`, auto-refresh 60s indicator, and theme selector | `partial` | E0-P0A-SRC3 | Editable | Update layout in Slice P6A-2 to add global refresh button, theme selector, and countdown label. |
-| `internal/ui/app.go` | Application controller wiring telemetry loop, handling async updates, maintaining 60 FPS non-blocking UI | `partial` | E0-P0A-SRC3 | Editable | Integrate `telemetry.AutoLoop` in Slice P6A-2; dispatch UI updates via `fyne.Do()` without freezing main thread. |
+| `internal/ui/themes.go` | Multi-Theme System: Dark (Catppuccin Mocha), Light (Paper Slate), Warm (Amber/Sepia) satisfying `fyne.Theme` | `correct` | E2-P2A-CODE1, E2-P2A-TEST1, E2-P2A-QA1 | Preserve-only / Reusable | 3 themes (Dark, Light, Warm) satisfy `fyne.Theme`, atomic JSON persistence in `accounts_store/.ui_preferences.json`, accepted by Supervisor (commit `dd86d77`). |
+| `internal/ui/quota_badge.go` | Visual mini quota progress bars / badges with 3-tier color coding and countdown text | `correct` | E2-P2A-CODE2, E2-P2A-TEST1, E2-P2A-QA1 | Preserve-only / Reusable | Quota badges and countdown widget implemented with exact color coding (>50% Green, 15-50% Amber, <15% Red) and recovery timestamp formatting, accepted by Supervisor (commit `dd86d77`). |
+| `internal/ui/widgets.go` | Account row card embedding mini quota badges and per-row `[🔄]` single refresh button | `correct` | E2-P2A-CODE3, E2-P2A-TEST1, E2-P2A-QA1 | Preserve-only / Reusable | Account card updated with quota badges and row-level refresh button callback, accepted by Supervisor (commit `dd86d77`). |
+| `internal/ui/window.go` | Header Toolbar with `[📊 Làm mới Quota Tất cả]`, auto-refresh 60s indicator, and theme selector | `correct` | E2-P2A-CODE4, E2-P2A-TEST1, E2-P2A-QA1 | Preserve-only / Reusable | Header Toolbar updated with global refresh button, 60s auto-refresh indicator, theme dropdown, and active summary card, accepted by Supervisor (commit `dd86d77`). |
+| `internal/ui/app.go` | Application controller wiring telemetry loop, handling async updates, maintaining 60 FPS non-blocking UI | `correct` | E2-P2A-CODE5, E2-P2A-TEST1, E2-P2A-QA1 | Preserve-only / Reusable | Telemetry loop and async event dispatch via `fyne.Do()` wired with single-flight concurrency, maintaining 60 FPS non-blocking UI, accepted by Supervisor (commit `dd86d77`). |
 | `cmd/switcher/main.go` | CLI flag `--quota` rendering tabular quota distribution across all accounts | `partial` | E0-P0A-SRC4 | Editable | Implement flag parsing and tabwriter formatting in Slice P6A-3. |
 | `cmd/switcher/app_cli.go` & `app_gui.go` | Dual-build support for pure CLI and native Fyne GUI | `correct` | E0-P0A-SRC4 | Editable | Maintain dual-build tags while exposing `--quota` in both modes. |
 | `internal/reloader/` | Language Server hot-swap and session reload | `correct` | E0-P0A-SRC5 | Preserve-only | Do not touch; ensure quota operations do not trigger false reloads or process termination. |
@@ -70,5 +70,6 @@ Out of scope:
 | P0 Baseline Audit | 2026-10-17 | P0 Baseline | Established initial matrix (telemetry: missing, ui: partial, cli: partial, connector/store/reloader: correct) | E0-P0A-SRC1..SRC6, E0-P0A-STORE1, E0-P0A-TEST1 | Proceed to Slice P6A-1 implementation without modifying preserve-only components. |
 
 | Slice P6A-1 Completion | 2026-10-17 | Slice P6A-1 | internal/telemetry/: missing -> correct | E1-P1A-CODE1..CODE4, E1-P1A-TEST1..TEST3 | Quota telemetry engine, two-tier cache, parallel worker pool, and 60s loop fully operational. Proceed to Slice P6A-2 (UI Dashboard & Multi-Theme). |
+| Slice P6A-2 Completion | 2026-10-17 | Slice P6A-2 | internal/ui/ (themes, quota_badge, widgets, window, app): missing/partial -> correct | E2-P2A-CODE1..CODE5, E2-P2A-TEST1, E2-P2A-QA1 | Fyne UI quota dashboard, refresh actions, and multi-theme system verified and accepted by Supervisor (commit `dd86d77`). Proceed to Slice P6A-3 (CLI Status Extension & UI Traceability Matrix Verification). |
 
 
