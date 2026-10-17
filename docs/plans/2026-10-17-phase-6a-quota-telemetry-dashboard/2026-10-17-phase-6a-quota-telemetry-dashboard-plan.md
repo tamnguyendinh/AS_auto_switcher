@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-17`
-- Status: `in_progress (Slice P6A-3 completed; next: P4 Supervisor Acceptance)`
+- Status: `completed (100% Slices PASS)`
 - Plan: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 - Evidence: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-evidence.md`
 - Benchmark: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-benchmark.md`
@@ -399,7 +399,7 @@ Theo Báo cáo Đặc tả Kiến trúc `reports/architect/2026-10-17-phase-6a-q
 
 ---
 
-- [ ] P4-A: Call supervisor for the implemented-plan acceptance loop.
+- [x] P4-A: Call supervisor for the implemented-plan acceptance loop.
   - Goal: Đánh giá và nghiệm thu toàn diện công việc của Phase 6A đối soát với bản kế hoạch đã phê duyệt, ma trận actual-status, evidence ledger, benchmark ledger, và UI Traceability Matrix trước khi chuyển giao sang Phase 7.
   - Work Steps: Supervisor kiểm tra mã nguồn, chạy toàn bộ test suite, kiểm tra tính toàn vẹn của UI Traceability Matrix, xác nhận zero regression trên account switcher và reloader, và xác nhận kết quả nghiệm thu.
   - Implementation Gate: Cả 3 Slices P6A-1, P6A-2, P6A-3 đều phải có commit chính thức và evidence đầy đủ.

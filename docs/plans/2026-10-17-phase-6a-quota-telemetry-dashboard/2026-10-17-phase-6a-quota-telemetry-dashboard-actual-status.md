@@ -2,7 +2,7 @@
 
 Title: Phase 6A: Multi-Account Quota Telemetry Engine, Live Dashboard & Multi-Theme System Actual Status
 Date: 2026-10-17
-Status: in_progress (Slice P6A-3 Complete -> Next Step: P4 Final Supervisor Acceptance)
+Status: completed (100% Slices PASS)
 Companion plan: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 Companion rules: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 Companion evidence: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-evidence.md`
@@ -46,6 +46,12 @@ Out of scope:
 - `internal/manager/`: Core account switching state machine (Preserve-only; inspect-only for account listing).
 - Phase 7 Autonomous Failover Daemon: Strictly reserved for subsequent milestone.
 
+## Slice Execution Status
+
+- [x] Slice P6A-1: Quota Telemetry Engine & 60s Auto-Telemetry Loop (PASS in commit `c87939b`)
+- [x] Slice P6A-2: Fyne UI Quota Dashboard, Refresh Actions & Multi-Theme System (PASS in commit `dd86d77`)
+- [x] Slice P6A-3: CLI Status Extension & UI Traceability Matrix Verification (PASS in commit `263f1dc`)
+
 ## Current Status Matrix
 
 | Surface / File / Component | Expected / Required Capability | Current Status | Evidence IDs | Touch Mode | Downstream Plan Decision & Next Action |
@@ -71,3 +77,4 @@ Out of scope:
 | Slice P6A-1 Completion | 2026-10-17 | Slice P6A-1 | internal/telemetry/: missing -> correct | E1-P1A-CODE1..CODE4, E1-P1A-TEST1..TEST3 | Quota telemetry engine, two-tier cache, parallel worker pool, and 60s loop fully operational. Proceed to Slice P6A-2 (UI Dashboard & Multi-Theme). |
 | Slice P6A-2 Completion | 2026-10-17 | Slice P6A-2 | internal/ui/ (themes, quota_badge, widgets, window, app): missing/partial -> correct | E2-P2A-CODE1..CODE5, E2-P2A-TEST1, E2-P2A-QA1 | Fyne UI quota dashboard, refresh actions, and multi-theme system verified and accepted by Supervisor (commit `dd86d77`). Proceed to Slice P6A-3. |
 | Slice P6A-3 Completion | 2026-10-17 | Slice P6A-3 | cmd/switcher/main.go: partial -> correct; app_cli.go & app_gui.go: correct | E3-P3A-CODE1..CODE2, E3-P3A-TEST1, E3-P3A-BENCH1 | CLI `--quota` flag, dual-build targets, automated Windows binaries build, and UI Traceability Matrix verified 100%. Ready for P4 Final Supervisor Acceptance. |
+| Phase 6A Seal & Acceptance | 2026-10-17 | Slice P6A-3 / P4 Supervisor Acceptance | All components: correct | E3-P3A-CODE1..CODE2, reports/supervisor/2026-10-17-p6a3-cli-quota-and-traceability-supervisor-review.md | Supervisor PASS (commit `263f1dc`). Phase 6A completed 100% and sealed. |
