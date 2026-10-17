@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-17`
-- Status: `draft`
+- Status: `in_progress (Slice P6A-1 completed; next: Slice P6A-2)`
 - Plan: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 - Evidence: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-evidence.md`
 - Benchmark: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-benchmark.md`

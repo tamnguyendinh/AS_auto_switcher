@@ -2,7 +2,7 @@
 
 Title: Phase 6A: Multi-Account Quota Telemetry Engine, Live Dashboard & Multi-Theme System Actual Status
 Date: 2026-10-17
-Status: P0 Complete (Ready for Implementation)
+Status: in_progress (Slice P6A-1 Complete -> Next Slice: P6A-2)
 Companion plan: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 Companion rules: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 Companion evidence: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-evidence.md`
@@ -50,7 +50,7 @@ Out of scope:
 
 | Surface / File / Component | Expected / Required Capability | Current Status | Evidence IDs | Touch Mode | Downstream Plan Decision & Next Action |
 |---|---|:---:|---|:---:|---|
-| `internal/telemetry/` | Quota telemetry client for Google `v1internal:retrieveUserQuota`, concurrent worker pool, two-tier cache, and 60s loop | `missing` | E0-P0A-SRC1 | Editable | Implement package in Slice P6A-1: `client.go`, `pool.go`, `cache.go`, `loop.go`, and comprehensive unit tests. |
+| `internal/telemetry/` | Quota telemetry client for Google `v1internal:retrieveUserQuota`, concurrent worker pool, two-tier cache, and 60s loop | `correct` | E1-P1A-CODE1..CODE4, E1-P1A-TEST1..TEST3 | Preserve-only / Reusable | Quota telemetry engine, two-tier cache, parallel worker pool, and 60s loop fully operational and accepted by Supervisor (commit `c87939b`). Ready for Slice P6A-2 (UI Dashboard & Multi-Theme). |
 | `internal/connector/oauth_refresher.go` | Google CloudCode OAuth2 token refresher with verified client credentials | `correct` | E0-P0A-SRC2 | Preserve-only / Reusable | Reuse existing `GoogleOAuthRefresher` in `internal/telemetry/client.go` to obtain fresh access tokens for quota queries. |
 | `accounts_store/*.json` | 7 stored accounts with valid refresh tokens | `correct` | E0-P0A-STORE1 | Preserve-only / Read-only | Use as credential source for worker pool parallel quota queries; do not corrupt existing credentials. |
 | `internal/ui/themes.go` | Multi-Theme System: Dark (Catppuccin Mocha), Light (Paper Slate), Warm (Amber/Sepia) satisfying `fyne.Theme` | `missing` | E0-P0A-SRC3 | Editable | Implement in Slice P6A-2 with hot-switch capability and persistence in `accounts_store/.ui_preferences.json`. |
