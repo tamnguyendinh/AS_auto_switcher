@@ -133,7 +133,7 @@ Theo Báo cáo Đặc tả Kiến trúc `reports/architect/2026-10-17-phase-6a-q
 - Ordered Slice List:
   - P1-A: Quota Telemetry Client, Worker Pool, Cache, & 60s Loop.
 
-- [ ] P1-A: Quota Telemetry Client, Worker Pool, Cache, & 60s Loop.
+- [x] P1-A: Quota Telemetry Client, Worker Pool, Cache, & 60s Loop.
   - Goal: Cung cấp đầy đủ hạ tầng thu thập, chuẩn hóa, lưu trữ và tự động làm mới hạn ngạch Google Cloud Code cho toàn bộ tài khoản trong pool.
   - Scope Boundary:
     - Editable: `internal/telemetry/client.go`, `internal/telemetry/cache.go`, `internal/telemetry/pool.go`, `internal/telemetry/loop.go`, `internal/telemetry/telemetry_test.go`.
@@ -404,3 +404,4 @@ Theo Báo cáo Đặc tả Kiến trúc `reports/architect/2026-10-17-phase-6a-q
   - Work Steps: Supervisor kiểm tra mã nguồn, chạy toàn bộ test suite, kiểm tra tính toàn vẹn của UI Traceability Matrix, xác nhận zero regression trên account switcher và reloader, và xác nhận kết quả nghiệm thu.
   - Implementation Gate: Cả 3 Slices P6A-1, P6A-2, P6A-3 đều phải có commit chính thức và evidence đầy đủ.
   - Acceptance: Báo cáo nghiệm thu Supervisor xác nhận đạt 100% tiêu chí Zero-Trust Definition of Done.
+

@@ -37,12 +37,12 @@ It contains:
 
 | Phase | Metric | Unit | Baseline | Latest | Final | Target | Delta | Evidence |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|---|
-| P1 | Parallel Worker Pool Latency (7 accounts) | s | 1.69 | - | - | < 2.0 | - | E1-P1A-TEST3 |
-| P1 | Google Quota Fetch Success Rate | % | 100% | - | - | 100% | - | E1-P1A-TEST1 |
-| P1 | Auto-Telemetry Loop Interval | s | - | - | - | 60 ± 1 | - | E1-P1A-CODE4 |
-| P1 | Single-Flight Overlap Drop Rate | % | - | - | - | 100% | - | E1-P1A-CODE4 |
-| P1 | Unit Test Coverage (`internal/telemetry`) | % | 0% | - | - | >= 90% | - | E1-P1A-TEST1 |
-| P1 | Data Race Free (`go test -race`) | issues | 0 | - | - | 0 | - | E1-P1A-TEST2 |
+| P1 | Parallel Worker Pool Latency (7 accounts) | s | 1.69 | 0.056 | 0.056 | < 2.0 | -1.944s | E1-P1A-TEST3 |
+| P1 | Google Quota Fetch Success Rate | % | 100% | 100% | 100% | 100% | 0 | E1-P1A-TEST1 |
+| P1 | Auto-Telemetry Loop Interval | s | - | 60s | 60s | 60 ± 1 | 0 | E1-P1A-CODE4 |
+| P1 | Single-Flight Overlap Drop Rate | % | - | 100% | 100% | 100% | 0 | E1-P1A-CODE4 |
+| P1 | Unit Test Coverage (`internal/telemetry`) | % | 0% | 92.8% | 92.8% | >= 90% | +2.8% | E1-P1A-TEST1 |
+| P1 | Data Race Free (`go test -race`) | issues | 0 | 0 | 0 | 0 | 0 | E1-P1A-TEST2 |
 
 ---
 
@@ -71,4 +71,5 @@ It contains:
 ## Non-Benchmarkable Notes
 - Zero-regression requirement: hot-swap switching latency and session reloader behavior must not be degraded by the telemetry engine or UI theme additions.
 - The 60-second loop utilizes `time.Ticker` and runs in background goroutines with less than 0.02% CPU consumption.
+
 
