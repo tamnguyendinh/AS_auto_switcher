@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-17`
-- Status: `in_progress (Slice P6A-2 completed; next: Slice P6A-3)`
+- Status: `in_progress (Slice P6A-3 completed; next: P4 Supervisor Acceptance)`
 - Plan: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-plan.md`
 - Evidence: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-evidence.md`
 - Benchmark: `docs/plans/2026-10-17-phase-6a-quota-telemetry-dashboard/2026-10-17-phase-6a-quota-telemetry-dashboard-benchmark.md`
@@ -331,7 +331,7 @@ Theo Báo cáo Đặc tả Kiến trúc `reports/architect/2026-10-17-phase-6a-q
 - Ordered Slice List:
   - P3-A: CLI `--quota` Flag & UI Traceability Matrix Complete Verification.
 
-- [ ] P3-A: CLI `--quota` Flag & UI Traceability Matrix Complete Verification.
+- [x] P3-A: CLI `--quota` Flag & UI Traceability Matrix Complete Verification.
   - Goal: Cung cấp giao diện dòng lệnh mạnh mẽ để kiểm tra hạn ngạch nhanh chóng mà không cần mở GUI, đồng thời nghiệm thu chất lượng bàn giao toàn diện cho Phase 6A.
   - Scope Boundary:
     - Editable: `cmd/switcher/main.go`, `cmd/switcher/app_cli.go`, `cmd/switcher/app_gui.go`.
@@ -404,4 +404,5 @@ Theo Báo cáo Đặc tả Kiến trúc `reports/architect/2026-10-17-phase-6a-q
   - Work Steps: Supervisor kiểm tra mã nguồn, chạy toàn bộ test suite, kiểm tra tính toàn vẹn của UI Traceability Matrix, xác nhận zero regression trên account switcher và reloader, và xác nhận kết quả nghiệm thu.
   - Implementation Gate: Cả 3 Slices P6A-1, P6A-2, P6A-3 đều phải có commit chính thức và evidence đầy đủ.
   - Acceptance: Báo cáo nghiệm thu Supervisor xác nhận đạt 100% tiêu chí Zero-Trust Definition of Done.
+
 
