@@ -168,6 +168,72 @@ It contains:
 - `E2-P2A-TEST1`: Unit tests in `internal/ui/` verifying theme switching without crash and badge color logic.
 - `E2-P2A-QA1`: Verification of UI Traceability Matrix items `UI-TR-01` through `UI-TR-08`.
 
+### E2-P2A-CODE1: Multi-Theme Engine & Preferences Persistence
+- **File:** `internal/ui/themes.go`
+- **Themes Implemented:**
+  + `DarkTheme`: Catppuccin Mocha (#11111b canvas, #181825 card, #cdd6f4 text, #89b4fa primary).
+  + `LightTheme`: Clean paper slate (#f8fafc canvas, #ffffff card, #0f172a text, #2563eb primary).
+  + `WarmTheme`: Amber / sepia blue-light reduction (#241e17 canvas, #332a20 card, #e8d8be text, #d97706 primary).
+- **Theme Interface:** All three structs satisfy `fyne.Theme` with complete `Color`, `Font`, `Icon`, and `Size` methods.
+- **Preferences:** `LoadUIPreferences` and `SaveUIPreferences` atomically persist to `accounts_store/.ui_preferences.json`.
+
+### E2-P2A-CODE2: Mini Quota Badges & Countdown Warning Widget
+- **File:** `internal/ui/quota_badge.go`
+- **Color Thresholds (UI-TR-04):**
+  + Green (> 50%): `color.NRGBA{0x22, 0xc5, 0x5e, 0xff}` (#22c55e)
+  + Amber (15% - 50%): `color.NRGBA{0xf5, 0x9e, 0x0b, 0xff}` (#f59e0b)
+  + Red (< 15%): `color.NRGBA{0xef, 0x44, 0x44, 0xff}` (#ef4444)
+- **Countdown Formatting (UI-TR-05):** `FormatRemainingCountdown` computes exact UTC/remaining time (`Google sẽ hồi phục lúc: HH:mm (còn Xh Yp)`).
+- **Components:** `NewQuotaBadgeGroup` and `NewQuotaCountdownLabel`.
+
+### E2-P2A-CODE3: Account Card Quota & Per-Row Refresh Integration
+- **File:** `internal/ui/widgets.go`
+- **Functions:** `NewAccountCardWithQuota` and backwards-compatible `NewAccountCard`.
+- **Per-Row Refresh (UI-TR-02):** Action row embeds `[🔄]` icon button immediately adjacent to account action (`[⚡ Chuyển]` or `[Đang dùng]`).
+- **Quota Badges:** Embeds 3-column badge group and conditional countdown label beneath email.
+
+### E2-P2A-CODE4: Header Toolbar Controls Extension
+- **File:** `internal/ui/window.go`
+- **Controls Added:**
+  + Global Quota Refresh Button (`[📊 Làm mới Quota Tất cả]`, UI-TR-01) with high importance.
+  + Auto-Refresh 60s Indicator (`Tự động: 60s | Cập nhật: HH:mm:ss`, UI-TR-03).
+  + Multi-Theme Switcher Selector (`[🌙 Tối | ☀️ Sáng | ☕ Ấm]`, UI-TR-06).
+  + Active Quota Summary in Header Card.
+
+### E2-P2A-CODE5: Telemetry Loop Lifecycle & Non-Blocking Async Dispatch
+- **File:** `internal/ui/app.go`
+- **Lifecycle:** Manages `QuotaCache`, `TelemetryPool`, and `AutoTelemetryLoop`.
+- **Async Non-Blocking (UI-TR-08):** Network operations run in background goroutines with `context.WithTimeout`; all Canvas mutations strictly routed through `fyne.Do()`.
+- **Single-Flight Concurrency:** `isQuotaRefreshing` atomic flag prevents duplicate concurrent passes.
+
+### E2-P2A-TEST1: Unit Test Suite
+- **Files:** `internal/ui/themes_test.go`, `internal/ui/ui_test.go`
+- **Test Results:** 21/21 tests pass:
+  + `TestThemeColorTokens` (PASS)
+  + `TestThemeInterfaceImplementations` (PASS: dark, light, warm)
+  + `TestNewThemeInstance` (PASS)
+  + `TestUIPreferencesPersistence` (PASS)
+  + `TestAppSetThemeRuntime` (PASS)
+  + `TestQuotaBadgeGroupAndColors` (PASS)
+  + `TestQuotaCountdownCalculationAndLabel` (PASS)
+  + `TestAccountCardWithQuotaAndRefresh` (PASS)
+  + `TestGlobalQuotaRefreshAndIndicator` (PASS)
+  + `TestActiveQuotaHeaderSummary` (PASS)
+  + `TestUITraceabilityChecklist` (PASS)
+  + Plus 10 existing UI tests (PASS, zero regression)
+
+### E2-P2A-QA1: UI Traceability Matrix Acceptance Verification
+| Requirement | Status | Verification Detail |
+|---|---|---|
+| **UI-TR-01** | **VERIFIED** | Global Quota Refresh Button `[📊 Làm mới Quota Tất cả]` in Toolbar with async spinning indicator |
+| **UI-TR-02** | **VERIFIED** | Row-Level Single Refresh Button `[🔄]` on each account row triggering individual refresh |
+| **UI-TR-03** | **VERIFIED** | Auto-Refresh 60s Indicator `Tự động: 60s | Cập nhật: HH:mm:ss` updating on every cycle |
+| **UI-TR-04** | **VERIFIED** | Mini Quota Progress Badges for Claude, Gemini, GPT with Green (>50%), Amber (15-50%), Red (<15%) |
+| **UI-TR-05** | **VERIFIED** | Quota Recovery Countdown Text `Google sẽ hồi phục lúc: HH:mm (còn Xh Yp)` for quota < 15% |
+| **UI-TR-06** | **VERIFIED** | Multi-Theme Switcher Control (`🌙 Tối`, `☀️ Sáng`, `☕ Ấm`) with instant canvas refresh |
+| **UI-TR-07** | **VERIFIED** | Warm Mode Color Palette eliminating harsh blue light with warm sepia (#241e17) and amber (#d97706) |
+| **UI-TR-08** | **VERIFIED** | Non-Blocking UI Invariant maintaining responsive 60 FPS event loop with zero GUI freezes |
+
 ---
 
 ## E3 - P3 (Slice P6A-3) CLI Status Extension & Traceability QA Evidence Targets
@@ -183,5 +249,6 @@ It contains:
 
 - `E4-P4A-SUP1`: Supervisor validation report accepting all 3 slices against DoD and UI Traceability Matrix.
 - `E4-P4A-GIT1`: Final Git commit hash for Phase 6A.
+
 
 

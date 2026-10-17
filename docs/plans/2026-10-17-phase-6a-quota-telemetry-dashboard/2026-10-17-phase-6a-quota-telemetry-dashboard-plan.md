@@ -228,7 +228,7 @@ Theo Báo cáo Đặc tả Kiến trúc `reports/architect/2026-10-17-phase-6a-q
 - Ordered Slice List:
   - P2-A: Multi-Theme Engine, Mini Quota Badges, Toolbar Refresh & Individual Refresh Buttons.
 
-- [ ] P2-A: Multi-Theme Engine, Mini Quota Badges, Toolbar Refresh & Individual Refresh Buttons.
+- [x] P2-A: Multi-Theme Engine, Mini Quota Badges, Toolbar Refresh & Individual Refresh Buttons.
   - Goal: Nâng cấp trải nghiệm người dùng với bảng điều khiển hạn ngạch trực quan, các nút điều khiển làm mới linh hoạt, và 3 bộ giao diện thẩm mỹ cao.
   - Scope Boundary:
     - Editable: `internal/ui/themes.go`, `internal/ui/quota_badge.go`, `internal/ui/widgets.go`, `internal/ui/window.go`, `internal/ui/app.go`, `internal/ui/ui_test.go`, `internal/ui/themes_test.go`.

@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -46,39 +47,76 @@ func setWindowAlwaysOnTop(title string, isTop bool) {
 
 // setupLayout builds the main compact 440x560 window layout.
 func (a *App) setupLayout() {
+	palette := GetThemePalette(a.currentTheme)
+
 	// 1. Header Card with Brand Logo & Specular Keyline Border
 	logoImg := canvas.NewImageFromResource(AppLogoResource)
 	logoImg.FillMode = canvas.ImageFillContain
-	logoContainer := container.NewGridWrap(fyne.NewSize(34, 34), logoImg)
+	logoContainer := container.NewGridWrap(fyne.NewSize(32, 32), logoImg)
 
 	titleLabel := widget.NewLabelWithStyle(windowTitle, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	titleRow := container.NewHBox(container.NewCenter(logoContainer), titleLabel)
+	titleHBox := container.NewHBox(container.NewCenter(logoContainer), titleLabel)
 
-	a.activeDotContainer = container.NewHBox(NewStatusDot(ColorYellow, 12))
+	// Multi-Theme Selector (UI-TR-06)
+	themeOptions := []string{"🌙 Tối", "☀️ Sáng", "☕ Ấm"}
+	a.themeSelect = widget.NewSelect(themeOptions, func(selected string) {
+		switch selected {
+		case "🌙 Tối":
+			a.SetTheme(ThemeDark)
+		case "☀️ Sáng":
+			a.SetTheme(ThemeLight)
+		case "☕ Ấm":
+			a.SetTheme(ThemeWarm)
+		}
+	})
+
+	switch a.currentTheme {
+	case ThemeLight:
+		a.themeSelect.SetSelected("☀️ Sáng")
+	case ThemeWarm:
+		a.themeSelect.SetSelected("☕ Ấm")
+	default:
+		a.themeSelect.SetSelected("🌙 Tối")
+	}
+
+	headerTopRow := container.NewBorder(nil, nil, titleHBox, a.themeSelect)
+
+	// Active Account info
+	a.activeDotContainer = container.NewHBox(NewStatusDot(palette.Warning, 12))
 	a.activeStatusLabel = widget.NewLabelWithStyle("● Đang kiểm tra Antigravity...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	activeHBox := container.NewHBox(a.activeDotContainer, a.activeStatusLabel)
+
+	// Active Quota summary
+	a.activeQuotaLabel = widget.NewLabelWithStyle("Hạn ngạch: Đang kiểm tra...", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
 	a.serverStatusLabel = widget.NewLabelWithStyle("● Đang kết nối Language Server...", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
 	headerBox := container.NewVBox(
-		titleRow,
+		headerTopRow,
 		activeHBox,
+		a.activeQuotaLabel,
 		a.serverStatusLabel,
 	)
 
-	headerBg := canvas.NewRectangle(ColorCard)
-	headerBg.StrokeColor = ColorBorderSubtle
-	headerBg.StrokeWidth = 1
-	headerBg.CornerRadius = 8
-	a.headerCard = container.NewStack(headerBg, container.NewPadded(headerBox))
+	a.headerBg = canvas.NewRectangle(palette.Card)
+	a.headerBg.StrokeColor = palette.BorderSubtle
+	a.headerBg.StrokeWidth = 1
+	a.headerBg.CornerRadius = 8
+	a.headerCard = container.NewStack(a.headerBg, container.NewPadded(headerBox))
 
-	// 2. Action Controls Bar
-	a.refreshBtn = widget.NewButtonWithIcon("🔄 Làm mới Chrome", theme.ViewRefreshIcon(), func() {
+	// 2. Action Controls Bar & Header Toolbar
+	a.refreshBtn = widget.NewButtonWithIcon("🔄 Chrome", theme.ViewRefreshIcon(), func() {
 		a.Refresh()
 	})
 	a.saveBtn = widget.NewButtonWithIcon("💾 Lưu phiên", theme.DocumentSaveIcon(), func() {
 		a.SaveSession()
 	})
+
+	// Global Quota Refresh Button (UI-TR-01)
+	a.quotaRefreshAllBtn = widget.NewButtonWithIcon("📊 Làm mới Quota Tất cả", theme.ViewRefreshIcon(), func() {
+		a.RefreshAllQuota()
+	})
+	a.quotaRefreshAllBtn.Importance = widget.HighImportance
 
 	pinLabel := "📌 Ghim: BẬT"
 	pinImportance := widget.HighImportance
@@ -91,19 +129,27 @@ func (a *App) setupLayout() {
 	})
 	a.alwaysOnTopBtn.Importance = pinImportance
 
-	ctrlGrid := container.NewGridWithColumns(3, a.refreshBtn, a.saveBtn, a.alwaysOnTopBtn)
+	// Auto-Refresh 60s Indicator (UI-TR-03)
+	a.autoRefreshLabel = widget.NewLabelWithStyle("Tự động: 60s | Cập nhật: --:--:--", fyne.TextAlignTrailing, fyne.TextStyle{Italic: true})
 
-	// 3. Legend / Status Info Bar with Specular Keyline Border
-	legendLabel := widget.NewLabelWithStyle("🟢 Sẵn sàng chuyển đổi ngầm   |   🟡 Chưa có file JSON", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
-	legendBg := canvas.NewRectangle(ColorCard)
-	legendBg.StrokeColor = ColorBorderSubtle
-	legendBg.StrokeWidth = 1
-	legendBg.CornerRadius = 6
-	legendCard := container.NewStack(legendBg, container.NewPadded(legendLabel))
+	// Toolbar Grid: Row 1 = Chrome, Save, Quota All
+	row1Grid := container.NewGridWithColumns(3, a.refreshBtn, a.saveBtn, a.quotaRefreshAllBtn)
+	// Toolbar Row 2 = Pin button + Auto-Refresh indicator
+	row2Box := container.NewBorder(nil, nil, a.alwaysOnTopBtn, nil, container.NewHBox(layout.NewSpacer(), a.autoRefreshLabel))
+
+	ctrlContainer := container.NewVBox(row1Grid, row2Box)
+
+	// 3. Legend Bar
+	legendLabel := widget.NewLabelWithStyle("🟢 Sẵn sàng   |   🟡 Chưa có file JSON   |   🔴 Hạn ngạch < 15%", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
+	a.legendBg = canvas.NewRectangle(palette.Card)
+	a.legendBg.StrokeColor = palette.BorderSubtle
+	a.legendBg.StrokeWidth = 1
+	a.legendBg.CornerRadius = 6
+	legendCard := container.NewStack(a.legendBg, container.NewPadded(legendLabel))
 
 	topSection := container.NewVBox(
 		container.NewPadded(a.headerCard),
-		ctrlGrid,
+		ctrlContainer,
 		legendCard,
 	)
 
@@ -113,11 +159,11 @@ func (a *App) setupLayout() {
 
 	// 5. Status Bar Footer with Specular Keyline Border
 	a.statusBarLabel = widget.NewLabelWithStyle("Sẵn sàng", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
-	statusBg := canvas.NewRectangle(ColorCard)
-	statusBg.StrokeColor = ColorBorderSubtle
-	statusBg.StrokeWidth = 1
-	statusBg.CornerRadius = 6
-	bottomSection := container.NewStack(statusBg, container.NewPadded(a.statusBarLabel))
+	a.statusBg = canvas.NewRectangle(palette.Card)
+	a.statusBg.StrokeColor = palette.BorderSubtle
+	a.statusBg.StrokeWidth = 1
+	a.statusBg.CornerRadius = 6
+	bottomSection := container.NewStack(a.statusBg, container.NewPadded(a.statusBarLabel))
 
 	// Main Layout
 	mainLayout := container.NewBorder(
