@@ -335,11 +335,8 @@ func TestSwitchAccount(t *testing.T) {
 	if authLogoutCount > 0 {
 		t.Fatalf("AuthLogout was invoked (%d times) during SwitchAccount! Expected AuthLogout to be bypassed (P0-02)", authLogoutCount)
 	}
-	if recycleCount.Load() != 0 {
-		t.Fatalf("Expected language server to NOT be recycled on successful ReAuth hot-swap, got %d", recycleCount.Load())
-	}
-	if !result.HotSwapped {
-		t.Errorf("Expected result.HotSwapped = true on successful ReAuth hot-swap, got false")
+	if recycleCount.Load() == 0 {
+		t.Fatalf("Expected language server to be recycled during SwitchAccount, got %d", recycleCount.Load())
 	}
 
 
@@ -850,14 +847,11 @@ func TestSwitchAccount_CivilizedReAuth_HotSwapped(t *testing.T) {
 	if !result.Success {
 		t.Fatalf("Expected success, got false: %s", result.Message)
 	}
-	if !result.HotSwapped {
-		t.Errorf("Expected HotSwapped = true for responsive LS, got false")
+	if killerCallCount.Load() != 1 {
+		t.Errorf("Expected 1 killer call for standard Antigravity recycle, got %d", killerCallCount.Load())
 	}
-	if killerCallCount.Load() != 0 {
-		t.Errorf("Expected 0 killer calls for civilized ReAuth, got %d", killerCallCount.Load())
-	}
-	if !reauthInvoked.Load() {
-		t.Errorf("Expected TriggerReauth to be invoked on client")
+	if reauthInvoked.Load() {
+		t.Errorf("Expected RPC ReAuth to be eliminated, but TriggerReauth was called")
 	}
 }
 

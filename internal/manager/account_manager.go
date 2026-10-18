@@ -49,13 +49,14 @@ type AccountOverview struct {
 
 // SwitchResult contains the outcome and latency of an account hot-swap operation.
 type SwitchResult struct {
-	Success       bool                    `json:"success"`
-	Message       string                  `json:"message"`
-	TargetEmail   string                  `json:"target_email"`
-	PreviousEmail string                  `json:"previous_email"`
-	Duration      time.Duration           `json:"duration"`
-	ActiveThreads []reloader.ActiveThread `json:"active_threads,omitempty"`
-	HotSwapped    bool                    `json:"hot_swapped"`
+	Success             bool                          `json:"success"`
+	Message             string                        `json:"message"`
+	TargetEmail         string                        `json:"target_email"`
+	PreviousEmail       string                        `json:"previous_email"`
+	Duration            time.Duration                 `json:"duration"`
+	ActiveThreads       []reloader.ActiveThread       `json:"active_threads,omitempty"`
+	HotSwapped          bool                          `json:"hot_swapped"`
+	ContinuationSummary *reloader.ContinuationSummary `json:"continuation_summary,omitempty"`
 }
 
 // AccountManager orchestrates AccountStore, WinCred, ChromeScanner, Connector, and Reloader.
@@ -381,24 +382,7 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		return nil, ErrEmptyTargetEmail
 	}
 
-	var shouldLogout bool
-	if len(forceLogout) > 0 {
-		shouldLogout = forceLogout[0]
-	}
-
-	m.mu.RLock()
-	finder := m.clientFinder
-	writer := m.wincredWriter
-	rel := m.reloader
-	refresher := m.oauthRefresher
-	m.mu.RUnlock()
-
-	// 1. Probe live RAM / current active email
-	var client *connector.Client
-	if finder != nil {
-		client, _ = finder(ctx)
-	}
-
+	// 1. Kiểm tra tài khoản hiện tại trong RAM, nếu đã là targetEmail thì no-op
 	currentEmail, _ := m.GetCurrentActiveEmail(ctx)
 	if currentEmail != "" && currentEmail == normTarget {
 		return &SwitchResult{
@@ -410,18 +394,38 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}, nil
 	}
 
-	// 2. Snapshot active threads BEFORE recycling to preserve in-flight conversation state (P0-04)
-	var activeThreads []reloader.ActiveThread
-	if rel != nil {
-		_, activeThreads, _ = rel.CaptureActiveThreadsSnapshot("", "", "")
-	} else {
-		_, activeThreads, _ = reloader.CaptureActiveThreadsSnapshot("", "", "")
+	m.mu.RLock()
+	rel := m.reloader
+	writer := m.wincredWriter
+	refresher := m.oauthRefresher
+	finder := m.clientFinder
+	m.mu.RUnlock()
+
+	var shouldLogout bool
+	if len(forceLogout) > 0 {
+		shouldLogout = forceLogout[0]
+	}
+	if shouldLogout && finder != nil {
+		if client, err := finder(ctx); err == nil && client != nil {
+			_ = client.AuthLogout(ctx)
+		}
 	}
 
-	// 3. Auto-capture active session before switching
+	// =========================================================================
+	// BƯỚC 1: Chốt danh sách trước khi chuyển tài khoản (Snapshot SQLite 2 Giờ)
+	// =========================================================================
+	var snapshotPath string
+	var activeThreads []reloader.ActiveThread
+	if rel != nil {
+		snapshotPath, activeThreads, _ = rel.CaptureActiveThreadsSnapshot("", "", "")
+	} else {
+		snapshotPath, activeThreads, _ = reloader.CaptureActiveThreadsSnapshot("", "", "")
+	}
+
+	// Tự động lưu phiên làm việc hiện tại
 	_, _ = m.CaptureCurrentSession()
 
-	// 4. Load target token from store
+	// Tải token của tài khoản mục tiêu từ accounts_store/
 	targetToken, err := m.store.GetAccount(normTarget)
 	if err != nil {
 		return &SwitchResult{
@@ -434,9 +438,7 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}, ErrTargetNotFound
 	}
 
-	// 4.1 Proactive Token Expiry Verification & Auto-Refresh (Slice 2 P1-B)
-	// If target token is expired or within 5 minutes of expiration, proactively refresh via Google OAuth
-	// and update both disk store and in-memory targetToken before writing to Windows Credential Manager.
+	// Auto-refresh token nếu sắp hết hạn trong 5 phút
 	if targetToken != nil && (targetToken.Expiry.IsZero() || time.Until(targetToken.Expiry) < 5*time.Minute) {
 		if targetToken.RefreshToken != "" {
 			activeRefresher := refresher
@@ -451,26 +453,18 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}
 	}
 
-	// 5. Parity with Python core/state_resolver.py:380-425:
-	// Default is False (smooth zero-chrome hot-swap without OAuth popups).
-	// NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true! (P0-02)
-	if shouldLogout && client != nil {
-		_ = client.AuthLogout(ctx)
-	}
-
-	// 5.1 Pre-sync app_storage.json ToS acceptance to eliminate Google Cloud ToS modal dialog (Slice 3 P1-C)
-	// Must be performed BEFORE writing to Windows Credential Manager and BEFORE reauth/reload.
-	isGcpTos := false
-	if targetToken != nil && strings.EqualFold(targetToken.AuthMethod, "gcp") {
-		isGcpTos = true
-	}
+	// =========================================================================
+	// BƯỚC 2: Chuyển tài khoản bằng cơ chế chuẩn của Antigravity
+	// =========================================================================
+	// 2.1 Đồng bộ ToS vào app_storage.json
+	isGcpTos := strings.EqualFold(targetToken.AuthMethod, "gcp")
 	storagePath := ""
 	if rel != nil {
 		storagePath = rel.StoragePath
 	}
 	_ = reloader.SyncAppStorageToS(normTarget, isGcpTos, storagePath)
 
-	// 6. Write target token to Windows Credential Manager
+	// 2.2 Ghi token vào Windows Credential Manager
 	if writer == nil {
 		return nil, errors.New("wincred writer not configured")
 	}
@@ -485,102 +479,76 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}, fmt.Errorf("%w: %v", ErrWriteCredFailed, err)
 	}
 
-	// 7. Ensure Antigravity window in foreground
+	// 2.3 Đưa cửa sổ Antigravity lên foreground
 	_ = reloader.EnsureAntigravityForeground()
 
-	// 8. Civilized RPC ReAuth Hot-Swap with Graceful Fallback (Slice 4 P1-D)
-	// When Language Server is alive (client != nil), first attempt zero-crash RPC ReAuth:
-	// 1. Post to Connect-RPC endpoint (/exa.language_server_pb.LanguageServerService/ReAuth)
-	// 2. Poll GetUserStatus to confirm Language Server loaded the new token into RAM
-	// 3. If verified, bypass RecycleLanguageServer completely (0 taskkill, 0 window reload, seamless hot-swap!)
-	// 4. If ReAuth fails, email mismatch, or Language Server is not running, fall back safely to RecycleLanguageServer.
-	var hotSwapped bool
+	// 2.4 Dừng language_server.exe để Antigravity monitorLsCrashInternal tự khởi động lại
+	// LƯU Ý BẮT BUỘC: Xóa bỏ 100% nhánh gọi RPC ReAuth ảo!
+	// BẮT ĐẦU CHỜ ĐỦ 8 GIÂY rồi mới qua bước tiếp theo
+	waitDuration := 8 * time.Second
+	var recycleErr error
+	if rel != nil {
+		recycleErr = rel.RecycleLanguageServer(ctx, waitDuration)
+	} else {
+		recycleErr = reloader.RecycleLanguageServer(ctx, waitDuration)
+	}
+	if recycleErr != nil {
+		return &SwitchResult{
+			Success:       true,
+			Message:       fmt.Sprintf("Đã chuyển sang %s (cảnh báo khởi động lại Language Server: %v)", normTarget, recycleErr),
+			TargetEmail:   normTarget,
+			PreviousEmail: currentEmail,
+			Duration:      time.Since(start),
+			ActiveThreads: activeThreads,
+		}, nil
+	}
+
+	// 2.5 Dò tìm Language Server mới sau 8 giây ổn định
 	var newClient *connector.Client
-
-	if client != nil {
-		reauthCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		reauthErr := client.TriggerReauth(reauthCtx)
-		cancel()
-
-		if reauthErr == nil {
-			// Short polling (up to 5 attempts, 50ms intervals) to confirm new token loaded into RAM
-			for attempt := 0; attempt < 5; attempt++ {
-				time.Sleep(50 * time.Millisecond)
-				status, statusErr := client.GetUserStatus(ctx)
-				if statusErr == nil && status != nil && strings.EqualFold(strings.TrimSpace(status.Email), normTarget) {
-					hotSwapped = true
-					newClient = client
-					break
-				}
-			}
+	if finder != nil {
+		newClient, _ = finder(ctx)
+	} else {
+		if newInfo, err := connector.DiscoverLanguageServer(); err == nil && newInfo != nil {
+			newClient = connector.NewClient(newInfo)
 		}
 	}
 
-	if !hotSwapped {
-		// Fallback path: language server was dead or RPC ReAuth could not hot-swap.
-		// Recycle language server process to let Antigravity crash monitor respawn fresh instance.
-		var recycleErr error
+	// =========================================================================
+	// BƯỚC 3: Đọc đúng file JSON của bước 1
+	// =========================================================================
+	threadsToContinue := activeThreads
+	if snapshotPath != "" {
+		if diskThreads, readErr := reloader.ReadActiveThreadsSnapshot(snapshotPath); readErr == nil && len(diskThreads) > 0 {
+			threadsToContinue = diskThreads
+		}
+	}
+
+	// =========================================================================
+	// BƯỚC 4: Gửi tuần tự toàn bộ danh sách (Nghỉ 3s giữa các thread, không ngắt khi lỗi)
+	// =========================================================================
+	var contSummary *reloader.ContinuationSummary
+	if newClient != nil && len(threadsToContinue) > 0 {
 		if rel != nil {
-			recycleErr = rel.RecycleLanguageServer(ctx, 2*time.Second)
+			contSummary, _ = rel.PerformSessionContinuation(ctx, newClient, threadsToContinue, "")
 		} else {
-			recycleErr = reloader.RecycleLanguageServer(ctx, 2*time.Second)
-		}
-		if recycleErr != nil {
-			return &SwitchResult{
-				Success:       true,
-				Message:       fmt.Sprintf("Đã chuyển sang %s (cảnh báo khởi động lại Language Server: %v)", normTarget, recycleErr),
-				TargetEmail:   normTarget,
-				PreviousEmail: currentEmail,
-				Duration:      time.Since(start),
-				ActiveThreads: activeThreads,
-				HotSwapped:    false,
-			}, nil
-		}
-
-		// Re-probe fresh Language Server (new PID, new Port, new CSRF token)
-		if finder != nil {
-			newClient, _ = finder(ctx)
-		} else {
-			if newInfo, err := connector.DiscoverLanguageServer(); err == nil && newInfo != nil {
-				newClient = connector.NewClient(newInfo)
-			}
+			contSummary, _ = reloader.PerformSessionContinuation(ctx, newClient, threadsToContinue, "")
 		}
 	}
 
-	// 9. In-Flight Session Continuation (Pure Native Connect-RPC: SmartFocus -> LoadTrajectory -> SendUserCascadeMessage) (P0-04)
-	if newClient != nil && len(activeThreads) > 0 {
-		if rel != nil {
-			_ = rel.PerformSessionContinuation(ctx, newClient, activeThreads, "")
-		} else {
-			_ = reloader.PerformSessionContinuation(ctx, newClient, activeThreads, "")
-		}
-	}
-
-	// 10. Re-verify new active email via GetUserStatus if not already verified
-	if newClient != nil && !hotSwapped {
-		if status, err := newClient.GetUserStatus(ctx); err == nil && status != nil && status.Email != "" {
-			confirmedEmail := strings.ToLower(strings.TrimSpace(status.Email))
-			if confirmedEmail == normTarget {
-				return &SwitchResult{
-					Success:       true,
-					Message:       fmt.Sprintf("Chuyển sang tài khoản %s thành công!", normTarget),
-					TargetEmail:   normTarget,
-					PreviousEmail: currentEmail,
-					Duration:      time.Since(start),
-					ActiveThreads: activeThreads,
-					HotSwapped:    hotSwapped,
-				}, nil
-			}
-		}
+	// Cập nhật thông điệp hoàn tất minh bạch
+	msg := fmt.Sprintf("Chuyển sang tài khoản %s thành công!", normTarget)
+	if contSummary != nil && contSummary.TotalThreads > 0 {
+		msg = fmt.Sprintf("Chuyển sang tài khoản %s thành công! Đã gửi prompt tiếp tục phiên vào %d/%d thread.",
+			normTarget, contSummary.SuccessCount, contSummary.TotalThreads)
 	}
 
 	return &SwitchResult{
-		Success:       true,
-		Message:       fmt.Sprintf("Chuyển sang tài khoản %s thành công!", normTarget),
-		TargetEmail:   normTarget,
-		PreviousEmail: currentEmail,
-		Duration:      time.Since(start),
-		ActiveThreads: activeThreads,
-		HotSwapped:    hotSwapped,
+		Success:             true,
+		Message:             msg,
+		TargetEmail:         normTarget,
+		PreviousEmail:       currentEmail,
+		Duration:            time.Since(start),
+		ActiveThreads:       threadsToContinue,
+		ContinuationSummary: contSummary,
 	}, nil
 }

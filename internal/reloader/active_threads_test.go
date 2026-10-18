@@ -5,193 +5,159 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
-func TestCaptureActiveThreadsSnapshot_DictFormat(t *testing.T) {
+func TestScanActiveConversations2h_ThresholdFiltering(t *testing.T) {
 	tmpDir := t.TempDir()
-	storagePath := filepath.Join(tmpDir, "app_storage.json")
-	brainDir := filepath.Join(tmpDir, "brain")
-	historyDir := filepath.Join(tmpDir, "active_threads_history")
+	now := time.Now()
 
-	// Create thread directories in brainDir matching Python test parity
-	_ = os.MkdirAll(filepath.Join(brainDir, "thread-main-456"), 0755)
-	_ = os.MkdirAll(filepath.Join(brainDir, "thread-secondary-123"), 0755)
+	// Thread A: mtime = now - 30m -> should be included
+	fileA := filepath.Join(tmpDir, "thread-a.db")
+	if err := os.WriteFile(fileA, []byte("data-a"), 0644); err != nil {
+		t.Fatalf("failed writing fileA: %v", err)
+	}
+	_ = os.Chtimes(fileA, now.Add(-30*time.Minute), now.Add(-30*time.Minute))
 
-	// Prepare mock app_storage.json
-	storageData := map[string]interface{}{
-		"aux-pane-v2-session.conversationPanes": map[string]interface{}{
-			"secondary-pane": map[string]interface{}{
-				"paneId": "pane-2",
-				"tabs": []interface{}{
-					map[string]interface{}{
-						"cascadeId": "thread-secondary-123",
-						"metadata": map[string]interface{}{
-							"workingDirectory": "G:/antigravity_auto_switch",
-						},
-					},
-					map[string]interface{}{
-						"id":   "file__viewer_tab",
-						"type": "fileView",
-					},
-				},
-			},
-			"main-pane": map[string]interface{}{
-				"paneId": "pane-main",
-				"tabs": []interface{}{
-					map[string]interface{}{
-						"cascadeId": "thread-main-456",
-						"metadata": map[string]interface{}{
-							"workspaceUri": "file:///C:/Projects/AlphaApp",
-						},
-					},
-				},
-			},
+	// Thread B: mtime = now - 1h50m -> should be included
+	fileB := filepath.Join(tmpDir, "thread-b.db")
+	if err := os.WriteFile(fileB, []byte("data-b"), 0644); err != nil {
+		t.Fatalf("failed writing fileB: %v", err)
+	}
+	_ = os.Chtimes(fileB, now.Add(-110*time.Minute), now.Add(-110*time.Minute))
+
+	// Thread C: .db mtime = now - 3h, but .db-wal mtime = now - 10m -> should be included (MAX logic)
+	fileC := filepath.Join(tmpDir, "thread-c.db")
+	fileCWal := filepath.Join(tmpDir, "thread-c.db-wal")
+	if err := os.WriteFile(fileC, []byte("data-c"), 0644); err != nil {
+		t.Fatalf("failed writing fileC: %v", err)
+	}
+	_ = os.Chtimes(fileC, now.Add(-3*time.Hour), now.Add(-3*time.Hour))
+	if err := os.WriteFile(fileCWal, []byte("wal-c"), 0644); err != nil {
+		t.Fatalf("failed writing fileCWal: %v", err)
+	}
+	_ = os.Chtimes(fileCWal, now.Add(-10*time.Minute), now.Add(-10*time.Minute))
+
+	// Thread D: mtime = now - 2h10m -> should be excluded
+	fileD := filepath.Join(tmpDir, "thread-d.db")
+	if err := os.WriteFile(fileD, []byte("data-d"), 0644); err != nil {
+		t.Fatalf("failed writing fileD: %v", err)
+	}
+	_ = os.Chtimes(fileD, now.Add(-130*time.Minute), now.Add(-130*time.Minute))
+
+	// conversation_summaries.db (should be ignored by filter)
+	fileIgnored := filepath.Join(tmpDir, "conversation_summaries.db")
+	_ = os.WriteFile(fileIgnored, []byte("summary"), 0644)
+	_ = os.Chtimes(fileIgnored, now, now)
+
+	activeThreads, err := ScanActiveConversations2h(tmpDir, "", now)
+	if err != nil {
+		t.Fatalf("ScanActiveConversations2h failed: %v", err)
+	}
+
+	if len(activeThreads) != 3 {
+		t.Fatalf("Expected exactly 3 active threads, got %d: %+v", len(activeThreads), activeThreads)
+	}
+
+	// Ordering must be descending by effectiveMtime:
+	// 1st: thread-c (effective = now - 10m)
+	// 2nd: thread-a (effective = now - 30m)
+	// 3rd: thread-b (effective = now - 1h50m)
+	if activeThreads[0].ThreadID != "thread-c" {
+		t.Errorf("Expected 1st thread to be thread-c, got %s", activeThreads[0].ThreadID)
+	}
+	if !activeThreads[0].IsMainPane {
+		t.Errorf("Expected 1st thread to have IsMainPane = true")
+	}
+
+	if activeThreads[1].ThreadID != "thread-a" {
+		t.Errorf("Expected 2nd thread to be thread-a, got %s", activeThreads[1].ThreadID)
+	}
+	if activeThreads[1].IsMainPane {
+		t.Errorf("Expected 2nd thread to have IsMainPane = false")
+	}
+
+	if activeThreads[2].ThreadID != "thread-b" {
+		t.Errorf("Expected 3rd thread to be thread-b, got %s", activeThreads[2].ThreadID)
+	}
+	if activeThreads[2].IsMainPane {
+		t.Errorf("Expected 3rd thread to have IsMainPane = false")
+	}
+}
+
+func TestReadActiveThreadsSnapshot_RoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	snapshotFile := filepath.Join(tmpDir, "test_snapshot.json")
+
+	original := ActiveThreadsSnapshot{
+		Timestamp: "2026-10-18 12:00:00",
+		ActiveThreads: []ActiveThread{
+			{ThreadID: "t-1", Project: "C:/Projects/App1", IsMainPane: true},
+			{ThreadID: "t-2", Project: "D:/Work/App2", IsMainPane: false},
 		},
 	}
 
-	rawBytes, err := json.MarshalIndent(storageData, "", "  ")
+	data, err := json.MarshalIndent(original, "", "  ")
 	if err != nil {
-		t.Fatalf("Failed marshaling storage data: %v", err)
+		t.Fatalf("Failed marshaling: %v", err)
 	}
-	if err := os.WriteFile(storagePath, rawBytes, 0644); err != nil {
-		t.Fatalf("Failed writing storage file: %v", err)
+	if err := os.WriteFile(snapshotFile, data, 0644); err != nil {
+		t.Fatalf("Failed writing: %v", err)
 	}
 
-	snapshotPath, activeThreads, err := CaptureActiveThreadsSnapshot(storagePath, brainDir, historyDir)
+	readThreads, err := ReadActiveThreadsSnapshot(snapshotFile)
+	if err != nil {
+		t.Fatalf("ReadActiveThreadsSnapshot failed: %v", err)
+	}
+
+	if len(readThreads) != 2 {
+		t.Fatalf("Expected 2 threads, got %d", len(readThreads))
+	}
+	if readThreads[0].ThreadID != "t-1" || readThreads[0].Project != "C:/Projects/App1" || !readThreads[0].IsMainPane {
+		t.Errorf("Mismatch on thread 0: %+v", readThreads[0])
+	}
+	if readThreads[1].ThreadID != "t-2" || readThreads[1].Project != "D:/Work/App2" || readThreads[1].IsMainPane {
+		t.Errorf("Mismatch on thread 1: %+v", readThreads[1])
+	}
+
+	// Test empty path error
+	if _, err := ReadActiveThreadsSnapshot(""); err == nil {
+		t.Errorf("Expected error for empty snapshotPath, got nil")
+	}
+}
+
+func TestCaptureActiveThreadsSnapshot_SQLite(t *testing.T) {
+	tmpDir := t.TempDir()
+	convDir := filepath.Join(tmpDir, "conversations")
+	_ = os.MkdirAll(convDir, 0755)
+	historyDir := filepath.Join(tmpDir, "active_threads_history")
+
+	now := time.Now()
+	f1 := filepath.Join(convDir, "thread-snap-1.db")
+	_ = os.WriteFile(f1, []byte("data1"), 0644)
+	_ = os.Chtimes(f1, now.Add(-5*time.Minute), now.Add(-5*time.Minute))
+
+	snapshotPath, activeThreads, err := CaptureActiveThreadsSnapshot(convDir, "", historyDir)
 	if err != nil {
 		t.Fatalf("CaptureActiveThreadsSnapshot failed: %v", err)
 	}
-
 	if snapshotPath == "" {
-		t.Fatal("Expected non-empty snapshot path")
+		t.Fatalf("Expected non-empty snapshotPath")
 	}
 	if _, err := os.Stat(snapshotPath); err != nil {
 		t.Fatalf("Snapshot file does not exist on disk: %v", err)
 	}
-
-	// Must exclude fileView tab and have 2 threads
-	if len(activeThreads) != 2 {
-		t.Fatalf("Expected 2 active threads, got %d: %+v", len(activeThreads), activeThreads)
+	if len(activeThreads) != 1 || activeThreads[0].ThreadID != "thread-snap-1" {
+		t.Errorf("Unexpected active threads: %+v", activeThreads)
 	}
 
-	// Main pane thread MUST be first (is_main_pane = true)
-	if !activeThreads[0].IsMainPane || activeThreads[0].ThreadID != "thread-main-456" {
-		t.Errorf("Expected first thread to be main pane (thread-main-456), got: %+v", activeThreads[0])
-	}
-	if activeThreads[0].Project != "C:/Projects/AlphaApp" {
-		t.Errorf("Expected project C:/Projects/AlphaApp, got: %s", activeThreads[0].Project)
-	}
-
-	// Secondary thread
-	if activeThreads[1].IsMainPane || activeThreads[1].ThreadID != "thread-secondary-123" {
-		t.Errorf("Expected second thread to be secondary pane, got: %+v", activeThreads[1])
-	}
-	if activeThreads[1].Project != "G:/antigravity_auto_switch" {
-		t.Errorf("Expected project G:/antigravity_auto_switch, got: %s", activeThreads[1].Project)
-	}
-
-	// Verify persisted snapshot file content
-	fileBytes, err := os.ReadFile(snapshotPath)
+	// Read it back via ReadActiveThreadsSnapshot
+	diskThreads, err := ReadActiveThreadsSnapshot(snapshotPath)
 	if err != nil {
-		t.Fatalf("Failed reading snapshot file: %v", err)
+		t.Fatalf("Failed reading snapshot back: %v", err)
 	}
-	var snapshot ActiveThreadsSnapshot
-	if err := json.Unmarshal(fileBytes, &snapshot); err != nil {
-		t.Fatalf("Failed unmarshaling snapshot JSON: %v", err)
-	}
-	if snapshot.Timestamp == "" {
-		t.Error("Expected non-empty timestamp in snapshot JSON")
-	}
-	if len(snapshot.ActiveThreads) != 2 {
-		t.Errorf("Expected 2 active threads in JSON, got %d", len(snapshot.ActiveThreads))
-	}
-}
-
-func TestCaptureActiveThreadsSnapshot_ListFormat(t *testing.T) {
-	tmpDir := t.TempDir()
-	storagePath := filepath.Join(tmpDir, "app_storage.json")
-	brainDir := filepath.Join(tmpDir, "brain")
-	historyDir := filepath.Join(tmpDir, "active_threads_history")
-
-	_ = os.MkdirAll(filepath.Join(brainDir, "list-thread-1"), 0755)
-	_ = os.MkdirAll(filepath.Join(brainDir, "list-thread-2"), 0755)
-
-	storageData := map[string]interface{}{
-		"conversationPanes": []interface{}{
-			map[string]interface{}{
-				"paneId": "main-pane",
-				"tabs": []interface{}{
-					map[string]interface{}{
-						"cascadeId":         "list-thread-1",
-						"working_directory": "D:/workspace/repo",
-					},
-				},
-			},
-			map[string]interface{}{
-				"paneId":    "child-pane",
-				"cascadeId": "list-thread-2",
-			},
-		},
-	}
-
-	rawBytes, _ := json.Marshal(storageData)
-	_ = os.WriteFile(storagePath, rawBytes, 0644)
-
-	snapshotPath, activeThreads, err := CaptureActiveThreadsSnapshot(storagePath, brainDir, historyDir)
-	if err != nil {
-		t.Fatalf("CaptureActiveThreadsSnapshot failed: %v", err)
-	}
-
-	if _, err := os.Stat(snapshotPath); err != nil {
-		t.Fatalf("Snapshot file was not created: %v", err)
-	}
-
-	if len(activeThreads) != 2 {
-		t.Fatalf("Expected 2 active threads, got %d", len(activeThreads))
-	}
-
-	if !activeThreads[0].IsMainPane || activeThreads[0].ThreadID != "list-thread-1" {
-		t.Errorf("Expected first thread to be list-thread-1, got %+v", activeThreads[0])
-	}
-}
-
-func TestCaptureActiveThreadsSnapshot_BrainDirFiltering(t *testing.T) {
-	tmpDir := t.TempDir()
-	storagePath := filepath.Join(tmpDir, "app_storage.json")
-	brainDir := filepath.Join(tmpDir, "brain")
-	historyDir := filepath.Join(tmpDir, "active_threads_history")
-
-	_ = os.MkdirAll(filepath.Join(brainDir, "thread-exists"), 0755)
-
-	storageData := map[string]interface{}{
-		"aux-pane-v2-session.conversationPanes": map[string]interface{}{
-			"pane-1": map[string]interface{}{
-				"paneId": "main",
-				"tabs": []interface{}{
-					map[string]interface{}{
-						"cascadeId": "thread-exists",
-					},
-					map[string]interface{}{
-						"cascadeId": "thread-does-not-exist",
-					},
-				},
-			},
-		},
-	}
-
-	rawBytes, _ := json.Marshal(storageData)
-	_ = os.WriteFile(storagePath, rawBytes, 0644)
-
-	_, activeThreads, err := CaptureActiveThreadsSnapshot(storagePath, brainDir, historyDir)
-	if err != nil {
-		t.Fatalf("CaptureActiveThreadsSnapshot failed: %v", err)
-	}
-
-	if len(activeThreads) != 1 {
-		t.Fatalf("Expected 1 active thread after brainDir filtering, got %d", len(activeThreads))
-	}
-	if activeThreads[0].ThreadID != "thread-exists" {
-		t.Errorf("Expected thread-exists, got %s", activeThreads[0].ThreadID)
+	if len(diskThreads) != 1 || diskThreads[0].ThreadID != "thread-snap-1" {
+		t.Errorf("Unexpected disk threads: %+v", diskThreads)
 	}
 }
 
@@ -230,5 +196,28 @@ func TestExtractProjectFromText(t *testing.T) {
 				t.Errorf("Expected %q, got %q", tc.expected, got)
 			}
 		})
+	}
+}
+
+func TestResolveProjectFromSummaries(t *testing.T) {
+	tmpDir := t.TempDir()
+	summariesDb := filepath.Join(tmpDir, "conversation_summaries.db")
+
+	// Binary content containing thread-id and workspace uri
+	content := []byte(`some header 12345678-abcd-1234-abcd-1234567890ab middle text ["file:///C:/Users/Tam/Workspace%20Proj"] trailing data`)
+	if err := os.WriteFile(summariesDb, content, 0644); err != nil {
+		t.Fatalf("Failed writing summaries db: %v", err)
+	}
+
+	got := resolveProjectFromSummaries(summariesDb, "12345678-abcd-1234-abcd-1234567890ab")
+	expected := "C:/Users/Tam/Workspace Proj"
+	if got != expected {
+		t.Errorf("Expected %q, got %q", expected, got)
+	}
+
+	// Non-existent thread
+	gotEmpty := resolveProjectFromSummaries(summariesDb, "non-existent-thread")
+	if gotEmpty != "" {
+		t.Errorf("Expected empty string for non-existent thread, got %q", gotEmpty)
 	}
 }
