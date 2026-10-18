@@ -1024,6 +1024,48 @@ func TestOwnerRedesign_QuotaCycleRowMinSizeFits840Window(t *testing.T) {
 	}
 }
 
+func TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840(t *testing.T) {
+	// Regression test for descendant overflow at 840x525 window size (card inner width = 264px).
+	// Ensures that all children/descendants inside the quota row fit strictly within size.Width without clipping.
+	testCases := []struct {
+		name    string
+		prefix  string
+		cFrac   float64
+		gFrac   float64
+		hasData bool
+		isErr   bool
+	}{
+		{"100% and 91.6%", "week:", 1.0, 0.916, true, false},
+		{"46% and 12%", "week:", 0.46, 0.12, true, false},
+		{"0% and 50%", "week:", 0.0, 0.50, true, false},
+		{"Missing data", "week:", -1.0, -1.0, false, false},
+		{"Error state", "week:", -1.0, -1.0, false, true},
+		{"5h worst case", "5h:", 1.0, 0.916, true, false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			row := CreateQuotaCycleRow(tc.prefix, tc.cFrac, tc.gFrac, tc.hasData, tc.isErr)
+			row.Resize(fyne.NewSize(264.0, 15.0))
+
+			var checkWalk func(o fyne.CanvasObject, offsetX float32)
+			checkWalk = func(o fyne.CanvasObject, offsetX float32) {
+				absX := offsetX + o.Position().X
+				right := absX + o.Size().Width
+				if right > 264.05 {
+					t.Errorf("%s: descendant %T right edge %.2f exceeds 264px", tc.name, o, right)
+				}
+				if cont, ok := o.(*fyne.Container); ok {
+					for _, ch := range cont.Objects {
+						checkWalk(ch, absX)
+					}
+				}
+			}
+			checkWalk(row, 0)
+		})
+	}
+}
+
 func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 	switchedEmail := ""
 	singleRefreshedEmail := ""
