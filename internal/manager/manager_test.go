@@ -437,3 +437,52 @@ func TestSwitchAccount_F4_StoragePathIntegration(t *testing.T) {
 		t.Fatalf("Expected 1 active thread captured, got %+v", result.ActiveThreads)
 	}
 }
+
+// TestSwitchAccount_F1_RAMConfirmation_ClientNilWithoutError verifies that when clientFinder
+// returns (nil, nil) even with target credentials written, SwitchAccount strictly returns Success=false and an error (R2-F1).
+func TestSwitchAccount_F1_RAMConfirmation_ClientNilWithoutError(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, _ := store.NewAccountStore(tmpDir)
+
+	targetEmail := "target-nil-without-error@example.com"
+	currentEmail := "current-before@example.com"
+
+	_ = accStore.SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "target-tok",
+		IDToken:     makeTestJWT(targetEmail),
+		Expiry:      time.Now().Add(1 * time.Hour),
+	})
+
+	rel := reloader.NewSessionReloader()
+	rel.ConversationsDir = tmpDir
+	rel.OutputDir = filepath.Join(tmpDir, "history")
+	rel.WindowFinder = func() ([]windows.HWND, error) { return []windows.HWND{windows.HWND(101)}, nil }
+	rel.ProcessKiller = func(ctx context.Context) error { return nil }
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{PID: 9999, Port: 23456, CSRFToken: "tok"}, nil
+	}
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+
+	mgr, _ := NewAccountManager(accStore, rel)
+	var activeToken *model.TokenData = &model.TokenData{IDToken: makeTestJWT(currentEmail)}
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) { return activeToken, nil },
+		func(token *model.TokenData) error {
+			activeToken = token
+			return nil
+		},
+	)
+
+	// clientFinder returns (nil, nil)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, nil
+	})
+
+	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
+	if err == nil {
+		t.Fatalf("Expected error when newClient is nil (even without error), got nil")
+	}
+	if result == nil || result.Success {
+		t.Fatalf("Expected result.Success = false when newClient is nil, got %+v", result)
+	}
+}

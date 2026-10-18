@@ -32,21 +32,8 @@ type ActiveThreadsSnapshot struct {
 	ActiveThreads []ActiveThread `json:"active_threads"`
 }
 
-var (
-	reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-	reActiveWorkspaces = regexp.MustCompile(`(?i)Active Workspaces:\s*[
-]+\s*-\s*([^
-]+)`)
-	reCommandCwd       = regexp.MustCompile(`(?i)Command Working Directory:\s*([^
-]+)`)
-	reJSONCwd          = regexp.MustCompile(`["']Cwd["']\s*:\s*["']([^"']+)["']`)
-	reJSONProj         = regexp.MustCompile(`(?i)["'](?:project|workspace|workspace_path|workingDirectory|working_directory|active_workspace|activeWorkspace)["']\s*:\s*["']([^"']+)["']`)
-	reFileURI          = regexp.MustCompile(`file:///([^
-"'#]+)`)
-
-
-)
 
 // GetDefaultThreadsHistoryDir returns the canonical accounts_store/active_threads_history directory.
 func GetDefaultThreadsHistoryDir() string {
@@ -280,51 +267,6 @@ func cleanFileURI(raw string) string {
 	}
 	return raw
 }
-
-func extractProjectFromText(text string) string {
-	if strings.TrimSpace(text) == "" {
-		return ""
-	}
-
-	if m := reActiveWorkspaces.FindStringSubmatch(text); len(m) > 1 {
-		if p := strings.TrimSpace(m[1]); p != "" {
-			return p
-		}
-	}
-
-	if m := reCommandCwd.FindStringSubmatch(text); len(m) > 1 {
-		if p := strings.TrimSpace(m[1]); p != "" {
-			return p
-		}
-	}
-
-	if m := reJSONCwd.FindStringSubmatch(text); len(m) > 1 {
-		p := strings.TrimSpace(m[1])
-		p = strings.ReplaceAll(p, `\\`, `\`)
-		if p != "" {
-			return p
-		}
-	}
-
-	if m := reJSONProj.FindStringSubmatch(text); len(m) > 1 {
-		p := strings.TrimSpace(m[1])
-		p = strings.ReplaceAll(p, `\\`, `\`)
-		if p != "" {
-			return p
-		}
-	}
-
-	if m := reFileURI.FindStringSubmatch(text); len(m) > 1 {
-		raw := m[1]
-		if p := cleanFileURI(raw); p != "" {
-			return p
-		}
-	}
-
-	return ""
-}
-
-
 
 func isFile(p string) bool {
 	stat, err := os.Stat(p)
