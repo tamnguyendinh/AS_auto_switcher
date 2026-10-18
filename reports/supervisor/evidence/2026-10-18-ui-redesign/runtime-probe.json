@@ -1,0 +1,87 @@
+{
+  "cloud_summary_payload": {
+    "actual": {
+      "Claude5h": 1,
+      "ClaudeWeek": 1,
+      "Gemini5h": 1,
+      "GeminiWeek": 1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.46,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.9,
+      "HasData": true,
+      "IsError": false
+    },
+    "production_endpoint": "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+    "raw_bucket_count": 0
+  },
+  "connect_rpc": {
+    "actual": {
+      "Claude5h": 0.12,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.88,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.46,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.9,
+      "HasData": true,
+      "IsError": false
+    },
+    "matches_expected": false,
+    "raw_bucket_count": 0,
+    "serialized_gpt_field_present": true
+  },
+  "driver": "Fyne test.NewApp headless; not a native desktop screenshot",
+  "single_card_refresh": {
+    "actual_unchanged_sibling_cards": 0,
+    "callback_ms": 0,
+    "expected_unchanged_sibling_cards": 5,
+    "latency_scope": "synthetic fetcher sleeps 50ms; no claim about real provider latency",
+    "mock_completion_ms": 98.57,
+    "polled_emails": [
+      "account1@example.com"
+    ]
+  },
+  "theme_monogram": {
+    "after_light": "#89b4fa",
+    "before": "#89b4fa",
+    "expected_light": "#2563eb"
+  },
+  "window": {
+    "content_min": {
+      "Width": 1200,
+      "Height": 750
+    },
+    "first_card_min": {
+      "Width": 198.01562,
+      "Height": 81.96875
+    },
+    "first_card_size": {
+      "Width": 472,
+      "Height": 378.42188
+    },
+    "fixed_size": false,
+    "grid_card_count": 6,
+    "grid_min": {
+      "Width": 620.9375,
+      "Height": 167.9375
+    },
+    "grid_size": {
+      "Width": 1424,
+      "Height": 760.84375
+    },
+    "headless_canvas_size": {
+      "Width": 1440,
+      "Height": 900
+    }
+  }
+}
