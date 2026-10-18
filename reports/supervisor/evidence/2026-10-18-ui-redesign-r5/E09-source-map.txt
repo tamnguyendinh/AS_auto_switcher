@@ -1,0 +1,29 @@
+internal/telemetry/client.go:225:type ModelQuotaBucket struct {
+internal/telemetry/client.go:238:func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
+internal/telemetry/client.go:281:func (a *AccountQuotaData) UnmarshalJSON(data []byte) error {
+internal/telemetry/client.go:313:type AccountQuotaData struct {
+internal/telemetry/client.go:555:		if hasGemini && gemini.RemainingFraction <= 0.50 && (!hasClaude || claude.RemainingFraction > 0.50) {
+internal/telemetry/client.go:557:		} else if hasClaude && claude.RemainingFraction <= 0.50 && (!hasGemini || gemini.RemainingFraction > 0.50) {
+internal/telemetry/client.go:827:		if hasGemini && gemini.RemainingFraction <= 0.50 && (!hasClaudeGPT || claude.RemainingFraction > 0.50) {
+internal/telemetry/client.go:829:		} else if hasClaudeGPT && claude.RemainingFraction <= 0.50 && (!hasGemini || gemini.RemainingFraction > 0.50) {
+internal/ui\window.go:171:	a.accountListContainer = container.NewGridWithColumns(3)
+internal/ui\window.go:172:	scrollList := container.NewVScroll(container.NewPadded(container.NewVBox(a.accountListContainer)))
+internal/ui\widgets.go:100:func NewAccountCardWithQuota(
+internal/ui\widgets.go:140:	row5h := CreateQuotaCycleRow("5h:", dq.Claude5h, dq.Gemini5h, dq.HasData, dq.IsError)
+internal/ui\widgets.go:143:	rowWeek := CreateQuotaCycleRow("week:", dq.ClaudeWeek, dq.GeminiWeek, dq.HasData, dq.IsError)
+internal/ui\app.go:179:		a.monogramBg.FillColor = palette.Primary
+internal/ui\app.go:346:func (a *App) RefreshSingleAccountQuota(email string) {
+internal/ui\app.go:407:					a.accountListContainer.Objects[targetIdx] = newCard
+internal/ui\quota_badge.go:65:func extractFamilyCycles(bucket telemetry.ModelQuotaBucket, rawBuckets []telemetry.ModelQuotaBucket, familyKeywords []string) (h5 float64, week float64) {
+internal/ui\quota_badge.go:70:	has5h := bucket.FiveHourFraction >= 0
+internal/ui\quota_badge.go:71:	hasWeek := bucket.WeeklyFraction >= 0
+internal/ui\quota_badge.go:73:	// Special case: if Go struct literal in tests only initialized RemainingFraction > 0 and left cycle fractions as 0
+internal/ui\quota_badge.go:74:	if bucket.RemainingFraction > 0 && bucket.FiveHourFraction == 0 && bucket.WeeklyFraction == 0 && bucket.FiveHourReset.IsZero() && bucket.WeeklyReset.IsZero() {
+internal/ui\quota_badge.go:79:	if has5h {
+internal/ui\quota_badge.go:82:	if hasWeek {
+internal/ui\quota_badge.go:124:	// Legacy single-bucket fallback: only if NO cycle-specific data found
+internal/ui\quota_badge.go:134:func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
+internal/ui\quota_badge.go:136:		return DualCycleQuota{Claude5h: -1, ClaudeWeek: -1, Gemini5h: -1, GeminiWeek: -1, HasData: false}
+internal/ui\quota_badge.go:139:		return DualCycleQuota{Claude5h: -1, ClaudeWeek: -1, Gemini5h: -1, GeminiWeek: -1, HasData: false, IsError: true}
+internal/ui\quota_badge.go:150:		HasData:    c5h >= 0 || cWeek >= 0 || g5h >= 0 || gWeek >= 0,
+internal/ui\quota_badge.go:157:func createModelQuotaItem(modelName string, fraction float64, hasData bool) fyne.CanvasObject {
