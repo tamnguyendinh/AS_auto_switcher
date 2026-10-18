@@ -48,16 +48,14 @@ type App struct {
 	accountListContainer *fyne.Container
 	statusBarLabel       *widget.Label
 	refreshBtn           *widget.Button
-	saveBtn              *widget.Button
 	quotaRefreshAllBtn   *widget.Button
 	autoRefreshLabel     *widget.Label
 	lastUpdatedLabel     *widget.Label
 	alwaysOnTopBtn       *widget.Button
 	themeSelect          *widget.Select
-	headerCard           *fyne.Container
+	monogramBg           *canvas.Rectangle
 	headerBg             *canvas.Rectangle
-	statusBg             *canvas.Rectangle
-	legendBg             *canvas.Rectangle
+	accountScroll        *container.Scroll
 }
 
 // NewApp creates a new GUI Application with default Fyne runtime and AccountManager.
@@ -156,6 +154,16 @@ func (a *App) IsQuotaRefreshing() bool {
 	return a.isQuotaRefreshing.Load()
 }
 
+// IsAnyAccountRefreshing returns whether any single account quota refresh is currently in flight.
+func (a *App) IsAnyAccountRefreshing() bool {
+	refreshing := false
+	a.accountRefreshing.Range(func(key, value any) bool {
+		refreshing = true
+		return false
+	})
+	return refreshing
+}
+
 // SetTheme switches the application theme at runtime and persists the preference.
 func (a *App) SetTheme(themeName string) {
 	a.mu.Lock()
@@ -171,20 +179,14 @@ func (a *App) SetTheme(themeName string) {
 
 	palette := GetThemePalette(themeName)
 
+	if a.monogramBg != nil {
+		a.monogramBg.FillColor = palette.Primary
+		a.monogramBg.Refresh()
+	}
 	if a.headerBg != nil {
 		a.headerBg.FillColor = palette.Card
 		a.headerBg.StrokeColor = palette.BorderSubtle
 		a.headerBg.Refresh()
-	}
-	if a.statusBg != nil {
-		a.statusBg.FillColor = palette.Card
-		a.statusBg.StrokeColor = palette.BorderSubtle
-		a.statusBg.Refresh()
-	}
-	if a.legendBg != nil {
-		a.legendBg.FillColor = palette.Card
-		a.legendBg.StrokeColor = palette.BorderSubtle
-		a.legendBg.Refresh()
 	}
 
 	a.mu.RLock()
@@ -392,10 +394,43 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 		fyne.Do(func() {
 			a.mu.RLock()
 			overview := a.overview
+			currentTheme := a.currentTheme
 			a.mu.RUnlock()
-			if overview != nil {
-				a.updateUI(overview)
+
+			palette := GetThemePalette(currentTheme)
+
+			if a.accountListContainer != nil && overview != nil {
+				targetIdx := -1
+				var targetItem manager.AccountDisplayItem
+				for idx, acc := range overview.Accounts {
+					if acc.Email == email {
+						targetIdx = idx
+						targetItem = acc
+						break
+					}
+				}
+
+				if targetIdx >= 0 && targetIdx < len(a.accountListContainer.Objects) {
+					var quotaData *telemetry.AccountQuotaData
+					if a.quotaCache != nil {
+						quotaData, _ = a.quotaCache.Get(email)
+					}
+					if quotaData == nil {
+						quotaData = data
+					}
+					newCard := NewAccountCardWithQuota(
+						targetItem,
+						quotaData,
+						palette,
+						a.SwitchAccount,
+						a.SaveSession,
+						a.RefreshSingleAccountQuota,
+					)
+					a.accountListContainer.Objects[targetIdx] = newCard
+					a.accountListContainer.Refresh()
+				}
 			}
+
 			nowStr := time.Now().Format("15:04:05")
 			if a.lastUpdatedLabel != nil {
 				a.lastUpdatedLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
@@ -729,7 +764,16 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 				a.accountListContainer.Add(card)
 			}
 		}
+		minH := a.accountListContainer.MinSize().Height
+		w := a.accountListContainer.Size().Width
+		if w <= 0 {
+			w = 1424
+		}
+		a.accountListContainer.Resize(fyne.NewSize(w, minH))
 		a.accountListContainer.Refresh()
+		if a.accountScroll != nil {
+			a.accountScroll.Refresh()
+		}
 	}
 
 	// 4. Update timestamp in toolbar

@@ -57,6 +57,9 @@ func FormatRemainingCountdown(resetTime time.Time, now time.Time) string {
 
 // formatFraction formats the fraction [0.0, 1.0] as a percentage string.
 func formatFraction(fraction float64) string {
+	if fraction < 0 {
+		return "--%"
+	}
 	if fraction >= 1.0 {
 		return "100%"
 	}
@@ -90,36 +93,85 @@ func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
 	}
 
 	dq := DualCycleQuota{
-		HasData:    true,
-		Claude5h:   quota.Claude.RemainingFraction,
-		ClaudeWeek: quota.Claude.RemainingFraction,
-		Gemini5h:   quota.Gemini.RemainingFraction,
-		GeminiWeek: quota.Gemini.RemainingFraction,
+		Claude5h:   -1,
+		ClaudeWeek: -1,
+		Gemini5h:   -1,
+		GeminiWeek: -1,
 	}
 
+	hasAnyBucket := false
+
+	// Priority 1: Extract from RawBuckets if available
 	for _, b := range quota.RawBuckets {
 		lower := strings.ToLower(b.ModelID)
+		is5h := strings.Contains(lower, "5h")
+		isWeek := strings.Contains(lower, "week")
+
 		if strings.Contains(lower, "gemini") {
-			if strings.Contains(lower, "5h") {
+			if is5h {
 				dq.Gemini5h = b.RemainingFraction
-			} else if strings.Contains(lower, "week") {
+				hasAnyBucket = true
+			} else if isWeek {
 				dq.GeminiWeek = b.RemainingFraction
+				hasAnyBucket = true
 			}
 		} else if strings.Contains(lower, "claude") || strings.Contains(lower, "3p") {
-			if strings.Contains(lower, "5h") {
+			if is5h {
 				dq.Claude5h = b.RemainingFraction
-			} else if strings.Contains(lower, "week") {
+				hasAnyBucket = true
+			} else if isWeek {
 				dq.ClaudeWeek = b.RemainingFraction
+				hasAnyBucket = true
 			}
 		}
 	}
 
+	// Priority 2: Extract from ModelQuotaBucket FiveHourFraction and WeeklyFraction if explicitly set
+	hasClaudeCycles := quota.Claude.FiveHourFraction > 0 || quota.Claude.WeeklyFraction > 0 || !quota.Claude.FiveHourReset.IsZero() || !quota.Claude.WeeklyReset.IsZero()
+	if hasClaudeCycles {
+		if quota.Claude.FiveHourFraction >= 0 && dq.Claude5h < 0 {
+			dq.Claude5h = quota.Claude.FiveHourFraction
+			hasAnyBucket = true
+		}
+		if quota.Claude.WeeklyFraction >= 0 && dq.ClaudeWeek < 0 {
+			dq.ClaudeWeek = quota.Claude.WeeklyFraction
+			hasAnyBucket = true
+		}
+	}
+
+	hasGeminiCycles := quota.Gemini.FiveHourFraction > 0 || quota.Gemini.WeeklyFraction > 0 || !quota.Gemini.FiveHourReset.IsZero() || !quota.Gemini.WeeklyReset.IsZero()
+	if hasGeminiCycles {
+		if quota.Gemini.FiveHourFraction >= 0 && dq.Gemini5h < 0 {
+			dq.Gemini5h = quota.Gemini.FiveHourFraction
+			hasAnyBucket = true
+		}
+		if quota.Gemini.WeeklyFraction >= 0 && dq.GeminiWeek < 0 {
+			dq.GeminiWeek = quota.Gemini.WeeklyFraction
+			hasAnyBucket = true
+		}
+	}
+
+	// Priority 3: Fallback for legacy single-bucket data if no cycle-specific fraction found
+	if !hasAnyBucket && (quota.Claude.RemainingFraction >= 0 || quota.Gemini.RemainingFraction >= 0) {
+		if quota.Claude.RemainingFraction >= 0 {
+			dq.Claude5h = quota.Claude.RemainingFraction
+			dq.ClaudeWeek = quota.Claude.RemainingFraction
+			hasAnyBucket = true
+		}
+		if quota.Gemini.RemainingFraction >= 0 {
+			dq.Gemini5h = quota.Gemini.RemainingFraction
+			dq.GeminiWeek = quota.Gemini.RemainingFraction
+			hasAnyBucket = true
+		}
+	}
+
+	dq.HasData = hasAnyBucket
 	return dq
 }
 
 // createModelQuotaItem creates a compact status dot and percentage text label for one model (Claude or Gemini).
 func createModelQuotaItem(modelName string, fraction float64, hasData bool) fyne.CanvasObject {
-	if !hasData {
+	if !hasData || fraction < 0 {
 		dot := canvas.NewCircle(ColorQuotaMuted)
 		dotWrap := container.NewGridWrap(fyne.NewSize(7, 7), dot)
 		txt := canvas.NewText(fmt.Sprintf("%s --%%", modelName), ColorQuotaMuted)

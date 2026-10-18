@@ -114,6 +114,10 @@ func (c *Client) GetUserStatus(ctx context.Context) (*UserStatus, error) {
 
 		body, err := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("read response body from %s: %w", endpoint, err)
+			continue
+		}
 
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
 			continue

@@ -24,7 +24,7 @@ import (
 
 const (
 	// DefaultGoogleQuotaURL is the authoritative Google Cloud Code quota endpoint.
-	DefaultGoogleQuotaURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
+	DefaultGoogleQuotaURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
 
 	// DefaultUserAgent is the default fallback User-Agent when discovery is inactive.
 	DefaultUserAgent = "antigravity/2.24.0"
@@ -228,6 +228,10 @@ type ModelQuotaBucket struct {
 	RemainingAmount   int64     `json:"remaining_amount,omitempty"`
 	ResetTime         time.Time `json:"reset_time"`
 	TokenType         string    `json:"token_type,omitempty"`
+	FiveHourFraction  float64   `json:"five_hour_fraction,omitempty"`
+	WeeklyFraction    float64   `json:"weekly_fraction,omitempty"`
+	FiveHourReset     time.Time `json:"five_hour_reset,omitempty"`
+	WeeklyReset       time.Time `json:"weekly_reset,omitempty"`
 }
 
 // AccountQuotaData encapsulates the parsed quota telemetry across model families for one account.
@@ -235,7 +239,7 @@ type AccountQuotaData struct {
 	Email        string             `json:"email"`
 	Claude       ModelQuotaBucket   `json:"claude"`
 	Gemini       ModelQuotaBucket   `json:"gemini"`
-	GPT          ModelQuotaBucket   `json:"gpt"`
+	GPT          ModelQuotaBucket   `json:"-"`
 	RawBuckets   []ModelQuotaBucket `json:"raw_buckets,omitempty"`
 	ResetTime    time.Time          `json:"reset_time"` // Canonical reset time (UTC)
 	Status       string             `json:"status"`     // Pristine, Plentiful, Low Gemini, Depleted, Error
@@ -535,20 +539,33 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 		return nil, fmt.Errorf("%w: server returned status %d: %s", ErrQuotaFetchFailed, resp.StatusCode, string(bodyBytes))
 	}
 
-	// 4. Parse JSON response
+	// 4. Try summary payload with groups first
+	claude, gemini, gpt, rawBuckets, resetTime, status, summaryErr := ParseQuotaSummaryWithBuckets(bodyBytes)
+	if summaryErr == nil && len(rawBuckets) > 0 {
+		return &AccountQuotaData{
+			Claude:      claude,
+			Gemini:      gemini,
+			GPT:         gpt,
+			RawBuckets:  rawBuckets,
+			ResetTime:   resetTime,
+			Status:      status,
+			LastUpdated: time.Now().UTC(),
+		}, nil
+	}
+
+	// 5. Fallback to legacy rawQuotaResponse with top-level "buckets"
 	var rawResp rawQuotaResponse
 	if err := json.Unmarshal(bodyBytes, &rawResp); err != nil {
 		return nil, fmt.Errorf("%w: failed to parse quota json: %v", ErrQuotaFetchFailed, err)
 	}
 
-	// 5. Convert raw buckets
-	rawBuckets := make([]ModelQuotaBucket, 0, len(rawResp.Buckets))
+	rawBuckets = make([]ModelQuotaBucket, 0, len(rawResp.Buckets))
 	for _, rawB := range rawResp.Buckets {
 		rawBuckets = append(rawBuckets, rawB.toModelQuotaBucket())
 	}
 
 	// 6. Aggregate into model families
-	claude, gemini, gpt, resetTime, status := AggregateBuckets(rawBuckets)
+	claude, gemini, gpt, resetTime, status = AggregateBuckets(rawBuckets)
 
 	return &AccountQuotaData{
 		Claude:      claude,
@@ -561,9 +578,10 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 	}, nil
 }
 
-// rawQuotaSummaryResponse represents the Connect-RPC RetrieveUserQuotaSummary structure.
+// rawQuotaSummaryResponse represents the Connect-RPC RetrieveUserQuotaSummary structure or direct REST summary.
 type rawQuotaSummaryResponse struct {
 	Response rawQuotaSummaryBody `json:"response"`
+	Groups   []rawQuotaGroup     `json:"groups"`
 }
 
 type rawQuotaSummaryBody struct {
@@ -586,19 +604,30 @@ type rawQuotaBucket struct {
 
 // ParseQuotaSummary parses the Connect-RPC RetrieveUserQuotaSummary JSON payload.
 func ParseQuotaSummary(bodyBytes []byte) (claude, gemini, gpt ModelQuotaBucket, canonicalReset time.Time, status string, err error) {
+	claude, gemini, gpt, _, canonicalReset, status, err = ParseQuotaSummaryWithBuckets(bodyBytes)
+	return claude, gemini, gpt, canonicalReset, status, err
+}
+
+// ParseQuotaSummaryWithBuckets parses the summary payload and returns all raw buckets and aggregated models.
+func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQuotaBucket, rawBuckets []ModelQuotaBucket, canonicalReset time.Time, status string, err error) {
 	var resp rawQuotaSummaryResponse
 	if err := json.Unmarshal(bodyBytes, &resp); err != nil {
-		return claude, gemini, gpt, canonicalReset, StatusError, fmt.Errorf("failed to parse quota summary JSON: %w", err)
+		return claude, gemini, gpt, nil, canonicalReset, StatusError, fmt.Errorf("failed to parse quota summary JSON: %w", err)
 	}
 
-	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 1.0}
-	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 1.0}
-	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: 1.0}
+	groups := resp.Response.Groups
+	if len(groups) == 0 {
+		groups = resp.Groups
+	}
+
+	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1}
+	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1}
+	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1}
 
 	hasGemini := false
 	hasClaudeGPT := false
 
-	for _, g := range resp.Response.Groups {
+	for _, g := range groups {
 		lowerGroup := strings.ToLower(g.DisplayName)
 		for _, b := range g.Buckets {
 			frac := 1.0
@@ -614,14 +643,45 @@ func ParseQuotaSummary(bodyBytes []byte) (claude, gemini, gpt ModelQuotaBucket, 
 				}
 			}
 
-			if strings.Contains(lowerGroup, "gemini") {
+			rawB := ModelQuotaBucket{
+				ModelID:           b.BucketID,
+				RemainingFraction: frac,
+				ResetTime:         resetT,
+			}
+			rawBuckets = append(rawBuckets, rawB)
+
+			lowerID := strings.ToLower(b.BucketID)
+			lowerWindow := strings.ToLower(b.Window)
+			is5h := strings.Contains(lowerID, "5h") || strings.Contains(lowerWindow, "5h")
+			isWeek := strings.Contains(lowerID, "week") || strings.Contains(lowerWindow, "week")
+
+			if strings.Contains(lowerGroup, "gemini") || strings.Contains(lowerID, "gemini") {
+				if is5h {
+					gemini.FiveHourFraction = frac
+					gemini.FiveHourReset = resetT
+				} else if isWeek {
+					gemini.WeeklyFraction = frac
+					gemini.WeeklyReset = resetT
+				}
 				if !hasGemini || frac < gemini.RemainingFraction {
 					gemini.RemainingFraction = frac
 					gemini.ResetTime = resetT
 					gemini.ModelID = b.BucketID
 					hasGemini = true
 				}
-			} else if strings.Contains(lowerGroup, "claude") || strings.Contains(lowerGroup, "gpt") || strings.Contains(lowerGroup, "3p") {
+			} else if strings.Contains(lowerGroup, "claude") || strings.Contains(lowerGroup, "gpt") || strings.Contains(lowerGroup, "3p") ||
+				strings.Contains(lowerID, "claude") || strings.Contains(lowerID, "3p") {
+				if is5h {
+					claude.FiveHourFraction = frac
+					claude.FiveHourReset = resetT
+					gpt.FiveHourFraction = frac
+					gpt.FiveHourReset = resetT
+				} else if isWeek {
+					claude.WeeklyFraction = frac
+					claude.WeeklyReset = resetT
+					gpt.WeeklyFraction = frac
+					gpt.WeeklyReset = resetT
+				}
 				if !hasClaudeGPT || frac < claude.RemainingFraction {
 					claude.RemainingFraction = frac
 					claude.ResetTime = resetT
@@ -683,5 +743,5 @@ func ParseQuotaSummary(bodyBytes []byte) (claude, gemini, gpt ModelQuotaBucket, 
 		status = StatusPlentiful
 	}
 
-	return claude, gemini, gpt, canonicalReset, status, nil
+	return claude, gemini, gpt, rawBuckets, canonicalReset, status, nil
 }

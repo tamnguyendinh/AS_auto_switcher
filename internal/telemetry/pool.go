@@ -231,7 +231,7 @@ func (p *TelemetryPool) pollFromLanguageServer(ctx context.Context, email string
 		return nil, err
 	}
 
-	claude, gemini, gpt, resetTime, status, err := ParseQuotaSummary(bodyBytes)
+	claude, gemini, _, rawBuckets, resetTime, status, err := ParseQuotaSummaryWithBuckets(bodyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (p *TelemetryPool) pollFromLanguageServer(ctx context.Context, email string
 		Email:       email,
 		Claude:      claude,
 		Gemini:      gemini,
-		GPT:         gpt,
+		RawBuckets:  rawBuckets,
 		ResetTime:   resetTime,
 		Status:      status,
 		LastUpdated: time.Now().UTC(),

@@ -83,13 +83,13 @@ func (a *App) setupLayout() {
 	// -------------------------------------------------------------------------
 	// TopSection Row 1 (Header): Monogram [AS] + App Title
 	// -------------------------------------------------------------------------
-	monogramBg := canvas.NewRectangle(palette.Primary)
-	monogramBg.CornerRadius = 6
+	a.monogramBg = canvas.NewRectangle(palette.Primary)
+	a.monogramBg.CornerRadius = 6
 	monogramText := canvas.NewText("AS", color.White)
 	monogramText.TextStyle = fyne.TextStyle{Bold: true}
 	monogramText.TextSize = 13
 	monogramText.Alignment = fyne.TextAlignCenter
-	monogramStack := container.NewStack(monogramBg, container.NewCenter(monogramText))
+	monogramStack := container.NewStack(a.monogramBg, container.NewCenter(monogramText))
 	monogramWrap := container.NewGridWrap(fyne.NewSize(28, 28), monogramStack)
 
 	titleLabel := widget.NewLabelWithStyle("Antigravity Multi-Account Switcher", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -169,12 +169,11 @@ func (a *App) setupLayout() {
 	// Center Section: 3-Column Account Grid inside Vertical Scroller
 	// -------------------------------------------------------------------------
 	a.accountListContainer = container.NewGridWithColumns(3)
-	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
+	scrollList := container.NewVScroll(container.NewPadded(container.NewVBox(a.accountListContainer)))
+	a.accountScroll = scrollList
 
 	// In-memory labels for backward-compatibility with tests & background workers
-		a.headerBg = canvas.NewRectangle(palette.Card)
-	a.statusBg = canvas.NewRectangle(palette.Card)
-	a.legendBg = canvas.NewRectangle(palette.Card)
+	a.headerBg = canvas.NewRectangle(palette.Card)
 	a.statusBarLabel = widget.NewLabelWithStyle("Sẵn sàng", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 	a.activeStatusLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	a.activeQuotaLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})

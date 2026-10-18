@@ -132,13 +132,13 @@ func waitForIdle(a *App, timeout time.Duration) {
 
 	for time.Now().Before(deadline) {
 		a.mu.RLock()
-		busy := a.isBusy || a.isQuotaRefreshing.Load()
+		busy := a.isBusy || a.isQuotaRefreshing.Load() || a.IsAnyAccountRefreshing()
 		a.mu.RUnlock()
 
 		if !busy {
 			time.Sleep(60 * time.Millisecond)
 			a.mu.RLock()
-			busyAgain := a.isBusy || a.isQuotaRefreshing.Load()
+			busyAgain := a.isBusy || a.isQuotaRefreshing.Load() || a.IsAnyAccountRefreshing()
 			a.mu.RUnlock()
 			if !busyAgain {
 				return
@@ -574,7 +574,6 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 		Email:  "user@example.com",
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.235},
-		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 0.10},
 	}
 	badges := NewQuotaBadgeGroup(quota)
 	if badges == nil {
@@ -659,7 +658,6 @@ func TestQuotaCountdownCalculationAndLabel(t *testing.T) {
 	healthyQuota := &telemetry.AccountQuotaData{
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.90},
-		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 0.50},
 	}
 	if lbl := NewQuotaCountdownLabel(healthyQuota); lbl != nil {
 		t.Errorf("expected nil countdown label for healthy quota, got: %#v", lbl)
@@ -671,7 +669,6 @@ func TestQuotaCountdownCalculationAndLabel(t *testing.T) {
 		Email:  "user@example.com",
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.12, ResetTime: resetTime},
-		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 	}
 	// In redesigned 3-row layout, countdown label is eliminated for clean cards
 	lbl := NewQuotaCountdownLabel(lowGeminiQuota)
@@ -705,7 +702,6 @@ func (c *testQuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken st
 		Email:       "acc1@gmail.com",
 		Claude:      telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini:      telemetry.ModelQuotaBucket{RemainingFraction: 0.85},
-		GPT:         telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		ResetTime:   time.Now().Add(2 * time.Hour),
 		LastUpdated: time.Now(),
 	}, nil
@@ -743,7 +739,6 @@ func TestAccountCardWithQuotaAndRefresh(t *testing.T) {
 		Email:  "test@example.com",
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.08, ResetTime: time.Now().Add(45 * time.Minute)},
-		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 	}
 
 	card := NewAccountCardWithQuota(
@@ -851,7 +846,6 @@ func TestActiveQuotaHeaderSummary(t *testing.T) {
 	q := &telemetry.AccountQuotaData{
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.235},
-		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 	}
 	summary := BuildActiveQuotaSummary(q)
 	if !strings.Contains(summary, "Claude: 100%") || !strings.Contains(summary, "Gemini: 23.5%") {
@@ -940,7 +934,6 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 		ErrorMessage: "server returned status 403",
 		Claude:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
 		Gemini:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
-		GPT:          telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
 	}
 
 	// 1. NewQuotaBadgeGroup with StatusError must render [!] Lỗi kết nối and NEVER 0% red
@@ -1018,7 +1011,6 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 			Email:  "ok@gmail.com",
 			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-			GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		},
 	}
 	pool, err := telemetry.NewTelemetryPoolWithSource(client, cache, source)
@@ -1033,7 +1025,6 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 				Email:  email,
 				Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 				Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-				GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 				Status: telemetry.StatusPristine,
 			}, nil
 		}
@@ -1310,7 +1301,6 @@ func TestOwnerRedesign_NoGPTInCardsOrSummary(t *testing.T) {
 		Email:  "user@example.com",
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.88},
-		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 0.95},
 		RawBuckets: []telemetry.ModelQuotaBucket{
 			{ModelID: "gemini-5h", RemainingFraction: 0.88},
 			{ModelID: "gemini-weekly", RemainingFraction: 0.90},
@@ -1353,4 +1343,229 @@ func TestOwnerRedesign_NoGPTInCardsOrSummary(t *testing.T) {
 	if strings.Contains(strings.ToUpper(summary), "GPT") {
 		t.Fatalf("CRITICAL NON-GOAL VIOLATION: found GPT in active summary: %s", summary)
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Regression Tests for F1-F6 Acceptance Gates
+// -----------------------------------------------------------------------------
+
+// TestOwnerRedesign_F1_DualCycleIndependentFractionsAndMissing verifies F1:
+// 5h and weekly fractions are independent for Claude and Gemini, and missing buckets do not fake 100%.
+func TestOwnerRedesign_F1_DualCycleIndependentFractionsAndMissing(t *testing.T) {
+	// Case 1: Independent fractions from Connect-RPC payload
+	quotaData := &telemetry.AccountQuotaData{
+		Email: "independent@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "3p-5h",
+			RemainingFraction: 0.12, // min fraction
+			FiveHourFraction:  0.46,
+			WeeklyFraction:    0.12,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-5h",
+			RemainingFraction: 0.88,
+			FiveHourFraction:  0.88,
+			WeeklyFraction:    0.90,
+		},
+	}
+
+	dq := ExtractDualCycleQuota(quotaData)
+	if !dq.HasData {
+		t.Fatalf("expected HasData to be true")
+	}
+	if dq.Claude5h != 0.46 {
+		t.Errorf("expected Claude 5h 0.46, got %f", dq.Claude5h)
+	}
+	if dq.ClaudeWeek != 0.12 {
+		t.Errorf("expected Claude week 0.12, got %f", dq.ClaudeWeek)
+	}
+	if dq.Gemini5h != 0.88 {
+		t.Errorf("expected Gemini 5h 0.88, got %f", dq.Gemini5h)
+	}
+	if dq.GeminiWeek != 0.90 {
+		t.Errorf("expected Gemini week 0.90, got %f", dq.GeminiWeek)
+	}
+
+	// Case 2: Missing weekly bucket (does not fake 100%, renders --%)
+	partialQuota := &telemetry.AccountQuotaData{
+		Email: "partial@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "3p-5h",
+			RemainingFraction: 0.46,
+			FiveHourFraction:  0.46,
+			WeeklyFraction:    -1, // Missing
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-5h",
+			RemainingFraction: 0.88,
+			FiveHourFraction:  -1, // Missing
+			WeeklyFraction:    0.90,
+		},
+	}
+
+	dqPartial := ExtractDualCycleQuota(partialQuota)
+	if dqPartial.ClaudeWeek != -1 {
+		t.Errorf("expected missing Claude week to be -1, got %f", dqPartial.ClaudeWeek)
+	}
+	if dqPartial.Gemini5h != -1 {
+		t.Errorf("expected missing Gemini 5h to be -1, got %f", dqPartial.Gemini5h)
+	}
+
+	// Verify UI rendering of missing bucket renders "--%"
+	row := CreateQuotaCycleRow("week:", dqPartial.ClaudeWeek, dqPartial.GeminiWeek, dqPartial.HasData, dqPartial.IsError)
+	foundMissing := false
+	var walk func(fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if txt, ok := o.(*canvas.Text); ok {
+			if strings.Contains(txt.Text, "--%") {
+				foundMissing = true
+			}
+		}
+		if c, ok := o.(*fyne.Container); ok {
+			for _, child := range c.Objects {
+				walk(child)
+			}
+		}
+	}
+	walk(row)
+	if !foundMissing {
+		t.Errorf("expected missing bucket to render '--%%' label")
+	}
+}
+
+// TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings verifies F3:
+// Refreshing a single account card updates ONLY that card and preserves all sibling objects.
+func TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings(t *testing.T) {
+	fyneApp := test.NewApp()
+	defer fyneApp.Quit()
+
+	tmp := t.TempDir()
+	accountStore, err := store.NewAccountStore(filepath.Join(tmp, "accounts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 6; i++ {
+		email := fmt.Sprintf("account%d@example.com", i)
+		_ = accountStore.SaveAccount(email, &model.TokenData{AccessToken: "token", RefreshToken: "refresh"})
+	}
+	mgr, _ := manager.NewAccountManager(accountStore, nil)
+	mgr.SetChromeDir(filepath.Join(tmp, "no-real-chrome"))
+
+	app := NewAppWithFyne(fyneApp, mgr)
+	app.SetPreferencesPath(filepath.Join(tmp, "preferences.json"))
+
+	pool, _ := telemetry.NewTelemetryPoolWithSource(&testQuotaClient{}, telemetry.NewQuotaCache(filepath.Join(tmp, "q.json")), &testAccountSource{})
+	pool.SetLocalQuotaFetcher(func(ctx context.Context, email string) (*telemetry.AccountQuotaData, error) {
+		return &telemetry.AccountQuotaData{
+			Email:  email,
+			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 0.50},
+			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.75},
+			Status: telemetry.StatusPlentiful,
+		}, nil
+	})
+	app.SetTelemetryPool(pool)
+	app.Init()
+	defer app.Close()
+
+	// Wait for initial cards
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if app.accountListContainer != nil && len(app.accountListContainer.Objects) >= 6 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	grid := app.accountListContainer
+	if grid == nil || len(grid.Objects) < 6 {
+		t.Fatalf("expected at least 6 initial cards, got %v", grid)
+	}
+
+	initialCards := append([]fyne.CanvasObject(nil), grid.Objects...)
+	targetEmail := "account1@example.com"
+	app.mu.RLock()
+	if app.overview != nil && len(app.overview.Accounts) > 0 {
+		targetEmail = app.overview.Accounts[0].Email
+	}
+	app.mu.RUnlock()
+
+	// Trigger single refresh for card 0
+	app.RefreshSingleAccountQuota(targetEmail)
+	waitForIdle(app, 3*time.Second)
+
+	// Target card must be replaced
+	if grid.Objects[0] == initialCards[0] {
+		t.Errorf("expected target card 0 to be refreshed/updated")
+	}
+
+	// All other siblings must remain EXACTLY identical objects (0 re-creations)
+	unchanged := 0
+	for i := 1; i < len(initialCards); i++ {
+		if grid.Objects[i] == initialCards[i] {
+			unchanged++
+		}
+	}
+	expectedUnchanged := len(initialCards) - 1
+	if unchanged != expectedUnchanged {
+		t.Fatalf("F3 VIOLATION: expected %d unchanged sibling cards, but got %d", expectedUnchanged, unchanged)
+	}
+}
+func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
+	app := NewAppWithFyne(test.NewApp(), nil)
+	app.Init()
+	defer app.Close()
+
+	w := app.Window()
+	w.Resize(fyne.NewSize(1440, 900))
+
+	// Populate 6 cards
+	palette := DarkPalette
+	for i := 1; i <= 6; i++ {
+		item := manager.AccountDisplayItem{Email: fmt.Sprintf("user%d@example.com", i)}
+		card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
+		app.accountListContainer.Add(card)
+	}
+	minH := app.accountListContainer.MinSize().Height
+	app.accountListContainer.Resize(fyne.NewSize(1424, minH))
+	app.accountListContainer.Refresh()
+
+	card0Size := app.accountListContainer.Objects[0].Size()
+	if card0Size.Height > 100 {
+		t.Fatalf("F5 VIOLATION: Card height is stretched to %f (expected <= 100 compact)", card0Size.Height)
+	}
+	if card0Size.Height <= 0 {
+		t.Fatalf("F5 VIOLATION: Card height is non-positive: %f", card0Size.Height)
+	}
+
+	gridH := app.accountListContainer.Size().Height
+	if gridH > 250 {
+		t.Fatalf("F5 VIOLATION: Grid height is stretched to %f (expected <= 250 compact)", gridH)
+	}
+}
+
+// TestOwnerRedesign_F6_MonogramRecolorsOnThemeChange verifies F6:
+// Monogram AS background recolors dynamically across Dark, Light, and Warm themes.
+func TestOwnerRedesign_F6_MonogramRecolorsOnThemeChange(t *testing.T) {
+	app := NewAppWithFyne(test.NewApp(), nil)
+	app.Init()
+	defer app.Close()
+
+	if app.monogramBg == nil {
+		t.Fatalf("expected app.monogramBg to be initialized")
+	}
+
+	// Initial Dark theme
+	assertColorMatches(t, "Init Dark", "monogramBg", app.monogramBg.FillColor, DarkPalette.Primary)
+
+	// Switch to Light
+	app.SetTheme(ThemeLight)
+	assertColorMatches(t, "Switch Light", "monogramBg", app.monogramBg.FillColor, LightPalette.Primary)
+
+	// Switch to Warm
+	app.SetTheme(ThemeWarm)
+	assertColorMatches(t, "Switch Warm", "monogramBg", app.monogramBg.FillColor, WarmPalette.Primary)
+
+	// Switch back to Dark
+	app.SetTheme(ThemeDark)
+	assertColorMatches(t, "Switch Dark", "monogramBg", app.monogramBg.FillColor, DarkPalette.Primary)
 }

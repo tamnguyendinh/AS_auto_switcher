@@ -10,8 +10,6 @@ import (
 	"antigravity-switch/internal/ui"
 )
 
-const hasGUI = true
-
 func launchGUI(mgr *manager.AccountManager, showStatus, showList, doCapture bool, switchTarget string, showQuota bool) error {
 	appInstance, err := ui.NewApp(mgr)
 	if err != nil {
