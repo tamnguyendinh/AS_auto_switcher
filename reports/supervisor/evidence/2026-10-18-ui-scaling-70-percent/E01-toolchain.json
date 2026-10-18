@@ -1,0 +1,8 @@
+{
+  "go": "go version go1.26.3 windows/amd64",
+  "staticcheck": "staticcheck.exe 2026.2.2 (0.8.2)",
+  "gcc": "gcc.exe (Rev2, Built by MSYS2 project) 16.1.0",
+  "CGO_ENABLED": "1",
+  "GOOS": "windows",
+  "GOARCH": "amd64"
+}

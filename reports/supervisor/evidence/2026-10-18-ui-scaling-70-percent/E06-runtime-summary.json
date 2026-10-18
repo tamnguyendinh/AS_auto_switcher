@@ -1,0 +1,347 @@
+{
+  "assertions_total": 1075,
+  "assertions_passed": 1075,
+  "failures": null,
+  "initial_geometry": {
+    "actual_canvas": {
+      "Width": 1008,
+      "Height": 630
+    },
+    "card_size": {
+      "Width": 328,
+      "Height": 81.96875
+    },
+    "count": 6,
+    "grid_size": {
+      "Width": 992,
+      "Height": 167.9375
+    },
+    "header_rows": [
+      {
+        "min": {
+          "Width": 294.01562,
+          "Height": 35.078125
+        },
+        "row": 0,
+        "size": {
+          "Width": 1000,
+          "Height": 35.078125
+        }
+      },
+      {
+        "min": {
+          "Width": 657.7031,
+          "Height": 35.078125
+        },
+        "row": 1,
+        "size": {
+          "Width": 1000,
+          "Height": 35.078125
+        }
+      },
+      {
+        "min": {
+          "Width": 600.2969,
+          "Height": 36
+        },
+        "row": 2,
+        "size": {
+          "Width": 1000,
+          "Height": 36
+        }
+      }
+    ],
+    "last_position": {
+      "X": 664,
+      "Y": 85.96875
+    },
+    "requested_canvas": {
+      "Width": 1008,
+      "Height": 630
+    },
+    "root_min": {
+      "Width": 840,
+      "Height": 525
+    },
+    "rows": [
+      {
+        "5h_min": {
+          "Width": 174.3125,
+          "Height": 14.984375
+        },
+        "5h_text": [
+          "5h:",
+          "Claude 46%",
+          "Gemini 88%"
+        ],
+        "card": 0,
+        "row1": {
+          "Width": 320,
+          "Height": 36
+        },
+        "size": {
+          "Width": 328,
+          "Height": 81.96875
+        },
+        "week_min": {
+          "Width": 190.01562,
+          "Height": 14.984375
+        },
+        "week_text": [
+          "week:",
+          "Claude 12%",
+          "Gemini 90%"
+        ]
+      },
+      {
+        "5h_min": {
+          "Width": 161.71875,
+          "Height": 14.984375
+        },
+        "5h_text": [
+          "5h:",
+          "Claude 0%",
+          "Gemini 0%"
+        ],
+        "card": 1,
+        "row1": {
+          "Width": 320,
+          "Height": 36
+        },
+        "size": {
+          "Width": 328,
+          "Height": 81.96875
+        },
+        "week_min": {
+          "Width": 177.42188,
+          "Height": 14.984375
+        },
+        "week_text": [
+          "week:",
+          "Claude 0%",
+          "Gemini 0%"
+        ]
+      },
+      {
+        "5h_min": {
+          "Width": 157.57812,
+          "Height": 14.984375
+        },
+        "5h_text": [
+          "5h:",
+          "Claude --%",
+          "Gemini --%"
+        ],
+        "card": 2,
+        "row1": {
+          "Width": 320,
+          "Height": 36
+        },
+        "size": {
+          "Width": 328,
+          "Height": 81.96875
+        },
+        "week_min": {
+          "Width": 173.28125,
+          "Height": 14.984375
+        },
+        "week_text": [
+          "week:",
+          "Claude --%",
+          "Gemini --%"
+        ]
+      },
+      {
+        "5h_min": {
+          "Width": 157.57812,
+          "Height": 14.984375
+        },
+        "5h_text": [
+          "5h:",
+          "Claude --%",
+          "Gemini --%"
+        ],
+        "card": 3,
+        "row1": {
+          "Width": 320,
+          "Height": 36
+        },
+        "size": {
+          "Width": 328,
+          "Height": 81.96875
+        },
+        "week_min": {
+          "Width": 173.28125,
+          "Height": 14.984375
+        },
+        "week_text": [
+          "week:",
+          "Claude --%",
+          "Gemini --%"
+        ]
+      },
+      {
+        "5h_min": {
+          "Width": 159.51562,
+          "Height": 14.984375
+        },
+        "5h_text": [
+          "5h:",
+          "Claude 0%",
+          "Gemini --%"
+        ],
+        "card": 4,
+        "row1": {
+          "Width": 320,
+          "Height": 36
+        },
+        "size": {
+          "Width": 328,
+          "Height": 81.96875
+        },
+        "week_min": {
+          "Width": 181.78125,
+          "Height": 14.984375
+        },
+        "week_text": [
+          "week:",
+          "Claude --%",
+          "Gemini 90%"
+        ]
+      },
+      {
+        "5h_min": {
+          "Width": 186.90625,
+          "Height": 14.984375
+        },
+        "5h_text": [
+          "5h:",
+          "Claude 100%",
+          "Gemini 100%"
+        ],
+        "card": 5,
+        "row1": {
+          "Width": 320,
+          "Height": 36
+        },
+        "size": {
+          "Width": 328,
+          "Height": 81.96875
+        },
+        "week_min": {
+          "Width": 202.60938,
+          "Height": 14.984375
+        },
+        "week_text": [
+          "week:",
+          "Claude 100%",
+          "Gemini 100%"
+        ]
+      }
+    ]
+  },
+  "F3_button_refresh": [
+    {
+      "callback_ms": 0,
+      "completion_ms": 95.749,
+      "disabled_preserved": true,
+      "error_path": false,
+      "focused_preserved": true,
+      "polled": [
+        "account01@example.com"
+      ],
+      "target": 0,
+      "unchanged_siblings": 5
+    },
+    {
+      "callback_ms": 0,
+      "completion_ms": 96.306,
+      "disabled_preserved": true,
+      "error_path": false,
+      "focused_preserved": true,
+      "polled": [
+        "account03.very.long.enterprise.account.with.subdomains@company.example"
+      ],
+      "target": 2,
+      "unchanged_siblings": 5
+    },
+    {
+      "callback_ms": 0,
+      "completion_ms": 103.75,
+      "disabled_preserved": true,
+      "error_path": false,
+      "focused_preserved": true,
+      "polled": [
+        "account06@example.com"
+      ],
+      "target": 5,
+      "unchanged_siblings": 5
+    },
+    {
+      "callback_ms": 0,
+      "completion_ms": 96.589,
+      "disabled_preserved": true,
+      "error_path": true,
+      "focused_preserved": true,
+      "polled": [
+        "account04@example.com"
+      ],
+      "target": 3,
+      "unchanged_siblings": 5
+    }
+  ],
+  "F6_theme_selector": [
+    {
+      "actual": "#2563eb",
+      "choice": "☀️ Sáng",
+      "expected": "#2563eb"
+    },
+    {
+      "actual": "#d97706",
+      "choice": "☕ Ấm",
+      "expected": "#d97706"
+    },
+    {
+      "actual": "#89b4fa",
+      "choice": "🌙 Tối",
+      "expected": "#89b4fa"
+    }
+  ],
+  "layout_cases": 10,
+  "headers_at_minimum": [
+    {
+      "min": {
+        "Width": 294.01562,
+        "Height": 35.078125
+      },
+      "row": 0,
+      "size": {
+        "Width": 832,
+        "Height": 35.078125
+      }
+    },
+    {
+      "min": {
+        "Width": 657.7031,
+        "Height": 35.078125
+      },
+      "row": 1,
+      "size": {
+        "Width": 832,
+        "Height": 35.078125
+      }
+    },
+    {
+      "min": {
+        "Width": 600.2969,
+        "Height": 36
+      },
+      "row": 2,
+      "size": {
+        "Width": 832,
+        "Height": 36
+      }
+    }
+  ],
+  "stderr_bytes": 0
+}
