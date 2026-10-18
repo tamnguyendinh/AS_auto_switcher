@@ -4,89 +4,60 @@
 - **Ngày lập:** 2026-10-18
 - **Làn thực hiện:** Senior System Architect
 - **Cơ quan chỉ đạo:** Human Owner trực tiếp thảo luận và chỉ đạo
-- **Trạng thái:** DRAFT COMPLETED — CHỜ HUMAN OWNER XEM LẠI & PHÊ DUYỆT (CHƯA GỬI CEO)
+- **Trạng thái:** DRAFT UPDATED WITH EXACT CODE — CHỜ HUMAN OWNER XEM LẠI & PHÊ DUYỆT (CHƯA GỬI CEO)
 
 ---
 
 ## 1. Tóm Tắt Mục Tiêu & Yêu Cầu Của Human Owner
 
-Trong quá trình sử dụng thực tế, Human Owner đã phát hiện 2 điểm bất cập nghiêm trọng về trải nghiệm người dùng (UX) và vòng đời tiến trình desktop của ứng dụng:
-
-1. **Vấn đề 1 — Nút `[X]` không đóng hẳn ứng dụng mà lại giấu xuống khay hệ thống (Tray):**
-   - *Hiện trạng:* Người dùng bấm nút `X` màu đỏ ở góc cửa sổ với mục đích tắt hoàn toàn tool, nhưng app lại tự động ẩn xuống System Tray và tiếp tục chạy ngầm.
-   - *Yêu cầu:* Chuẩn hóa đúng chuẩn UX hệ điều hành: **Bấm nút `[X]` là phải THOÁT HẲN, ĐÓNG SẠCH 100% TIẾN TRÌNH**, giải phóng toàn bộ tài nguyên (RAM/CPU/goroutines) và biến mất hoàn toàn khỏi Taskbar lẫn System Tray.
-2. **Vấn đề 2 — Cho phép mở cùng lúc nhiều cửa sổ tool khi bấm file `.exe` nhiều lần:**
-   - *Hiện trạng:* Mỗi lần người dùng khởi chạy file `.exe` là một cửa sổ mới lại được tạo ra, sinh ra hàng loạt icon trùng lặp ở khay hệ thống, gây xung đột tranh chấp đọc/ghi file token `accounts_store/accounts.json` và xung đột kết nối Language Server.
-   - *Yêu cầu:* Áp dụng chuẩn **Single Instance Application**:
-     - Nếu tool **đang chạy sẵn**: Bấm file `.exe` tiếp lần nữa **tuyệt đối không được mở thêm cửa sổ thứ 2**.
-     - Tiến trình mới tự động tìm cửa sổ cũ, **phục hồi và đưa cửa sổ cũ lên trên cùng màn hình (Bring to Front / Focus)** để người dùng thấy ngay.
-     - Tiến trình mới tự động thoát ngay lập tức trong tích tắc (0.1ms).
-
----
-
-## 2. Thiết Kế Kỹ Thuật Chi Tiết — Vấn Đề 1: Nút `[X]` Thoát Hẳn Ứng Dụng
-
-### 2.1 Điểm Lỗi Trong Codebase Hiện Tại
-Trong tệp `internal/ui/tray.go` (dòng 50–54):
-```go
-if a.win != nil {
-    desk.SetSystemTrayWindow(a.win)
-    // Minimize to tray on close  <-- ĐÂY CHÍNH LÀ NGUYÊN NHÂN GÂY LỖI UX
-    a.win.SetCloseIntercept(func() {
-        a.win.Hide()
-    })
-}
-```
-Hàm `SetCloseIntercept` đang can thiệp vào sự kiện đóng cửa sổ và chuyển hướng thành `a.win.Hide()`.
-
-### 2.2 Giải Pháp Kiến Trúc Mới
-Sửa đổi hành vi chặn đóng cửa sổ trong `internal/ui/tray.go`:
-
-```go
-if a.win != nil {
-    desk.SetSystemTrayWindow(a.win)
-    // Close Window Intercept: Thoát sạch hoàn toàn ứng dụng theo đúng chuẩn UX
-    a.win.SetCloseIntercept(func() {
-        a.Close()    // 1. Dọn dẹp sạch background autoLoop timer, hủy telemetry goroutine
-        a.app.Quit() // 2. Thoát hoàn toàn tiến trình Fyne GUI và System Tray
-    })
-}
-```
-
-### 2.3 Cơ Chế Dọn Dẹp An Toàn Khi Thoát (`a.Close()`)
-Trong `internal/ui/app.go`, hàm `Close()` hiện đã có sẵn cơ chế dừng an toàn:
-```go
-func (a *App) Close() {
-    if a.autoLoop != nil {
-        a.autoLoop.Stop()
-    }
-}
-```
-Khi `a.app.Quit()` được gọi sau `a.Close()`, vòng lặp sự kiện của Fyne kết thúc, toàn bộ cửa sổ, widget, icon khay hệ thống và tiến trình hệ điều hành Windows biến mất hoàn toàn.
+1. **Vấn đề 1 — Nút `[X]` phải thoát hẳn 100% ứng dụng:**
+   - Không được giấu/thu nhỏ ứng dụng xuống System Tray khi bấm nút `X`.
+   - Bấm nút `[X]` là phải dừng toàn bộ luồng chạy ngầm, hủy timer tự động làm mới, dọn dẹp tài nguyên và tắt sạch tiến trình khỏi Task Manager và khay hệ thống.
+2. **Vấn đề 2 — Khóa đơn bản sao ứng dụng (Single Instance):**
+   - Khi tool đã đang chạy, nếu người dùng click đúp file `.exe` lần nữa thì **tuyệt đối không mở thêm cửa sổ thứ 2**, không sinh thêm icon trùng lặp ở khay hệ thống.
+   - Bản sao mới tự động tìm cửa sổ cũ, **phục hồi và đưa cửa sổ cũ lên trên cùng màn hình (Bring to Front)**, sau đó bản sao mới tự động thoát ngay lập tức trong tích tắc (0.1ms).
+3. **KỶ LUẬT THI CÔNG SẮT TỪ HUMAN OWNER (STRICT IRON RULE):**
+   - **Code xong bắt buộc phải chạy full build bằng script của repo:**  
+     `powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Mode all`
+   - **TUYỆT ĐỐI CẤM SỬA SCRIPT FULL BUILD NÀY.**
 
 ---
 
-## 3. Thiết Kế Kỹ Thuật Chi Tiết — Vấn Đề 2: Khóa Đơn Bản Sao (Single Instance Mutex & Foreground Activation)
+## 2. Hướng Dẫn Thi Công Cụ Thể Từng Tệp (Không Cho Phép Coder Suy Diễn)
 
-### 3.1 Cơ Chế Windows Named Mutex
-Để đảm bảo ứng dụng chỉ có duy nhất 1 bản sao hoạt động đồng thời trên toàn hệ điều hành, giải pháp tối ưu và nhẹ nhất là sử dụng **Named Mutex** chuẩn của Windows (`kernel32.dll`):
+### 2.1 BƯỚC 1: Sửa Nút `[X]` Thoát Hẳn (Sửa 1 Tệp Duy Nhất)
 
-1. **Khởi tạo Mutex với định danh duy nhất:**
-   - Tên Mutex toàn cục: `"Global\\AntigravitySwitcher_SingleInstance_Mutex_v1"`
-   - Gọi hàm Win32 API: `CreateMutexW(nil, false, mutexNamePtr)`.
-2. **Kiểm tra trạng thái tồn tại:**
-   - Kiểm tra mã lỗi trả về: `err == windows.ERROR_ALREADY_EXISTS` (mã lỗi `183`).
-   - **Trường hợp 1 (Chưa có ai chạy):** Tiến trình hiện tại là instance duy nhất. Lưu giữ con trỏ handle của Mutex trong suốt vòng đời ứng dụng. Khi ứng dụng thoát, hệ điều hành tự động giải phóng Mutex.
-   - **Trường hợp 2 (Đã có instance chạy sẵn):**
-     1. Gọi Win32 API `FindWindowW(nil, "⚡ Antigravity Multi-Account Switcher")` để tìm handle của cửa sổ đang chạy.
-     2. Nếu tìm thấy `hwnd != 0`:
-        - Gọi `ShowWindow(hwnd, SW_RESTORE)` (mã `9`): Phục hồi cửa sổ nếu đang bị thu nhỏ dưới Taskbar hoặc ẩn.
-        - Gọi `SetForegroundWindow(hwnd)`: Bật sáng và đưa cửa sổ lên trên cùng màn hình ngay trước mắt người dùng.
-     3. Đóng handle vừa tạo (`CloseHandle(hMutex)`).
-     4. Gọi `os.Exit(0)` thoát ngay lập tức tiến trình trùng lặp này.
+**Tệp:** `internal/ui/tray.go` (tại khối `setupTray`, quanh dòng 50–54)
 
-### 3.2 Cấu Trúc Mã Nguồn Đề Xuất
-Tạo tệp chuyên biệt `internal/ui/single_instance_windows.go` (đóng gói sạch sẽ, cô lập hệ điều hành):
+- **Đoạn mã cũ cần xóa bỏ:**
+  ```go
+  if a.win != nil {
+      desk.SetSystemTrayWindow(a.win)
+      // Minimize to tray on close
+      a.win.SetCloseIntercept(func() {
+          a.win.Hide()
+      })
+  }
+  ```
+
+- **Đoạn mã mới thay thế chính xác:**
+  ```go
+  if a.win != nil {
+      desk.SetSystemTrayWindow(a.win)
+      // Close window intercept: Thoát sạch hoàn toàn ứng dụng
+      a.win.SetCloseIntercept(func() {
+          a.Close()    // 1. Dừng mọi background loop, timer, dọn dẹp tài nguyên
+          a.app.Quit() // 2. Thoát hoàn toàn tiến trình Fyne GUI và System Tray
+      })
+  }
+  ```
+
+---
+
+### 2.2 BƯỚC 2: Khóa Đơn Bản Sao Single Instance (3 Tệp Cụ Thể)
+
+#### Tệp 1 (Tạo mới): `internal/ui/single_instance_windows.go`
+Sử dụng Windows Named Mutex chuẩn của `kernel32.dll` và `user32.dll` (không dùng thư viện ngoài):
 
 ```go
 //go:build windows
@@ -94,7 +65,6 @@ Tạo tệp chuyên biệt `internal/ui/single_instance_windows.go` (đóng gói
 package ui
 
 import (
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -110,24 +80,22 @@ var (
 )
 
 const (
-	swRestore = 9
+	swRestore               = 9
 	singleInstanceMutexName = "Global\\AntigravitySwitcher_SingleInstance_Mutex"
 )
 
-// SingleInstanceLock nắm giữ handle của Windows Mutex.
 type SingleInstanceLock struct {
 	handle uintptr
 }
 
-// TryAcquireSingleInstance kiểm tra xem đã có bản sao nào đang chạy chưa.
-// Nếu đã chạy: kích hoạt cửa sổ cũ lên đầu và trả về false.
-// Nếu là bản đầu tiên: giữ khóa và trả về true.
+// TryAcquireSingleInstance kiểm tra xem app đã đang chạy chưa.
+// Nếu đã chạy: Đưa cửa sổ cũ lên trên cùng màn hình và trả về false.
+// Nếu là bản đầu tiên: Nắm giữ khóa và trả về true.
 func TryAcquireSingleInstance(windowTitle string) (*SingleInstanceLock, bool) {
 	namePtr := windows.StringToUTF16Ptr(singleInstanceMutexName)
 	hMutex, _, err := procCreateMutexW.Call(0, 0, uintptr(unsafe.Pointer(namePtr)))
 
 	if err == windows.ERROR_ALREADY_EXISTS || hMutex == 0 {
-		// Đã có instance khác đang chạy -> Kích hoạt cửa sổ cũ lên
 		titlePtr := windows.StringToUTF16Ptr(windowTitle)
 		hwnd, _, _ := procFindWindowW.Call(0, uintptr(unsafe.Pointer(titlePtr)))
 		if hwnd != 0 {
@@ -151,7 +119,7 @@ func (l *SingleInstanceLock) Release() {
 }
 ```
 
-Đối với các hệ điều hành khác (Linux/macOS), tạo tệp stub `internal/ui/single_instance_other.go`:
+#### Tệp 2 (Tạo mới): `internal/ui/single_instance_other.go` (Stub cho cross-platform)
 ```go
 //go:build !windows
 
@@ -166,58 +134,68 @@ func TryAcquireSingleInstance(windowTitle string) (*SingleInstanceLock, bool) {
 func (l *SingleInstanceLock) Release() {}
 ```
 
-### 3.3 Tích Hợp Vào Điểm Khởi Chạy (`cmd/switcher/app_gui.go`)
-Trong `cmd/switcher/app_gui.go`:
-```go
-func launchGUI(mgr *manager.AccountManager, showStatus, showList, doCapture bool, switchTarget string, showQuota bool) error {
-    // 1. Kiểm tra Single Instance
-    lock, isFirstInstance := ui.TryAcquireSingleInstance("⚡ Antigravity Multi-Account Switcher")
-    if !isFirstInstance {
-        // Đã có app chạy sẵn -> Cửa sổ cũ đã được đưa lên đầu màn hình -> Thoát sạch bản sao mới
-        os.Exit(0)
-        return nil
-    }
-    defer lock.Release()
+#### Tệp 3: `cmd/switcher/app_gui.go` (Chèn kiểm tra trước khi khởi chạy GUI)
+Chèn 7 dòng kiểm tra ngay đầu hàm `launchGUI`:
 
-    // 2. Khởi tạo và hiển thị app bình thường
-    appInstance, err := ui.NewApp(mgr)
-    ...
-    appInstance.ShowAndRun()
-    return nil
+```go
+//go:build gui
+
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"antigravity-switch/internal/manager"
+	"antigravity-switch/internal/ui"
+)
+
+func launchGUI(mgr *manager.AccountManager, showStatus, showList, doCapture bool, switchTarget string, showQuota bool) error {
+	// BƯỚC KIỂM TRA ĐƠN BẢN SAO:
+	lock, isFirst := ui.TryAcquireSingleInstance("⚡ Antigravity Multi-Account Switcher")
+	if !isFirst {
+		// App đã đang chạy, cửa sổ cũ đã được kéo lên trước mặt -> Bản sao mới thoát ngay
+		os.Exit(0)
+		return nil
+	}
+	defer lock.Release()
+
+	// KHỞI CHẠY GIAO DIỆN BÌNH THƯỜNG:
+	appInstance, err := ui.NewApp(mgr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed launching GUI: %v\nFalling back to CLI mode.\n", err)
+		runCLI(mgr, showStatus, showList, doCapture, switchTarget, showQuota)
+		return nil
+	}
+	appInstance.ShowAndRun()
+	return nil
 }
 ```
 
 ---
 
-## 4. Danh Sách Tệp Thi Công Khóa Chặt Cho Coder (Touch-Map)
+## 3. Quy Trình Xác Thực Bắt Buộc & Tiêu Chuẩn Nghiệm Thu
 
-Coder Lane sẽ chỉ thao tác trên các tệp sau:
-1. **`internal/ui/tray.go`:**
-   - Sửa dòng 51: Trong `SetCloseIntercept`, gọi `a.Close()` và `a.app.Quit()` thay vì `a.win.Hide()`.
-2. **`internal/ui/single_instance_windows.go` (Tệp mới):**
-   - Viết cơ chế `TryAcquireSingleInstance` dùng `CreateMutexW`, `FindWindowW`, `ShowWindow`, `SetForegroundWindow`.
-3. **`internal/ui/single_instance_other.go` (Tệp mới):**
-   - Stub hỗ trợ biên dịch cross-platform.
-4. **`cmd/switcher/app_gui.go`:**
-   - Gọi `TryAcquireSingleInstance` trước khi khởi tạo giao diện.
-5. **`internal/ui/ui_test.go`:**
-   - Thêm bài test kiểm tra hàm `SetCloseIntercept` gọi `Close()` và `Quit()` chuẩn xác.
+Sau khi thi công xong, Coder **BẮT BUỘC** phải thực hiện các bước kiểm tra sau:
 
----
-
-## 5. Tiêu Chuẩn Nghiệm Thu (Acceptance Criteria)
-
-1. **Nút `[X]` hoạt động chuẩn 100%:**
-   - Bấm vào nút `[X]` trên cửa sổ: Ứng dụng lập tức đóng ngay, biến mất khỏi màn hình, biến mất khỏi System Tray.
-   - Kiểm tra `Task Manager` (hoặc lệnh `Get-Process switcher`): Tiến trình `switcher.exe` biến mất hoàn toàn, không còn sót lại tiến trình chạy ngầm.
-2. **Chống mở nhiều cửa sổ (Single Instance) hoạt động chuẩn 100%:**
-   - Khi app đang mở: Chạy tiếp lệnh `./switcher.exe` hoặc click đúp file exe lần thứ 2 $\rightarrow$ Không có cửa sổ mới nào hiện lên, không sinh thêm icon nào ở tray.
-   - Cửa sổ đang chạy lập tức được nhấc lên trên cùng màn hình (Active / Focused).
-   - Lệnh gọi thứ 2 tự động kết thúc với exit code `0`.
-3. **100% Test PASS:** `go test ./...` và `go build -tags gui ./cmd/switcher` biên dịch thành công 100%.
+1. **Quy Định Full Build Bắt Buộc:**
+   - Chạy lệnh:
+     ```powershell
+     powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Mode all
+     ```
+   - **ĐIỀU KHOẢN CẤM:** Tuyệt đối **CẤM sửa** tệp `scripts/build_windows.ps1`.
+   - Kết quả bắt buộc: Phải build thành công cả CLI lẫn GUI, kiểm thử tự động đạt 100% PASS, thoát với Exit Code 0.
+2. **Nghiệm Thu Thủ Công Nút `[X]`:**
+   - Chạy ứng dụng $\rightarrow$ Bấm nút `[X]` ở góc trên bên phải.
+   - Kiểm tra: Cửa sổ đóng lập tức, khay hệ thống mất icon, Task Manager không còn tiến trình `switcher.exe` nào.
+3. **Nghiệm Thu Thủ Công Khóa Đơn Bản Sao:**
+   - Chạy ứng dụng lần 1 $\rightarrow$ Cửa sổ xuất hiện.
+   - Chạy tiếp file `.exe` lần 2 $\rightarrow$ Không mở thêm cửa sổ mới, không sinh thêm icon tray, cửa sổ lần 1 lập tức nổi lên trên cùng màn hình (Focused).
 
 ---
 
-## 6. Trạng Thái Bàn Giao
+## 4. Trạng Thái Bàn Giao
 
-Tài liệu này được lập hoàn chỉnh, lưu tại `reports/architect/2026-10-18-desktop-lifecycle-exit-and-single-instance-spec.md` và **ĐANG CHỜ HUMAN OWNER XEM LẠI, CHƯA GỬI CHO CEO THEO ĐÚNG CHỈ ĐẠO**.
+Tài liệu này đã cập nhật đầy đủ mã nguồn cụ thể và điều khoản cấm sửa build script, lưu tại:  
+`reports/architect/2026-10-18-desktop-lifecycle-exit-and-single-instance-spec.md`  
+**TRẠNG THÁI: CHỜ HUMAN OWNER XEM LẠI VÀ RA LỆNH — CHƯA GỬI CEO.**
