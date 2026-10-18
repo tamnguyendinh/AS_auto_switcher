@@ -480,10 +480,10 @@ func (a *App) SwitchAccount(targetEmail string) {
 		if a.mgr == nil {
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
 
-		res, err := a.mgr.SwitchAccount(ctx, targetEmail, false) // forceLogout = false: smooth zero-chrome hot-swap
+		// Xóa bỏ hoàn toàn bẫy context.WithTimeout(15s).
+		// Quy trình 4 bước chạy tự nhiên từ đầu đến thread cuối cùng qua context.Background().
+		res, err := a.mgr.SwitchAccount(context.Background(), targetEmail, false) // forceLogout = false: smooth zero-chrome hot-swap
 
 		if err != nil {
 			fyne.Do(func() {
@@ -498,7 +498,7 @@ func (a *App) SwitchAccount(targetEmail string) {
 		}
 
 		// Refresh account states in RAM and update cards/header immediately
-		overview, _ := a.mgr.GetAccountStates(ctx)
+		overview, _ := a.mgr.GetAccountStates(context.Background())
 		a.mu.Lock()
 		a.overview = overview
 		a.mu.Unlock()
@@ -506,7 +506,13 @@ func (a *App) SwitchAccount(targetEmail string) {
 		fyne.Do(func() {
 			a.updateUI(overview)
 			if a.statusBarLabel != nil {
-				a.statusBarLabel.SetText(fmt.Sprintf("Đã chuyển sang %s (%s)", res.TargetEmail, res.Duration.Round(time.Millisecond)))
+				statusText := fmt.Sprintf("Đã chuyển sang %s (%s)", res.TargetEmail, res.Duration.Round(time.Millisecond))
+				if res != nil && res.ContinuationSummary != nil && res.ContinuationSummary.TotalThreads > 0 {
+					statusText = fmt.Sprintf("Đã chuyển sang %s (%s) • Đã tiếp tục %d/%d phiên",
+						res.TargetEmail, res.Duration.Round(time.Millisecond),
+						res.ContinuationSummary.SuccessCount, res.ContinuationSummary.TotalThreads)
+				}
+				a.statusBarLabel.SetText(statusText)
 			}
 		})
 	}()

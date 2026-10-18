@@ -295,15 +295,16 @@ func DiscoverListeningPort(pid int) (int, error) {
 		return ports[0], nil
 	}
 
-	// Probe each port to find HTTP 200 listener
+	// Probe each port to find HTTP 200 listener (probe timeout 1s)
 	for _, p := range ports {
-		if ProbeHTTPPort(p, 250*time.Millisecond) {
+		if ProbeHTTPPort(p, 1*time.Second) {
 			return p, nil
 		}
 	}
 
-	// Default to lowest port if probing does not match
-	return ports[0], nil
+	// In Antigravity, the lower port is the HTTPS listener (which rejects plain HTTP with 400),
+	// while the higher port is always the Connect-RPC HTTP listener. Default to the highest port!
+	return ports[len(ports)-1], nil
 }
 
 // DiscoverLanguageServer scans running processes for language_server.exe,

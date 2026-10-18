@@ -41,7 +41,7 @@ func makeTestJWT(email string) string {
 	return header + "." + payload + "." + signature
 }
 
-func createTestManager(t *testing.T) *manager.AccountManager {
+func createTestManagerWithReloader(t *testing.T, sessionReloader *reloader.SessionReloader) *manager.AccountManager {
 	t.Helper()
 	tempDir := t.TempDir()
 	storePath := filepath.Join(tempDir, "accounts_store")
@@ -51,9 +51,18 @@ func createTestManager(t *testing.T) *manager.AccountManager {
 		t.Fatalf("failed initializing test store: %v", err)
 	}
 
-	sessionReloader := reloader.NewSessionReloader()
-	sessionReloader.ProcessKiller = func(ctx context.Context) error { return nil }
-	sessionReloader.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	if sessionReloader == nil {
+		sessionReloader = reloader.NewSessionReloader()
+		sessionReloader.ProcessKiller = func(ctx context.Context) error { return nil }
+		sessionReloader.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	} else {
+		if sessionReloader.ProcessKiller == nil {
+			sessionReloader.ProcessKiller = func(ctx context.Context) error { return nil }
+		}
+		if sessionReloader.Sleeper == nil {
+			sessionReloader.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+		}
+	}
 
 	mgr, err := manager.NewAccountManager(accStore, sessionReloader)
 	if err != nil {
@@ -95,12 +104,14 @@ func createTestManager(t *testing.T) *manager.AccountManager {
 		CSRFToken: "test-csrf",
 	}, testServer.Client())
 
-	sessionReloader.ServerDiscoverer = func() (*connector.ServerInfo, error) {
-		return &connector.ServerInfo{
-			PID:       12345,
-			Port:      testPort,
-			CSRFToken: "test-csrf",
-		}, nil
+	if sessionReloader.ServerDiscoverer == nil {
+		sessionReloader.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+			return &connector.ServerInfo{
+				PID:       12345,
+				Port:      testPort,
+				CSRFToken: "test-csrf",
+			}, nil
+		}
 	}
 
 	// Mock client finder returning testClient
@@ -109,6 +120,10 @@ func createTestManager(t *testing.T) *manager.AccountManager {
 	})
 
 	return mgr
+}
+
+func createTestManager(t *testing.T) *manager.AccountManager {
+	return createTestManagerWithReloader(t, nil)
 }
 
 func waitForIdle(a *App, timeout time.Duration) {
@@ -433,6 +448,46 @@ func TestSwitchAccount_NoModalPopup(t *testing.T) {
 
 	if app.win.Canvas().Overlays().Top() != nil {
 		t.Errorf("expected zero modal dialogs on canvas, but found an active overlay")
+	}
+}
+
+func TestSwitchAccount_WithContinuationSummary(t *testing.T) {
+	rel := reloader.NewSessionReloader()
+	rel.ProcessKiller = func(ctx context.Context) error { return nil }
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	rel.SnapshotCapturer = func(conversationsDir, summariesDbPath, outputDir string) (string, []reloader.ActiveThread, error) {
+		return "", []reloader.ActiveThread{{ThreadID: "test-thread-1"}}, nil
+	}
+	rel.ContinuationRunner = func(ctx context.Context, client *connector.Client, activeThreads []reloader.ActiveThread, promptText string) error {
+		return nil
+	}
+
+	mgr := createTestManagerWithReloader(t, rel)
+	testApp := test.NewApp()
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+	app.Init()
+
+	waitForIdle(app, 3*time.Second)
+
+	err := mgr.Store().SaveAccount("target@gmail.com", &model.TokenData{
+		AccessToken: "target_access",
+		IDToken:     makeTestJWT("target@gmail.com"),
+	})
+	if err != nil {
+		t.Fatalf("failed saving target account: %v", err)
+	}
+
+	app.SwitchAccount("target@gmail.com")
+
+	waitForIdle(app, 3*time.Second)
+
+	expectedSnippet := "• Đã tiếp tục 1/1 phiên"
+	if !strings.Contains(app.statusBarLabel.Text, expectedSnippet) {
+		t.Errorf("expected status bar to contain %q, got: %s", expectedSnippet, app.statusBarLabel.Text)
+	}
+	if !strings.Contains(app.statusBarLabel.Text, "Đã chuyển sang target@gmail.com") {
+		t.Errorf("expected status bar text to reflect switch, got: %s", app.statusBarLabel.Text)
 	}
 }
 
