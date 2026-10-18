@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	// Three-tier quota colors per UI-TR-04
+	// Three-tier quota colors per UI-TR-04 & Architect Spec
 	ColorQuotaGreen = color.NRGBA{R: 0x22, G: 0xc5, B: 0x5e, A: 0xff} // #22c55e (> 50%)
 	ColorQuotaAmber = color.NRGBA{R: 0xf5, G: 0x9e, B: 0x0b, A: 0xff} // #f59e0b (15% - 50%)
 	ColorQuotaRed   = color.NRGBA{R: 0xef, G: 0x44, B: 0x44, A: 0xff} // #ef4444 (< 15%)
@@ -64,28 +64,76 @@ func formatFraction(fraction float64) string {
 		return "0%"
 	}
 	pct := fraction * 100.0
-	// Show one decimal if not whole number
 	if pct == float64(int(pct)) {
 		return fmt.Sprintf("%.0f%%", pct)
 	}
 	return fmt.Sprintf("%.1f%%", pct)
 }
 
-// createModelBadge creates a compact status dot and percentage text label for one model.
-func createModelBadge(modelName string, fraction float64, hasData bool) fyne.CanvasObject {
+// DualCycleQuota holds extracted 5h and weekly quota fractions for Claude and Gemini.
+type DualCycleQuota struct {
+	Claude5h   float64
+	ClaudeWeek float64
+	Gemini5h   float64
+	GeminiWeek float64
+	HasData    bool
+	IsError    bool
+}
+
+// ExtractDualCycleQuota parses 5h and weekly buckets from AccountQuotaData.
+func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
+	if quota == nil {
+		return DualCycleQuota{HasData: false}
+	}
+	if quota.Status == telemetry.StatusError || quota.ErrorMessage != "" {
+		return DualCycleQuota{HasData: false, IsError: true}
+	}
+
+	dq := DualCycleQuota{
+		HasData:    true,
+		Claude5h:   quota.Claude.RemainingFraction,
+		ClaudeWeek: quota.Claude.RemainingFraction,
+		Gemini5h:   quota.Gemini.RemainingFraction,
+		GeminiWeek: quota.Gemini.RemainingFraction,
+	}
+
+	for _, b := range quota.RawBuckets {
+		lower := strings.ToLower(b.ModelID)
+		if strings.Contains(lower, "gemini") {
+			if strings.Contains(lower, "5h") {
+				dq.Gemini5h = b.RemainingFraction
+			} else if strings.Contains(lower, "week") {
+				dq.GeminiWeek = b.RemainingFraction
+			}
+		} else if strings.Contains(lower, "claude") || strings.Contains(lower, "3p") {
+			if strings.Contains(lower, "5h") {
+				dq.Claude5h = b.RemainingFraction
+			} else if strings.Contains(lower, "week") {
+				dq.ClaudeWeek = b.RemainingFraction
+			}
+		}
+	}
+
+	return dq
+}
+
+// createModelQuotaItem creates a compact status dot and percentage text label for one model (Claude or Gemini).
+func createModelQuotaItem(modelName string, fraction float64, hasData bool) fyne.CanvasObject {
 	if !hasData {
-		txt := canvas.NewText(fmt.Sprintf("%s: --%%", modelName), ColorQuotaMuted)
+		dot := canvas.NewCircle(ColorQuotaMuted)
+		dotWrap := container.NewGridWrap(fyne.NewSize(7, 7), dot)
+		txt := canvas.NewText(fmt.Sprintf("%s --%%", modelName), ColorQuotaMuted)
 		txt.TextSize = 11
-		return txt
+		return container.NewHBox(container.NewCenter(dotWrap), txt)
 	}
 
 	tierColor := GetQuotaTierColor(fraction)
 	pctStr := formatFraction(fraction)
 
 	dot := canvas.NewCircle(tierColor)
-	dotWrap := container.NewGridWrap(fyne.NewSize(8, 8), dot)
+	dotWrap := container.NewGridWrap(fyne.NewSize(7, 7), dot)
 
-	txt := canvas.NewText(fmt.Sprintf("%s: %s", modelName, pctStr), tierColor)
+	txt := canvas.NewText(fmt.Sprintf("%s %s", modelName, pctStr), tierColor)
 	txt.TextSize = 11
 	txt.TextStyle = fyne.TextStyle{Bold: true}
 
@@ -95,94 +143,52 @@ func createModelBadge(modelName string, fraction float64, hasData bool) fyne.Can
 // createErrorBadge creates a compact badge indicating a connection error in muted gray.
 func createErrorBadge() fyne.CanvasObject {
 	dot := canvas.NewCircle(ColorQuotaMuted)
-	dotWrap := container.NewGridWrap(fyne.NewSize(8, 8), dot)
+	dotWrap := container.NewGridWrap(fyne.NewSize(7, 7), dot)
 	txt := canvas.NewText("[!] Lỗi kết nối", ColorQuotaMuted)
 	txt.TextSize = 11
 	txt.TextStyle = fyne.TextStyle{Bold: true}
 	return container.NewHBox(container.NewCenter(dotWrap), txt)
 }
 
-// NewQuotaBadgeGroup constructs a 3-column widget containing mini quota badges for Claude, Gemini, and GPT.
-// If quota is nil or has an Error status, displays muted placeholders or error badges (never 0% red).
-func NewQuotaBadgeGroup(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
-	if quota == nil {
-		c1 := createModelBadge("Claude", 0, false)
-		c2 := createModelBadge("Gemini", 0, false)
-		c3 := createModelBadge("GPT", 0, false)
-		return container.NewGridWithColumns(3, c1, c2, c3)
-	}
+// CreateQuotaCycleRow builds a single cycle row (e.g. "5h: Claude 100% Gemini 88%" or "week: Claude 100% Gemini 90%").
+func CreateQuotaCycleRow(prefix string, claudeFrac, geminiFrac float64, hasData bool, isError bool) fyne.CanvasObject {
+	lbl := canvas.NewText(prefix, ColorQuotaMuted)
+	lbl.TextSize = 11
+	lbl.TextStyle = fyne.TextStyle{Bold: true}
 
-	if quota.Status == telemetry.StatusError || quota.ErrorMessage != "" {
+	if isError {
 		errBadge := createErrorBadge()
-		c2 := createModelBadge("Gemini", 0, false)
-		c3 := createModelBadge("GPT", 0, false)
-		return container.NewGridWithColumns(3, errBadge, c2, c3)
+		return container.NewHBox(lbl, errBadge)
 	}
 
-	claudeBadge := createModelBadge("Claude", quota.Claude.RemainingFraction, true)
-	geminiBadge := createModelBadge("Gemini", quota.Gemini.RemainingFraction, true)
-	gptBadge := createModelBadge("GPT", quota.GPT.RemainingFraction, true)
+	claudeItem := createModelQuotaItem("Claude", claudeFrac, hasData)
+	geminiItem := createModelQuotaItem("Gemini", geminiFrac, hasData)
 
-	return container.NewGridWithColumns(3, claudeBadge, geminiBadge, gptBadge)
+	return container.NewHBox(lbl, claudeItem, geminiItem)
 }
 
-// NewQuotaCountdownLabel returns a countdown warning text if any model has quota < 15%.
-// Returns nil if all models have >= 15% quota, if quota is nil, or if quota is in Error status.
+// NewDualCycleQuotaBadge constructs a 2-row container:
+// Row 1: "5h: Claude <pct>% Gemini <pct>%"
+// Row 2: "week: Claude <pct>% Gemini <pct>%"
+// GPT is completely excluded.
+func NewDualCycleQuotaBadge(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
+	dq := ExtractDualCycleQuota(quota)
+	r5h := CreateQuotaCycleRow("5h:", dq.Claude5h, dq.Gemini5h, dq.HasData, dq.IsError)
+	rWeek := CreateQuotaCycleRow("week:", dq.ClaudeWeek, dq.GeminiWeek, dq.HasData, dq.IsError)
+	return container.NewVBox(r5h, rWeek)
+}
+
+// NewQuotaBadgeGroup delegates to NewDualCycleQuotaBadge for backwards compatibility with tests.
+func NewQuotaBadgeGroup(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
+	return NewDualCycleQuotaBadge(quota)
+}
+
+// NewQuotaCountdownLabel returns nil as countdown warnings are removed in the redesigned UI.
 func NewQuotaCountdownLabel(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
-	if quota == nil || quota.Status == telemetry.StatusError || quota.ErrorMessage != "" {
-		return nil
-	}
-
-	var lowModels []string
-	var targetReset time.Time
-
-	if quota.Gemini.RemainingFraction < 0.15 {
-		lowModels = append(lowModels, "Gemini")
-		if !quota.Gemini.ResetTime.IsZero() {
-			targetReset = quota.Gemini.ResetTime
-		}
-	}
-	if quota.Claude.RemainingFraction < 0.15 {
-		lowModels = append(lowModels, "Claude")
-		if targetReset.IsZero() && !quota.Claude.ResetTime.IsZero() {
-			targetReset = quota.Claude.ResetTime
-		}
-	}
-	if quota.GPT.RemainingFraction < 0.15 {
-		lowModels = append(lowModels, "GPT-OSS")
-		if targetReset.IsZero() && !quota.GPT.ResetTime.IsZero() {
-			targetReset = quota.GPT.ResetTime
-		}
-	}
-
-	if len(lowModels) == 0 {
-		return nil
-	}
-
-	if targetReset.IsZero() && !quota.ResetTime.IsZero() {
-		targetReset = quota.ResetTime
-	}
-
-	modelStr := strings.Join(lowModels, ", ")
-	now := time.Now()
-
-	var msg string
-	if !targetReset.IsZero() {
-		countdown := FormatRemainingCountdown(targetReset, now)
-		resetStr := targetReset.UTC().Format("15:04")
-		msg = fmt.Sprintf("⚠️ %s sắp cạn (Google sẽ hồi phục lúc: %s UTC - %s)", modelStr, resetStr, countdown)
-	} else {
-		msg = fmt.Sprintf("⚠️ %s sắp cạn (Đang chờ thông tin hồi phục từ Google)", modelStr)
-	}
-
-	txt := canvas.NewText(msg, ColorQuotaRed)
-	txt.TextSize = 11
-	txt.TextStyle = fyne.TextStyle{Italic: true}
-
-	return txt
+	return nil
 }
 
-// BuildActiveQuotaSummary builds a one-line summary string of active quota for the header card.
+// BuildActiveQuotaSummary builds a one-line summary string of active quota (Claude and Gemini only, no GPT).
 func BuildActiveQuotaSummary(quota *telemetry.AccountQuotaData) string {
 	if quota == nil {
 		return "Hạn ngạch: Chưa tải dữ liệu"
@@ -190,9 +196,8 @@ func BuildActiveQuotaSummary(quota *telemetry.AccountQuotaData) string {
 	if quota.Status == telemetry.StatusError || quota.ErrorMessage != "" {
 		return "Hạn ngạch: [!] Lỗi kết nối"
 	}
-	return fmt.Sprintf("Hạn ngạch: 🟣 Claude: %s | 🔵 Gemini: %s | ⚪ GPT: %s",
+	return fmt.Sprintf("Hạn ngạch: 🟣 Claude: %s | 🔵 Gemini: %s",
 		formatFraction(quota.Claude.RemainingFraction),
 		formatFraction(quota.Gemini.RemainingFraction),
-		formatFraction(quota.GPT.RemainingFraction),
 	)
 }

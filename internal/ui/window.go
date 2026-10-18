@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"fmt"
+	"image/color"
+	"time"
 	"unsafe"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -45,19 +47,59 @@ func setWindowAlwaysOnTop(title string, isTop bool) {
 	_, _, _ = procSetWindowPos.Call(hwnd, insertAfter, 0, 0, 0, 0, flags)
 }
 
-// setupLayout builds the main compact 440x560 window layout.
+// minSizeLayout enforces a minimum size (1200x750) while allowing responsive expansion.
+type minSizeLayout struct {
+	min fyne.Size
+}
+
+func (m *minSizeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var maxW, maxH float32 = m.min.Width, m.min.Height
+	for _, o := range objects {
+		if !o.Visible() {
+			continue
+		}
+		s := o.MinSize()
+		if s.Width > maxW {
+			maxW = s.Width
+		}
+		if s.Height > maxH {
+			maxH = s.Height
+		}
+	}
+	return fyne.NewSize(maxW, maxH)
+}
+
+func (m *minSizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, o := range objects {
+		o.Resize(size)
+		o.Move(fyne.NewPos(0, 0))
+	}
+}
+
+// setupLayout builds the standard 1440x900 desktop layout with 3-row TopSection and 3-column account grid.
 func (a *App) setupLayout() {
 	palette := GetThemePalette(a.currentTheme)
 
-	// 1. Header Card with Brand Logo & Specular Keyline Border
-	logoImg := canvas.NewImageFromResource(AppLogoResource)
-	logoImg.FillMode = canvas.ImageFillContain
-	logoContainer := container.NewGridWrap(fyne.NewSize(32, 32), logoImg)
+	// -------------------------------------------------------------------------
+	// TopSection Row 1 (Header): Monogram [AS] + App Title
+	// -------------------------------------------------------------------------
+	monogramBg := canvas.NewRectangle(palette.Primary)
+	monogramBg.CornerRadius = 6
+	monogramText := canvas.NewText("AS", color.White)
+	monogramText.TextStyle = fyne.TextStyle{Bold: true}
+	monogramText.TextSize = 13
+	monogramText.Alignment = fyne.TextAlignCenter
+	monogramStack := container.NewStack(monogramBg, container.NewCenter(monogramText))
+	monogramWrap := container.NewGridWrap(fyne.NewSize(28, 28), monogramStack)
 
-	titleLabel := widget.NewLabelWithStyle(windowTitle, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	titleHBox := container.NewHBox(container.NewCenter(logoContainer), titleLabel)
+	titleLabel := widget.NewLabelWithStyle("Antigravity Multi-Account Switcher", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	row1Header := container.NewHBox(monogramWrap, titleLabel)
 
-	// Multi-Theme Selector (UI-TR-06)
+	// -------------------------------------------------------------------------
+	// TopSection Row 2 (Sub-header): Language Server info (left) + Theme Select (right)
+	// -------------------------------------------------------------------------
+	a.serverStatusLabel = widget.NewLabelWithStyle("Language Server : Đang kiểm tra...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+
 	themeOptions := []string{"🌙 Tối", "☀️ Sáng", "☕ Ấm"}
 	a.themeSelect = widget.NewSelect(themeOptions, func(selected string) {
 		switch selected {
@@ -79,49 +121,26 @@ func (a *App) setupLayout() {
 		a.themeSelect.SetSelected("🌙 Tối")
 	}
 
-	headerTopRow := container.NewBorder(nil, nil, titleHBox, a.themeSelect)
+	themeLabel := widget.NewLabel("Theme")
+	themeBox := container.NewHBox(themeLabel, a.themeSelect)
+	row2SubHeader := container.NewBorder(nil, nil, a.serverStatusLabel, themeBox)
 
-	// Active Account info
-	a.activeDotContainer = container.NewHBox(NewStatusDot(palette.Warning, 12))
-	a.activeStatusLabel = widget.NewLabelWithStyle("● Đang kiểm tra Antigravity...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	activeHBox := container.NewHBox(a.activeDotContainer, a.activeStatusLabel)
-
-	// Active Quota summary
-	a.activeQuotaLabel = widget.NewLabelWithStyle("Hạn ngạch: Đang kiểm tra...", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
-
-	a.serverStatusLabel = widget.NewLabelWithStyle("● Đang kết nối Language Server...", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
-
-	headerBox := container.NewVBox(
-		headerTopRow,
-		activeHBox,
-		a.activeQuotaLabel,
-		a.serverStatusLabel,
-	)
-
-	a.headerBg = canvas.NewRectangle(palette.Card)
-	a.headerBg.StrokeColor = palette.BorderSubtle
-	a.headerBg.StrokeWidth = 1
-	a.headerBg.CornerRadius = 8
-	a.headerCard = container.NewStack(a.headerBg, container.NewPadded(headerBox))
-
-	// 2. Action Controls Bar & Header Toolbar
-	a.refreshBtn = widget.NewButtonWithIcon("🔄 Chrome", theme.ViewRefreshIcon(), func() {
+	// -------------------------------------------------------------------------
+	// TopSection Row 3 (Toolbar): Action buttons (left) + Timestamp (right)
+	// -------------------------------------------------------------------------
+	a.refreshBtn = widget.NewButtonWithIcon("🔄 Làm mới Chrome", theme.ViewRefreshIcon(), func() {
 		a.Refresh()
 	})
-	a.saveBtn = widget.NewButtonWithIcon("💾 Lưu phiên", theme.DocumentSaveIcon(), func() {
-		a.SaveSession()
-	})
 
-	// Global Quota Refresh Button (UI-TR-01)
-	a.quotaRefreshAllBtn = widget.NewButtonWithIcon("📊 Làm mới Quota Tất cả", theme.ViewRefreshIcon(), func() {
+	a.quotaRefreshAllBtn = widget.NewButtonWithIcon("🔄 Làm mới Quota", theme.ViewRefreshIcon(), func() {
 		a.RefreshAllQuota()
 	})
 	a.quotaRefreshAllBtn.Importance = widget.HighImportance
 
-	pinLabel := "📌 Ghim: BẬT"
+	pinLabel := "📌 Ghim : Bật"
 	pinImportance := widget.HighImportance
 	if !a.alwaysOnTop {
-		pinLabel = "📌 Ghim: TẮT"
+		pinLabel = "📌 Ghim : Tắt"
 		pinImportance = widget.MediumImportance
 	}
 	a.alwaysOnTopBtn = widget.NewButton(pinLabel, func() {
@@ -129,50 +148,48 @@ func (a *App) setupLayout() {
 	})
 	a.alwaysOnTopBtn.Importance = pinImportance
 
-	// Auto-Refresh 60s Indicator (UI-TR-03)
-	a.autoRefreshLabel = widget.NewLabelWithStyle("Tự động: 60s | Cập nhật: --:--:--", fyne.TextAlignTrailing, fyne.TextStyle{Italic: true})
+	nowStr := time.Now().Format("15:04:05")
+	a.lastUpdatedLabel = widget.NewLabelWithStyle(fmt.Sprintf("Cập nhật : %s", nowStr), fyne.TextAlignTrailing, fyne.TextStyle{Italic: true})
+	a.autoRefreshLabel = a.lastUpdatedLabel
 
-	// Toolbar Grid: Row 1 = Chrome, Save, Quota All
-	row1Grid := container.NewGridWithColumns(3, a.refreshBtn, a.saveBtn, a.quotaRefreshAllBtn)
-	// Toolbar Row 2 = Pin button + Auto-Refresh indicator
-	row2Box := container.NewBorder(nil, nil, a.alwaysOnTopBtn, nil, container.NewHBox(layout.NewSpacer(), a.autoRefreshLabel))
+	toolbarLeft := container.NewHBox(a.refreshBtn, a.quotaRefreshAllBtn, a.alwaysOnTopBtn)
+	row3Toolbar := container.NewBorder(nil, nil, toolbarLeft, a.lastUpdatedLabel)
 
-	ctrlContainer := container.NewVBox(row1Grid, row2Box)
-
-	// 3. Legend Bar
-	legendLabel := widget.NewLabelWithStyle("🟢 Sẵn sàng   |   🟡 Chưa có file JSON   |   🔴 Hạn ngạch < 15%", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
-	a.legendBg = canvas.NewRectangle(palette.Card)
-	a.legendBg.StrokeColor = palette.BorderSubtle
-	a.legendBg.StrokeWidth = 1
-	a.legendBg.CornerRadius = 6
-	legendCard := container.NewStack(a.legendBg, container.NewPadded(legendLabel))
+	// Separator dividing header controls from accounts grid
+	sep := widget.NewSeparator()
 
 	topSection := container.NewVBox(
-		container.NewPadded(a.headerCard),
-		ctrlContainer,
-		legendCard,
+		row1Header,
+		row2SubHeader,
+		row3Toolbar,
+		sep,
 	)
 
-	// 4. Scrollable Account List
-	a.accountListContainer = container.NewVBox()
-	scrollList := container.NewVScroll(a.accountListContainer)
+	// -------------------------------------------------------------------------
+	// Center Section: 3-Column Account Grid inside Vertical Scroller
+	// -------------------------------------------------------------------------
+	a.accountListContainer = container.NewGridWithColumns(3)
+	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
 
-	// 5. Status Bar Footer with Specular Keyline Border
-	a.statusBarLabel = widget.NewLabelWithStyle("Sẵn sàng", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+	// In-memory labels for backward-compatibility with tests & background workers
+		a.headerBg = canvas.NewRectangle(palette.Card)
 	a.statusBg = canvas.NewRectangle(palette.Card)
-	a.statusBg.StrokeColor = palette.BorderSubtle
-	a.statusBg.StrokeWidth = 1
-	a.statusBg.CornerRadius = 6
-	bottomSection := container.NewStack(a.statusBg, container.NewPadded(a.statusBarLabel))
+	a.legendBg = canvas.NewRectangle(palette.Card)
+	a.statusBarLabel = widget.NewLabelWithStyle("Sẵn sàng", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+	a.activeStatusLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	a.activeQuotaLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
-	// Main Layout
+	// Main Layout: No footer status bar, no legend bar, no bulky header card
 	mainLayout := container.NewBorder(
 		topSection,
-		bottomSection,
+		nil,
 		nil,
 		nil,
 		scrollList,
 	)
 
-	a.win.SetContent(mainLayout)
+	// Root wrapped with minSizeLayout to ensure window min size is at least 1200x750
+	rootContainer := container.New(&minSizeLayout{min: fyne.NewSize(1200, 750)}, mainLayout)
+	a.win.SetContent(rootContainer)
 }
+

@@ -192,16 +192,16 @@ func TestToggleAlwaysOnTop(t *testing.T) {
 	if app.IsAlwaysOnTop() {
 		t.Errorf("expected alwaysOnTop to be false after toggle")
 	}
-	if app.alwaysOnTopBtn.Text != "📌 Ghim: TẮT" {
-		t.Errorf("expected button text '📌 Ghim: TẮT', got: %s", app.alwaysOnTopBtn.Text)
+	if app.alwaysOnTopBtn.Text != "📌 Ghim : Tắt" {
+		t.Errorf("expected button text '📌 Ghim : Tắt', got: %s", app.alwaysOnTopBtn.Text)
 	}
 
 	app.SetAlwaysOnTop(true)
 	if !app.IsAlwaysOnTop() {
 		t.Errorf("expected alwaysOnTop to be true after SetAlwaysOnTop(true)")
 	}
-	if app.alwaysOnTopBtn.Text != "📌 Ghim: BẬT" {
-		t.Errorf("expected button text '📌 Ghim: BẬT', got: %s", app.alwaysOnTopBtn.Text)
+	if app.alwaysOnTopBtn.Text != "📌 Ghim : Bật" {
+		t.Errorf("expected button text '📌 Ghim : Bật', got: %s", app.alwaysOnTopBtn.Text)
 	}
 
 	waitForIdle(app, 3*time.Second)
@@ -279,8 +279,8 @@ func TestUpdateUI_Empty(t *testing.T) {
 	if !strings.Contains(app.activeStatusLabel.Text, "Chưa phát hiện") {
 		t.Errorf("expected status 'Chưa phát hiện', got: %s", app.activeStatusLabel.Text)
 	}
-	if !strings.Contains(app.serverStatusLabel.Text, "Không phát hiện tiến trình") {
-		t.Errorf("expected server status 'Không phát hiện tiến trình', got: %s", app.serverStatusLabel.Text)
+	if !strings.Contains(app.serverStatusLabel.Text, "Language Server : Không phát hiện") {
+		t.Errorf("expected server status 'Language Server : Không phát hiện', got: %s", app.serverStatusLabel.Text)
 	}
 	if len(app.accountListContainer.Objects) != 1 {
 		t.Errorf("expected 1 container object (empty label), got %d", len(app.accountListContainer.Objects))
@@ -581,43 +581,52 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 		t.Fatalf("expected non-nil container for populated quota")
 	}
 
-	gridCont, ok := badges.(*fyne.Container)
-	if !ok || len(gridCont.Objects) != 3 {
-		t.Fatalf("expected 3 badge columns in NewQuotaBadgeGroup")
+	vbox, ok := badges.(*fyne.Container)
+	if !ok || len(vbox.Objects) != 2 {
+		t.Fatalf("expected 2 dual-cycle rows in NewQuotaBadgeGroup, got %d", len(vbox.Objects))
 	}
 
-	// Claude: 100% -> Green
-	cCircle, cText := extractBadgeProperties(gridCont.Objects[0])
+	// Row 1 (5h): Claude + Gemini
+	r5h, ok := vbox.Objects[0].(*fyne.Container)
+	if !ok || len(r5h.Objects) < 3 {
+		t.Fatalf("expected 5h row container with prefix, Claude, and Gemini items")
+	}
+
+	cCircle, cText := extractBadgeProperties(r5h.Objects[1])
 	if cCircle == nil || cText == nil {
 		t.Fatalf("failed extracting Claude badge elements")
 	}
 	assertColorMatches(t, "ClaudeBadge", "dot", cCircle.FillColor, ColorQuotaGreen)
-	if cText.Text != "Claude: 100%" {
-		t.Errorf("expected Claude text 'Claude: 100%%', got '%s'", cText.Text)
+	if cText.Text != "Claude 100%" {
+		t.Errorf("expected Claude text 'Claude 100%%', got '%s'", cText.Text)
 	}
 	assertColorMatches(t, "ClaudeBadge", "text", cText.Color, ColorQuotaGreen)
 
-	// Gemini: 23.5% -> Amber
-	gCircle, gText := extractBadgeProperties(gridCont.Objects[1])
+	gCircle, gText := extractBadgeProperties(r5h.Objects[2])
 	if gCircle == nil || gText == nil {
 		t.Fatalf("failed extracting Gemini badge elements")
 	}
 	assertColorMatches(t, "GeminiBadge", "dot", gCircle.FillColor, ColorQuotaAmber)
-	if gText.Text != "Gemini: 23.5%" {
-		t.Errorf("expected Gemini text 'Gemini: 23.5%%', got '%s'", gText.Text)
+	if gText.Text != "Gemini 23.5%" {
+		t.Errorf("expected Gemini text 'Gemini 23.5%%', got '%s'", gText.Text)
 	}
 	assertColorMatches(t, "GeminiBadge", "text", gText.Color, ColorQuotaAmber)
 
-	// GPT: 10% -> Red
-	pCircle, pText := extractBadgeProperties(gridCont.Objects[2])
-	if pCircle == nil || pText == nil {
-		t.Fatalf("failed extracting GPT badge elements")
+	// Verify ZERO GPT artifacts anywhere in the widget hierarchy
+	var walkNoGPT func(fyne.CanvasObject)
+	walkNoGPT = func(o fyne.CanvasObject) {
+		if txt, ok := o.(*canvas.Text); ok {
+			if strings.Contains(strings.ToUpper(txt.Text), "GPT") {
+				t.Errorf("VIOLATION: found unexpected GPT text in quota badge: %s", txt.Text)
+			}
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				walkNoGPT(child)
+			}
+		}
 	}
-	assertColorMatches(t, "GPTBadge", "dot", pCircle.FillColor, ColorQuotaRed)
-	if pText.Text != "GPT: 10%" {
-		t.Errorf("expected GPT text 'GPT: 10%%', got '%s'", pText.Text)
-	}
-	assertColorMatches(t, "GPTBadge", "text", pText.Color, ColorQuotaRed)
+	walkNoGPT(badges)
 }
 
 func TestQuotaCountdownCalculationAndLabel(t *testing.T) {
@@ -664,19 +673,10 @@ func TestQuotaCountdownCalculationAndLabel(t *testing.T) {
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.12, ResetTime: resetTime},
 		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 	}
+	// In redesigned 3-row layout, countdown label is eliminated for clean cards
 	lbl := NewQuotaCountdownLabel(lowGeminiQuota)
-	if lbl == nil {
-		t.Fatalf("expected non-nil countdown label for low Gemini quota")
-	}
-	txtObj, ok := lbl.(*canvas.Text)
-	if !ok {
-		t.Fatalf("expected *canvas.Text label")
-	}
-	if !strings.Contains(txtObj.Text, "Gemini sắp cạn") {
-		t.Errorf("expected warning to mention Gemini sắp cạn, got: %s", txtObj.Text)
-	}
-	if !strings.Contains(txtObj.Text, "Google sẽ hồi phục lúc:") {
-		t.Errorf("expected warning to mention Google sẽ hồi phục, got: %s", txtObj.Text)
+	if lbl != nil {
+		t.Errorf("expected nil countdown label in redesigned 3-row layout, got: %#v", lbl)
 	}
 }
 
@@ -804,7 +804,7 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	if app.quotaRefreshAllBtn == nil {
 		t.Fatalf("expected quotaRefreshAllBtn to be initialized")
 	}
-	if app.quotaRefreshAllBtn.Text != "📊 Làm mới Quota Tất cả" {
+	if app.quotaRefreshAllBtn.Text != "🔄 Làm mới Quota" {
 		t.Errorf("unexpected button label: %s", app.quotaRefreshAllBtn.Text)
 	}
 
@@ -812,8 +812,8 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	if app.autoRefreshLabel == nil {
 		t.Fatalf("expected autoRefreshLabel to be initialized")
 	}
-	if !strings.Contains(app.autoRefreshLabel.Text, "Tự động: 60s") {
-		t.Errorf("expected auto-refresh label to contain 'Tự động: 60s', got: %s", app.autoRefreshLabel.Text)
+	if !strings.Contains(app.autoRefreshLabel.Text, "Cập nhật :") {
+		t.Errorf("expected auto-refresh label to contain 'Cập nhật :', got: %s", app.autoRefreshLabel.Text)
 	}
 
 	// Trigger RefreshAllQuota
@@ -823,7 +823,7 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	waitForIdle(app, 3*time.Second)
 
 	// Verify button returned to standard label
-	if app.quotaRefreshAllBtn.Text != "📊 Làm mới Quota Tất cả" {
+	if app.quotaRefreshAllBtn.Text != "🔄 Làm mới Quota" {
 		t.Errorf("expected button restored to standard label, got: %s", app.quotaRefreshAllBtn.Text)
 	}
 
@@ -854,8 +854,11 @@ func TestActiveQuotaHeaderSummary(t *testing.T) {
 		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 	}
 	summary := BuildActiveQuotaSummary(q)
-	if !strings.Contains(summary, "Claude: 100%") || !strings.Contains(summary, "Gemini: 23.5%") || !strings.Contains(summary, "GPT: 100%") {
+	if !strings.Contains(summary, "Claude: 100%") || !strings.Contains(summary, "Gemini: 23.5%") {
 		t.Errorf("unexpected active quota summary: %s", summary)
+	}
+	if strings.Contains(summary, "GPT") {
+		t.Errorf("expected zero GPT in active quota summary, got: %s", summary)
 	}
 }
 
@@ -872,7 +875,7 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	waitForIdle(app, 3*time.Second)
 
 	// UI-TR-01: Global Quota Refresh Button in Header Toolbar
-	if app.quotaRefreshAllBtn == nil || app.quotaRefreshAllBtn.Text != "📊 Làm mới Quota Tất cả" {
+	if app.quotaRefreshAllBtn == nil || app.quotaRefreshAllBtn.Text != "🔄 Làm mới Quota" {
 		t.Errorf("UI-TR-01 FAILED: global quota refresh button missing or invalid")
 	}
 
@@ -894,7 +897,7 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	}
 
 	// UI-TR-03: Auto-Refresh 60s Indicator
-	if app.autoRefreshLabel == nil || !strings.Contains(app.autoRefreshLabel.Text, "Tự động: 60s") {
+	if app.autoRefreshLabel == nil || !strings.Contains(app.autoRefreshLabel.Text, "Cập nhật :") {
 		t.Errorf("UI-TR-03 FAILED: 60s auto-refresh indicator missing")
 	}
 
@@ -908,8 +911,8 @@ func TestUITraceabilityChecklist(t *testing.T) {
 		Email:  "low@example.com",
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.10, ResetTime: time.Now().Add(1 * time.Hour)},
 	}
-	if lbl := NewQuotaCountdownLabel(lowQuota); lbl == nil {
-		t.Errorf("UI-TR-05 FAILED: countdown label missing for <15%% quota")
+	if lbl := NewQuotaCountdownLabel(lowQuota); lbl != nil {
+		t.Errorf("UI-TR-05 FAILED: countdown label should be eliminated for clean 3-row layout")
 	}
 
 	// UI-TR-06: Multi-Theme Switcher Control
@@ -951,16 +954,11 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 		t.Fatalf("expected container with objects in NewQuotaBadgeGroup")
 	}
 
-	// Assert that first column is the error badge
-	errHBox, ok := gridCont.Objects[0].(*fyne.Container)
-	if !ok {
-		t.Fatalf("expected *fyne.Container for error badge")
-	}
-
 	hasErrorText := false
 	hasMutedColor := false
-	for _, obj := range errHBox.Objects {
-		if txt, ok := obj.(*canvas.Text); ok {
+	var walkText func(fyne.CanvasObject)
+	walkText = func(o fyne.CanvasObject) {
+		if txt, ok := o.(*canvas.Text); ok {
 			if strings.Contains(txt.Text, "[!] Lỗi kết nối") {
 				hasErrorText = true
 			}
@@ -971,7 +969,14 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 				t.Errorf("CRITICAL VIOLATION: error badge must NEVER display 0%%, got: %s", txt.Text)
 			}
 		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				walkText(child)
+			}
+		}
 	}
+	walkText(badges)
+
 	if !hasErrorText {
 		t.Errorf("expected error badge to contain '[!] Lỗi kết nối'")
 	}
@@ -1048,5 +1053,304 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 		if !strings.Contains(txt, "Quét quota: 1 thành công, 1 lỗi") {
 			t.Errorf("expected status bar text 'Quét quota: 1 thành công, 1 lỗi', got: '%s'", txt)
 		}
+	}
+}
+
+// -------------------------------------------------------------
+// Slice P6A-3 Tests: Owner Redesign Invariants (1440x900, 3-Column Grid, 3-Row Cards, No GPT)
+// -------------------------------------------------------------
+
+func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
+	mgr := createTestManager(t)
+	testApp := test.NewApp()
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+	app.Init()
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window")
+	}
+
+	if win.FixedSize() {
+		t.Errorf("expected window to be resizable, got FixedSize=true")
+	}
+
+	minSize := win.Content().MinSize()
+	if minSize.Width < 1200 || minSize.Height < 750 {
+		t.Errorf("expected content MinSize >= 1200x750, got %v", minSize)
+	}
+}
+
+func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
+	switchedEmail := ""
+	singleRefreshedEmail := ""
+
+	itemActive := manager.AccountDisplayItem{
+		Email:    "active_owner@gmail.com",
+		IsActive: true,
+		State:    model.StateReady,
+	}
+	itemInactive := manager.AccountDisplayItem{
+		Email:    "inactive_owner@gmail.com",
+		IsActive: false,
+		State:    model.StateReady,
+	}
+
+	quota := &telemetry.AccountQuotaData{
+		Email: "active_owner@gmail.com",
+		Claude: telemetry.ModelQuotaBucket{
+			RemainingFraction: 1.0,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			RemainingFraction: 0.88,
+		},
+		RawBuckets: []telemetry.ModelQuotaBucket{
+			{ModelID: "gemini-5h", RemainingFraction: 0.88},
+			{ModelID: "gemini-weekly", RemainingFraction: 0.90},
+			{ModelID: "3p-5h", RemainingFraction: 1.0},
+			{ModelID: "3p-weekly", RemainingFraction: 1.0},
+		},
+	}
+
+	cardActive := NewAccountCardWithQuota(itemActive, quota, DarkPalette,
+		func(email string) { switchedEmail = email },
+		func() {},
+		func(email string) { singleRefreshedEmail = email },
+	)
+
+	stackActive, ok := cardActive.(*fyne.Container)
+	if !ok || len(stackActive.Objects) < 2 {
+		t.Fatalf("expected stack container with background and content")
+	}
+
+	paddedCont, ok := stackActive.Objects[1].(*fyne.Container)
+	if !ok || len(paddedCont.Objects) == 0 {
+		t.Fatalf("expected padded container in card")
+	}
+
+	cardVBox, ok := paddedCont.Objects[0].(*fyne.Container)
+	if !ok {
+		t.Fatalf("expected card VBox")
+	}
+
+	// MUST be exactly 3 rows per Owner Spec
+	if len(cardVBox.Objects) != 3 {
+		t.Fatalf("CRITICAL VIOLATION: expected exactly 3 rows in AccountCard, got %d", len(cardVBox.Objects))
+	}
+
+	// Line 1: Header row (Border layout with email & action cluster)
+	line1, ok := cardVBox.Objects[0].(*fyne.Container)
+	if !ok {
+		t.Fatalf("expected line 1 to be a container")
+	}
+	hasActiveBadge := false
+	var walkObj func(fyne.CanvasObject)
+	walkObj = func(o fyne.CanvasObject) {
+		if lbl, ok := o.(*widget.Label); ok {
+			if strings.Contains(lbl.Text, "[✔ Dùng]") {
+				hasActiveBadge = true
+			}
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				walkObj(child)
+			}
+		}
+	}
+	walkObj(line1)
+	if !hasActiveBadge {
+		t.Errorf("expected line 1 to have '[✔ Dùng]' badge for active card")
+	}
+
+	// Test single refresh button on active card
+	refBtn := findRefreshButton(cardActive)
+	if refBtn == nil {
+		t.Fatalf("refresh button not found on active card")
+	}
+	refBtn.OnTapped()
+	if singleRefreshedEmail != "active_owner@gmail.com" {
+		t.Errorf("expected singleRefreshedEmail 'active_owner@gmail.com', got '%s'", singleRefreshedEmail)
+	}
+
+	// Test inactive card has [Chuyển] button
+	cardInactive := NewAccountCardWithQuota(itemInactive, quota, DarkPalette,
+		func(email string) { switchedEmail = email },
+		func() {},
+		func(email string) { singleRefreshedEmail = email },
+	)
+	var switchBtn *widget.Button
+	var findSwitch func(fyne.CanvasObject)
+	findSwitch = func(o fyne.CanvasObject) {
+		if btn, ok := o.(*widget.Button); ok && btn.Text == "Chuyển" {
+			switchBtn = btn
+			return
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				findSwitch(child)
+			}
+		}
+	}
+	findSwitch(cardInactive)
+	if switchBtn == nil {
+		t.Fatalf("expected 'Chuyển' button on inactive card")
+	}
+	switchBtn.OnTapped()
+	if switchedEmail != "inactive_owner@gmail.com" {
+		t.Errorf("expected switchedEmail 'inactive_owner@gmail.com', got '%s'", switchedEmail)
+	}
+
+	// Line 2 (5h Quota)
+	line2, ok := cardVBox.Objects[1].(*fyne.Container)
+	if !ok {
+		t.Fatalf("expected line 2 container")
+	}
+	prefix5h := false
+	for _, child := range line2.Objects {
+		if txt, ok := child.(*canvas.Text); ok && txt.Text == "5h:" {
+			prefix5h = true
+		}
+	}
+	if !prefix5h {
+		t.Errorf("expected line 2 to start with '5h:'")
+	}
+
+	// Line 3 (week Quota)
+	line3, ok := cardVBox.Objects[2].(*fyne.Container)
+	if !ok {
+		t.Fatalf("expected line 3 container")
+	}
+	prefixWeek := false
+	for _, child := range line3.Objects {
+		if txt, ok := child.(*canvas.Text); ok && txt.Text == "week:" {
+			prefixWeek = true
+		}
+	}
+	if !prefixWeek {
+		t.Errorf("expected line 3 to start with 'week:'")
+	}
+}
+
+func TestOwnerRedesign_EmailTruncationAndTooltip(t *testing.T) {
+	email := "very.long.enterprise.account.name.with.many.subdomains@antigravity.company.com"
+	item := manager.AccountDisplayItem{
+		Email:    email,
+		IsActive: false,
+		State:    model.StateReady,
+	}
+
+	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil, nil)
+	var emailLbl *emailLabelWithTooltip
+	var findEmailLbl func(fyne.CanvasObject)
+	findEmailLbl = func(o fyne.CanvasObject) {
+		if el, ok := o.(*emailLabelWithTooltip); ok {
+			emailLbl = el
+			return
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				findEmailLbl(child)
+			}
+		}
+	}
+	findEmailLbl(card)
+
+	if emailLbl == nil {
+		t.Fatalf("expected *emailLabelWithTooltip in account card")
+	}
+	if emailLbl.Truncation != fyne.TextTruncateEllipsis {
+		t.Errorf("expected Truncation=TextTruncateEllipsis, got %v", emailLbl.Truncation)
+	}
+	if emailLbl.Wrapping != fyne.TextWrapOff {
+		t.Errorf("expected Wrapping=TextWrapOff, got %v", emailLbl.Wrapping)
+	}
+	if emailLbl.fullText != email {
+		t.Errorf("expected fullText '%s', got '%s'", email, emailLbl.fullText)
+	}
+}
+
+func TestOwnerRedesign_ThreeColumnGrid(t *testing.T) {
+	mgr := createTestManager(t)
+	testApp := test.NewApp()
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+	app.Init()
+
+	accounts := make([]manager.AccountDisplayItem, 6)
+	for i := 0; i < 6; i++ {
+		accounts[i] = manager.AccountDisplayItem{
+			Email:    fmt.Sprintf("account%d@gmail.com", i+1),
+			IsActive: i == 0,
+			State:    model.StateReady,
+		}
+	}
+
+	overview := &manager.AccountOverview{
+		ActiveEmail:           "account1@gmail.com",
+		LanguageServerRunning: true,
+		ServerInfo:            &connector.ServerInfo{PID: 7768, Port: 52704},
+		Accounts:              accounts,
+	}
+
+	app.updateUI(overview)
+
+	if len(app.accountListContainer.Objects) != 6 {
+		t.Fatalf("expected 6 account cards in container, got %d", len(app.accountListContainer.Objects))
+	}
+
+	expectedStatus := "Language Server : PID 7768 | Port 52704 | Hoạt động"
+	if app.serverStatusLabel.Text != expectedStatus {
+		t.Errorf("expected '%s', got '%s'", expectedStatus, app.serverStatusLabel.Text)
+	}
+}
+
+func TestOwnerRedesign_NoGPTInCardsOrSummary(t *testing.T) {
+	quota := &telemetry.AccountQuotaData{
+		Email:  "user@example.com",
+		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.88},
+		GPT:    telemetry.ModelQuotaBucket{RemainingFraction: 0.95},
+		RawBuckets: []telemetry.ModelQuotaBucket{
+			{ModelID: "gemini-5h", RemainingFraction: 0.88},
+			{ModelID: "gemini-weekly", RemainingFraction: 0.90},
+			{ModelID: "3p-5h", RemainingFraction: 1.0},
+			{ModelID: "3p-weekly", RemainingFraction: 1.0},
+			{ModelID: "gpt-oss", RemainingFraction: 0.95},
+		},
+	}
+
+	card := NewAccountCardWithQuota(
+		manager.AccountDisplayItem{Email: "user@example.com", State: model.StateReady},
+		quota,
+		DarkPalette,
+		nil,
+		nil,
+		nil,
+	)
+
+	var walkNoGPT func(fyne.CanvasObject)
+	walkNoGPT = func(o fyne.CanvasObject) {
+		if txt, ok := o.(*canvas.Text); ok {
+			if strings.Contains(strings.ToUpper(txt.Text), "GPT") {
+				t.Fatalf("CRITICAL NON-GOAL VIOLATION: found GPT text '%s' inside card", txt.Text)
+			}
+		}
+		if lbl, ok := o.(*widget.Label); ok {
+			if strings.Contains(strings.ToUpper(lbl.Text), "GPT") {
+				t.Fatalf("CRITICAL NON-GOAL VIOLATION: found GPT text '%s' inside label", lbl.Text)
+			}
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				walkNoGPT(child)
+			}
+		}
+	}
+	walkNoGPT(card)
+
+	summary := BuildActiveQuotaSummary(quota)
+	if strings.Contains(strings.ToUpper(summary), "GPT") {
+		t.Fatalf("CRITICAL NON-GOAL VIOLATION: found GPT in active summary: %s", summary)
 	}
 }
