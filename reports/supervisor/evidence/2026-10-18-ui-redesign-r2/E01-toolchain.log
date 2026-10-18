@@ -1,0 +1,6 @@
+go version go1.26.3 windows/amd64
+staticcheck.exe 2026.2.2 (0.8.2)
+windows
+amd64
+1
+gcc

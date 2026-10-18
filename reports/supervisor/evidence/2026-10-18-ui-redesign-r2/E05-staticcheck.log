@@ -1,0 +1,4 @@
+staticcheck -tags gui ./...
+Exit: 0
+Diagnostic output lines: 0
+Elapsed ms: 4051

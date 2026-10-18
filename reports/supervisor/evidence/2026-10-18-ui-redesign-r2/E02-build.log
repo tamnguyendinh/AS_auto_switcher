@@ -1,0 +1,3 @@
+go build ./...
+Exit: 0
+Elapsed ms: 5747

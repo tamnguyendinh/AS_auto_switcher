@@ -1,0 +1,96 @@
+internal/ui/widgets.go:141:	// Extract Dual Cycle Quota (Claude and Gemini only, no GPT)
+internal/ui/quota_badge.go:35:// FormatRemainingCountdown formats the time remaining until resetTime as (còn Xh Yp).
+internal/ui/quota_badge.go:36:func FormatRemainingCountdown(resetTime time.Time, now time.Time) string {
+internal/ui/quota_badge.go:130:	hasClaudeCycles := quota.Claude.FiveHourFraction > 0 || quota.Claude.WeeklyFraction > 0 || !quota.Claude.FiveHourReset.IsZero() || !quota.Claude.WeeklyReset.IsZero()
+internal/ui/quota_badge.go:131:	if hasClaudeCycles {
+internal/ui/quota_badge.go:142:	hasGeminiCycles := quota.Gemini.FiveHourFraction > 0 || quota.Gemini.WeeklyFraction > 0 || !quota.Gemini.FiveHourReset.IsZero() || !quota.Gemini.WeeklyReset.IsZero()
+internal/ui/quota_badge.go:143:	if hasGeminiCycles {
+internal/ui/quota_badge.go:154:	// Priority 3: Fallback for legacy single-bucket data if no cycle-specific fraction found
+internal/ui/quota_badge.go:225:// GPT is completely excluded.
+internal/ui/quota_badge.go:233:// NewQuotaBadgeGroup delegates to NewDualCycleQuotaBadge for backwards compatibility with tests.
+internal/ui/quota_badge.go:234:func NewQuotaBadgeGroup(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
+internal/ui/quota_badge.go:238:// NewQuotaCountdownLabel returns nil as countdown warnings are removed in the redesigned UI.
+internal/ui/quota_badge.go:239:func NewQuotaCountdownLabel(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
+internal/ui/quota_badge.go:243:// BuildActiveQuotaSummary builds a one-line summary string of active quota (Claude and Gemini only, no GPT).
+internal/ui/window.go:86:	a.monogramBg = canvas.NewRectangle(palette.Primary)
+internal/ui/window.go:87:	a.monogramBg.CornerRadius = 6
+internal/ui/window.go:92:	monogramStack := container.NewStack(a.monogramBg, container.NewCenter(monogramText))
+internal/ui/window.go:172:	scrollList := container.NewVScroll(container.NewPadded(container.NewVBox(a.accountListContainer)))
+internal/ui/window.go:176:	a.headerBg = canvas.NewRectangle(palette.Card)
+internal/ui/window.go:177:	a.statusBarLabel = widget.NewLabelWithStyle("Sẵn sàng", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+internal/ui/window.go:178:	a.activeStatusLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+internal/ui/window.go:179:	a.activeQuotaLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+internal/ui/app.go:45:	activeStatusLabel    *widget.Label
+internal/ui/app.go:46:	activeQuotaLabel     *widget.Label
+internal/ui/app.go:49:	statusBarLabel       *widget.Label
+internal/ui/app.go:56:	monogramBg           *canvas.Rectangle
+internal/ui/app.go:57:	headerBg             *canvas.Rectangle
+internal/ui/app.go:182:	if a.monogramBg != nil {
+internal/ui/app.go:183:		a.monogramBg.FillColor = palette.Primary
+internal/ui/app.go:184:		a.monogramBg.Refresh()
+internal/ui/app.go:186:	if a.headerBg != nil {
+internal/ui/app.go:187:		a.headerBg.FillColor = palette.Card
+internal/ui/app.go:188:		a.headerBg.StrokeColor = palette.BorderSubtle
+internal/ui/app.go:189:		a.headerBg.Refresh()
+internal/ui/app.go:241:				if a.statusBarLabel != nil {
+internal/ui/app.go:242:					a.statusBarLabel.SetText(fmt.Sprintf("Tự động cập nhật quota lúc %s (%d tài khoản)", nowStr, len(results)))
+internal/ui/app.go:297:	if a.statusBarLabel != nil {
+internal/ui/app.go:298:		a.statusBarLabel.SetText("Đang quét hạn ngạch toàn bộ tài khoản...")
+internal/ui/app.go:347:			if a.statusBarLabel != nil {
+internal/ui/app.go:349:					a.statusBarLabel.SetText(fmt.Sprintf("Lỗi quét quota: %v", err))
+internal/ui/app.go:351:					a.statusBarLabel.SetText(fmt.Sprintf("Quét quota: %d thành công, %d lỗi", successCount, errorCount))
+internal/ui/app.go:373:	if a.statusBarLabel != nil {
+internal/ui/app.go:375:			a.statusBarLabel.SetText(fmt.Sprintf("Đang làm mới quota của %s...", email))
+internal/ui/app.go:429:					a.accountListContainer.Objects[targetIdx] = newCard
+internal/ui/app.go:438:			if a.statusBarLabel != nil {
+internal/ui/app.go:440:					a.statusBarLabel.SetText(fmt.Sprintf("Lỗi làm mới quota %s: %v", email, err))
+internal/ui/app.go:442:					a.statusBarLabel.SetText(fmt.Sprintf("Đã cập nhật quota %s (Claude: %s, Gemini: %s)",
+internal/ui/app.go:474:	if a.statusBarLabel != nil {
+internal/ui/app.go:476:			a.statusBarLabel.SetText("Đang quét tài khoản Chrome & kho lưu trữ...")
+internal/ui/app.go:502:				if a.statusBarLabel != nil {
+internal/ui/app.go:503:					a.statusBarLabel.SetText(fmt.Sprintf("Lỗi làm mới: %v", err))
+internal/ui/app.go:536:	if a.statusBarLabel != nil {
+internal/ui/app.go:538:			a.statusBarLabel.SetText(fmt.Sprintf("Đang chuyển sang %s...", targetEmail))
+internal/ui/app.go:557:				if a.statusBarLabel != nil {
+internal/ui/app.go:558:					a.statusBarLabel.SetText(fmt.Sprintf("Chuyển thất bại: %v", err))
+internal/ui/app.go:575:			if a.statusBarLabel != nil {
+internal/ui/app.go:582:				a.statusBarLabel.SetText(statusText)
+internal/ui/app.go:598:	if a.statusBarLabel != nil {
+internal/ui/app.go:600:			a.statusBarLabel.SetText("Đang lưu phiên làm việc hiện tại vào kho JSON...")
+internal/ui/app.go:618:				if a.statusBarLabel != nil {
+internal/ui/app.go:619:					a.statusBarLabel.SetText(fmt.Sprintf("Lưu phiên thất bại: %v", err))
+internal/ui/app.go:638:			if a.statusBarLabel != nil {
+internal/ui/app.go:639:				a.statusBarLabel.SetText(fmt.Sprintf("Đã lưu phiên của %s vào kho JSON", email))
+internal/ui/app.go:665:	if a.statusBarLabel != nil {
+internal/ui/app.go:667:			a.statusBarLabel.SetText("Đã bật chế độ Ghim trên cùng (Always on Top)")
+internal/ui/app.go:669:			a.statusBarLabel.SetText("Đã tắt chế độ Ghim trên cùng")
+internal/ui/app.go:720:		if a.activeStatusLabel != nil {
+internal/ui/app.go:721:			a.activeStatusLabel.SetText(fmt.Sprintf("● Đang hoạt động: %s", overview.ActiveEmail))
+internal/ui/app.go:727:		if a.activeQuotaLabel != nil {
+internal/ui/app.go:730:					a.activeQuotaLabel.SetText(BuildActiveQuotaSummary(activeQuota))
+internal/ui/app.go:732:					a.activeQuotaLabel.SetText("Hạn ngạch: Chưa có dữ liệu telemetry")
+internal/ui/app.go:735:				a.activeQuotaLabel.SetText("Hạn ngạch: Telemetry chưa kích hoạt")
+internal/ui/app.go:739:		if a.activeStatusLabel != nil {
+internal/ui/app.go:740:			a.activeStatusLabel.SetText("● Chưa phát hiện phiên Antigravity")
+internal/ui/app.go:746:		if a.activeQuotaLabel != nil {
+internal/ui/app.go:747:			a.activeQuotaLabel.SetText("Hạn ngạch: Không có tài khoản hoạt động")
+internal/ui/app.go:789:	if a.statusBarLabel != nil {
+internal/ui/app.go:796:		a.statusBarLabel.SetText(fmt.Sprintf("Đồng bộ lúc %s • %d tài khoản trong kho JSON • %d trên Chrome", nowStr, storedCount, len(overview.Accounts)))
+internal/telemetry/client.go:43:	StatusLowGPT    = "Low GPT"
+internal/telemetry/client.go:220:	// Priority 3: Fallback safe constant
+internal/telemetry/client.go:242:	GPT          ModelQuotaBucket   `json:"-"`
+internal/telemetry/client.go:406:// AggregateBuckets parses raw buckets into standard Claude, Gemini, and GPT families, and computes status.
+internal/telemetry/client.go:414:	hasGPT := false
+internal/telemetry/client.go:430:			if !hasGPT || b.RemainingFraction < gpt.RemainingFraction {
+internal/telemetry/client.go:432:				hasGPT = true
+internal/telemetry/client.go:478:			status = StatusLowGPT
+internal/telemetry/client.go:486:			status = StatusLowGPT
+internal/telemetry/client.go:544:	if summaryErr == nil && len(rawBuckets) > 0 {
+internal/telemetry/client.go:548:			GPT:         gpt,
+internal/telemetry/client.go:573:		GPT:         gpt,
+internal/telemetry/client.go:628:	hasClaudeGPT := false
+internal/telemetry/client.go:633:			frac := 1.0
+internal/telemetry/client.go:685:				if !hasClaudeGPT || frac < claude.RemainingFraction {
+internal/telemetry/client.go:693:					hasClaudeGPT = true
+internal/telemetry/client.go:728:			status = StatusLowGPT
+internal/telemetry/client.go:736:			status = StatusLowGPT
