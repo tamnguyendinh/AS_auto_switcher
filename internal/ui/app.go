@@ -197,8 +197,8 @@ func (a *App) Init() {
 
 	a.win = a.app.NewWindow(windowTitle)
 	a.win.SetIcon(AppLogoResource)
-	// Standard desktop size 1440x900 px, resizable (min size 1200x750 px handled by layout)
-	a.win.Resize(fyne.NewSize(1440, 900))
+	// Standard desktop size 1008x630 px (~70% scaling), resizable (min size 840x525 px handled by layout)
+	a.win.Resize(fyne.NewSize(1008, 630))
 	a.win.SetFixedSize(false)
 
 	a.setupLayout()
@@ -673,7 +673,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 		minH := a.accountListContainer.MinSize().Height
 		w := a.accountListContainer.Size().Width
 		if w <= 0 {
-			w = 1424
+			w = 992
 		}
 		a.accountListContainer.Resize(fyne.NewSize(w, minH))
 		a.accountListContainer.Refresh()

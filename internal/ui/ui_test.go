@@ -972,7 +972,7 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 }
 
 // -------------------------------------------------------------
-// Slice P6A-3 Tests: Owner Redesign Invariants (1440x900, 3-Column Grid, 3-Row Cards, No GPT)
+// Slice P6A-3 Tests: Owner Redesign Invariants (1008x630, 3-Column Grid, 3-Row Cards, No GPT)
 // -------------------------------------------------------------
 
 func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
@@ -992,8 +992,8 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 	}
 
 	minSize := win.Content().MinSize()
-	if minSize.Width < 1200 || minSize.Height < 750 {
-		t.Errorf("expected content MinSize >= 1200x750, got %v", minSize)
+	if minSize.Width < 840 || minSize.Height < 525 {
+		t.Errorf("expected content MinSize >= 840x525, got %v", minSize)
 	}
 }
 
@@ -1442,7 +1442,7 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	defer app.Close()
 
 	w := app.Window()
-	w.Resize(fyne.NewSize(1440, 900))
+	w.Resize(fyne.NewSize(1008, 630))
 
 	// Populate 6 cards
 	palette := DarkPalette
@@ -1452,7 +1452,7 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 		app.accountListContainer.Add(card)
 	}
 	minH := app.accountListContainer.MinSize().Height
-	app.accountListContainer.Resize(fyne.NewSize(1424, minH))
+	app.accountListContainer.Resize(fyne.NewSize(992, minH))
 	app.accountListContainer.Refresh()
 
 	card0Size := app.accountListContainer.Objects[0].Size()

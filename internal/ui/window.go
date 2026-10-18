@@ -47,7 +47,7 @@ func setWindowAlwaysOnTop(title string, isTop bool) {
 	_, _, _ = procSetWindowPos.Call(hwnd, insertAfter, 0, 0, 0, 0, flags)
 }
 
-// minSizeLayout enforces a minimum size (1200x750) while allowing responsive expansion.
+// minSizeLayout enforces a minimum size (840x525) while allowing responsive expansion.
 type minSizeLayout struct {
 	min fyne.Size
 }
@@ -76,7 +76,7 @@ func (m *minSizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	}
 }
 
-// setupLayout builds the standard 1440x900 desktop layout with 3-row TopSection and 3-column account grid.
+// setupLayout builds the standard 1008x630 desktop layout with 3-row TopSection and 3-column account grid.
 func (a *App) setupLayout() {
 	palette := GetThemePalette(a.currentTheme)
 
@@ -182,8 +182,8 @@ func (a *App) setupLayout() {
 		scrollList,
 	)
 
-	// Root wrapped with minSizeLayout to ensure window min size is at least 1200x750
-	rootContainer := container.New(&minSizeLayout{min: fyne.NewSize(1200, 750)}, mainLayout)
+	// Root wrapped with minSizeLayout to ensure window min size is at least 840x525
+	rootContainer := container.New(&minSizeLayout{min: fyne.NewSize(840, 525)}, mainLayout)
 	a.win.SetContent(rootContainer)
 }
 
