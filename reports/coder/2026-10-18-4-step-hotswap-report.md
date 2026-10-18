@@ -1,179 +1,64 @@
-# Báo Cáo Nghiệm Thu Làn Coder: Triển Khai Cơ Học 100% Phương Án 4 Bước Chuyển Đổi Tài Khoản & Tiếp Tục Phiên (4-Step Hot-Swap & Session Continuation)
+# Báo Cáo Nghiệm Thu Làn Coder: Khắc Phục Triệt Để 5 Lỗi F1-F5 Theo Báo Cáo Supervisor Commit 35138bb
 
 **Tài liệu:** `reports/coder/2026-10-18-4-step-hotswap-report.md`  
-**Ngày thực hiện:** 2026-10-18  
+**Ngày cập nhật:** 2026-10-18  
 **Làn thực hiện:** Coder (Lập Trình Viên)  
 **Ủy thác bởi:** CEO Session (Thread ID: `01a14378-4a08-77c1-88d5-666ad8c3592d`) theo chỉ thị tối cao từ Human Owner  
-**Căn cứ đặc tả:** `reports/architect/2026-10-18-coder-implementation-spec-4-step-hotswap.md` (commit `1ec2e6a`)  
+**Căn cứ xử lý:** Báo cáo Supervisor commit `35138bb` tại `reports/supervisor/2026-10-18-4-step-hotswap-supervisor-report.md` và đặc tả commit `1ec2e6a`  
 **Kết luận:** **[VERDICT: PASS / READY_FOR_SUPERVISOR]**
 
 ---
 
-## 1. Tổng Quan Nhiệm Vụ & Bất Biến Kỹ Thuật (Invariant Family Map)
+## 1. Tóm Tắt Khắc Phục 5 Lỗi Blocking (F1 đến F5)
 
-Làn Coder đã thi công hoàn tất cơ học 100% theo đúng bản đặc tả kỹ thuật commit `1ec2e6a`, loại bỏ triệt để các tàn dư thử nghiệm sai lầm trước đây (như RPC `/ReAuth` ảo) và thiết lập vững chắc phương án 4 bước chuẩn xác do Human Owner chỉ định:
+| Mã Lỗi | Phân Loại | Vị Trí Sửa Đổi | Giải Pháp Triệt Để Đã Thi Công |
+|:---:|:---:|---|---|
+| **F1** | **[P1 - CỐT TỬ]** | `internal/manager/account_manager.go:506-550` & `manager_test.go` | Bổ sung cổng kiểm soát (gate) xác thực danh tính trong RAM sau recycle: Gọi `newClient.GetUserStatus(ctx)`, chuẩn hóa email và đối chiếu `ramEmail == normTarget`. Nếu `newClient == nil`, hoặc `GetUserStatus` lỗi, hoặc RAM giữ email cũ: lập tức trả về `Success: false`, gán thông báo lỗi rõ ràng, và **TUYỆT ĐỐI KHÔNG GỌI** `PerformSessionContinuation` trên danh tính sai. Bổ sung đầy đủ regression tests cho target đúng, stale RAM, GetUserStatus lỗi và client nil. |
+| **F2** | **[P2]** | `internal/reloader/active_threads.go:175-215` & `active_threads_test.go` | Loại bỏ hoàn toàn regex quét trên 2048 byte nhị phân thô của file SQLite (vốn gây bắt nhầm đường dẫn trong đoạn chat preview của người dùng). Tích hợp thư viện pure-Go `modernc.org/sqlite` để truy vấn trực tiếp cột `workspace_uris` của bảng `conversation_summaries` theo `conversation_id` ở chế độ `mode=ro`. Trích xuất và unescape URI sạch qua `cleanFileURI`. Trả về `""` (unknown) nếu không tìm thấy. Bổ sung test với SQLite database thật chứa preview gây nhiễu `Command Working Directory: D:/UnrelatedPreview` nhưng `workspace_uris = ["file:///C:/ActualProject"]`. |
+| **F3** | **[P2]** | `internal/reloader/active_threads.go:95-105` & `active_threads_test.go` | Áp dụng biểu thức chính quy chuẩn UUID `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$` cho basename (sau khi bóc đuôi `.db` và `.db-wal`). Bỏ qua triệt để các file như `index.db`, file backup hoặc bất kỳ file nào không phải UUID. Cập nhật toàn bộ test fixtures dùng UUID hợp lệ. |
+| **F4** | **[P2]** | `internal/reloader/session_reloader.go:50-60, 400-425` & `manager_test.go` | Tách biệt hoàn toàn `ConversationsDir` và `SummariesDbPath` khỏi `StoragePath` (vốn là đường dẫn tệp `app_storage.json` phục vụ ToS). Cập nhật wrapper `CaptureActiveThreadsSnapshot` để không bao giờ lấy `StoragePath` làm thư mục scan conversation. Bổ sung test tích hợp xác nhận cấu hình `rel.StoragePath` không làm phá hỏng việc snapshot conversation. |
+| **F5** | **[P2]** | `internal/reloader/active_threads.go` | Xóa bỏ hàm không có caller `isFileViewTab`, xóa các biến/hàm chết `projectKeys` và `isDir`. Chạy kiểm tra `staticcheck -checks=U1000` đạt **0 diagnostics** trên toàn bộ các package thuộc phạm vi (`internal/reloader`, `internal/manager`). |
 
+---
+
+## 2. Bằng Chứng Kiểm Thử Tự Động (Automated Test Evidence)
+
+### 2.1 Kiểm thử Đầy Đủ Toàn Workspace (`go test -count=1 ./...`)
 ```
-[BƯỚC 1: Snapshot SQLite 2h Mọi Project]
-    │
-    ├─> Quét MAX(mtime(.db), mtime(.db-wal)) >= start - 2*time.Hour
-    ├─> Không loại bỏ thread IDLE, bao phủ toàn bộ workspace/project
-    ├─> Ánh xạ project qua binary search trên conversation_summaries.db
-    ├─> Ghi atomic snapshot JSON vào accounts_store/active_threads_history/<timestamp>_active_threads.json
-    └─> Lưu trữ đường dẫn snapshotPath
-    │
-[BƯỚC 2: Cơ Chế Đổi Chuẩn Antigravity & Chờ Đủ 8 Giây]
-    │
-    ├─> Đồng bộ ToS vào app_storage.json (jetski.onboarding.lastLoginUsername & lastLoginIsGcpTos)
-    ├─> Ghi token vào Windows Credential Manager (LegacyGeneric:target=gemini:antigravity)
-    ├─> Đưa cửa sổ Antigravity lên foreground (SetForegroundWindow)
-    ├─> Tái sinh Language Server bằng taskkill /F /IM language_server.exe (Kích hoạt monitorLsCrashInternal)
-    ├─> Loại bỏ 100% nhánh gọi RPC ReAuth ảo
-    ├─> CHỜ ĐỦ 8 GIÂY (time.Sleep(8 * time.Second) / mock sleeper)
-    └─> Dò tìm instance mới và xác nhận RAM qua GetUserStatus
-    │
-[BƯỚC 3: Đọc Lại Đúng File Snapshot Bước 1]
-    │
-    └─> ReadActiveThreadsSnapshot(snapshotPath) unmarshal ra []ActiveThread
-    │
-[BƯỚC 4: Gửi Tuần Tự Toàn Bộ Danh Sách Với Pacing 3 Giây]
-    │
-    ├─> Gửi thread 1 ➔ Nghỉ 3 giây ➔ Gửi thread 2 ➔ Nghỉ 3 giây ➔ ...
-    ├─> Chuỗi RPC: SmartFocusConversation ➔ LoadTrajectory ➔ SendUserCascadeMessage
-    ├─> Tự động phát hiện model đang hoạt động (client.DiscoverActiveAgentModel)
-    ├─> Khả năng chịu lỗi: Lỗi ở 1 thread KHÔNG làm ngắt vòng lặp, gửi tiếp đến thread cuối cùng
-    └─> Trả về ContinuationSummary tổng kết minh bạch (SuccessCount / TotalThreads)
+ok  	antigravity-switch/cmd/switcher	4.402s
+ok  	antigravity-switch/internal/connector	3.912s
+ok  	antigravity-switch/internal/manager	16.085s
+ok  	antigravity-switch/internal/model	1.278s
+ok  	antigravity-switch/internal/reloader	4.325s
+ok  	antigravity-switch/internal/scanner	1.388s
+ok  	antigravity-switch/internal/store	9.355s
+ok  	antigravity-switch/internal/telemetry	24.062s
+ok  	antigravity-switch/internal/ui	15.613s
+ok  	antigravity-switch/internal/wincred	0.499s
+```
+**Kết quả:** 10/10 package đạt `PASS 100%`, **0 FAIL, 0 SKIP**.
+
+### 2.2 Kiểm thử Regression Tests Mới Cho F1-F4
+- `TestScanActiveConversations2h_ThresholdFiltering`: PASS (UUID filtering, WAL inclusive MAX mtime, loại bỏ non-UUID `index.db` và `backup-copy.db-wal`).
+- `TestResolveProjectFromSummaries_F2_RealSQLiteTable`: PASS (Đọc chính xác cột `workspace_uris` từ bảng SQLite thật, không bị đánh lừa bởi preview chứa `D:/UnrelatedPreview`).
+- `TestSupervisorStoragePathDoesNotReplaceConversationsDirectory`: PASS (Cấu hình `StoragePath` cho ToS không can thiệp vào `ConversationsDir`).
+- `TestSwitchAccount_8SecondWaitAnd4StepWorkflow`: PASS (Chờ đủ 8s, recycle taskkill, RAM confirm, read snapshot, continuation 2/2 thread).
+- `TestSwitchAccount_F1_RAMConfirmation_Mismatch`: PASS (RAM trả stale email ➔ Ngay lập tức abort với `Success: false`, KHÔNG dispatch continuation).
+- `TestSwitchAccount_F1_RAMConfirmation_GetUserStatusError`: PASS (GetUserStatus trả 500 ➔ Abort `Success: false`, KHÔNG dispatch continuation).
+- `TestSwitchAccount_F1_RAMConfirmation_ClientNil`: PASS (Client nil khi discovery lỗi ➔ Abort `Success: false`).
+- `TestSwitchAccount_F4_StoragePathIntegration`: PASS (Chuyển tài khoản end-to-end với StoragePath cấu hình đầy đủ).
+
+### 2.3 Phân Tích Tĩnh Không Dead Code (`staticcheck -checks=U1000`)
+```
+go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -checks=U1000 ./internal/reloader/... ./internal/manager/...
+[Exit code 0, 0 diagnostics]
 ```
 
 ---
 
-## 2. Touch-Map Chi Tiết Các Tệp Đã Chỉnh Sửa
+## 3. Bằng Chứng Biên Dịch Nhị Phân Windows PE (`scripts/build_windows.ps1`)
 
-| STT | Tệp Tin | Trạng Thái | Mô Tả Thay Đổi |
-|:---:|---|:---:|---|
-| 1 | `internal/reloader/active_threads.go` | **Đã sửa** | Cập nhật `ActiveThread` có trường `Model`, bổ sung hàm `ScanActiveConversations2h` quét SQLite vật lý `.db` và `.db-wal` với ngưỡng `startTime - 2h`, tra cứu project từ `conversation_summaries.db`, hàm `defaultCaptureActiveThreadsSnapshot` ghi snapshot vào `accounts_store/active_threads_history/`, và hàm `ReadActiveThreadsSnapshot` đọc lại snapshot. |
-| 2 | `internal/reloader/active_threads_test.go` | **Đã sửa** | Bổ sung unit tests cho bộ quét SQLite 2h (`TestScanActiveConversations2h_ThresholdFiltering`), test đọc lại snapshot (`TestReadActiveThreadsSnapshot_RoundTrip`), test SQLite capture (`TestCaptureActiveThreadsSnapshot_SQLite`), test regex trích xuất project và test resolve project từ summaries binary data. |
-| 3 | `internal/reloader/continuation.go` | **Đã sửa** | Định nghĩa `ContinuationSummary` với `TotalThreads`, `SuccessCount`, `FailedCount`, `SuccessThreads`, `Errors`. Nâng cấp `PerformSessionContinuation` trả về `(*ContinuationSummary, error)`, áp dụng pacing 3s giữa các thread, tự động phát hiện model và cô lập lỗi từng thread (không break loop). |
-| 4 | `internal/reloader/continuation_test.go` | **Đã sửa** | Bổ sung unit tests kiểm tra: happy path với sleeper 3s (`TestPerformSessionContinuation_HappyPath`), kiểm tra pacing và chịu lỗi per-thread (`TestPerformSessionContinuation_PacingAndFaultTolerance` với 3 thread: 200, 500, 200), kiểm tra resilience to errors. |
-| 5 | `internal/manager/account_manager.go` | **Đã sửa** | Cập nhật `SwitchResult` bổ sung trường `ContinuationSummary`. Tái cấu trúc hàm `SwitchAccount` chuẩn 4 bước: Step 1 snapshot SQLite 2h, Step 2 WinCred + ToS + foreground + taskkill recycle language server + chờ đủ 8 giây (loại bỏ hoàn toàn RPC ReAuth), Step 3 đọc snapshot file, Step 4 gửi tuần tự và cập nhật thông điệp hoàn tất minh bạch. |
-| 6 | `internal/manager/manager_test.go` & `account_manager_test.go` | **Đã thêm & sửa** | Tạo `manager_test.go` với test case end-to-end `TestSwitchAccount_8SecondWaitAnd4StepWorkflow` kiểm chứng sleeper nhận đủ 8 giây, language server bị kill, token được ghi, snapshot được đọc lại và prompt được gửi vào các thread; cập nhật các mock assertions trong `account_manager_test.go` loại bỏ giả định ReAuth cũ. |
-
----
-
-## 3. Bằng Chứng Kiểm Thử Tự Động (Automated Test Evidence)
-
-### 3.1 Kiểm thử Module `internal/reloader/...`
-```
-=== RUN   TestScanActiveConversations2h_ThresholdFiltering
---- PASS: TestScanActiveConversations2h_ThresholdFiltering (0.02s)
-=== RUN   TestReadActiveThreadsSnapshot_RoundTrip
---- PASS: TestReadActiveThreadsSnapshot_RoundTrip (0.00s)
-=== RUN   TestCaptureActiveThreadsSnapshot_SQLite
---- PASS: TestCaptureActiveThreadsSnapshot_SQLite (0.02s)
-=== RUN   TestExtractProjectFromText
---- PASS: TestExtractProjectFromText (0.00s)
-=== RUN   TestResolveProjectFromSummaries
---- PASS: TestResolveProjectFromSummaries (0.00s)
-=== RUN   TestPerformSessionContinuation_HappyPath
---- PASS: TestPerformSessionContinuation_HappyPath (0.01s)
-=== RUN   TestPerformSessionContinuation_PacingAndFaultTolerance
---- PASS: TestPerformSessionContinuation_PacingAndFaultTolerance (0.00s)
-=== RUN   TestPerformSessionContinuation_ResilienceToErrors
---- PASS: TestPerformSessionContinuation_ResilienceToErrors (0.00s)
-=== RUN   TestFindAntigravityPIDs
---- PASS: TestFindAntigravityPIDs (0.01s)
-=== RUN   TestFindAntigravityWindows
---- PASS: TestFindAntigravityWindows (0.01s)
-=== RUN   TestEnsureAntigravityForeground
---- PASS: TestEnsureAntigravityForeground (0.01s)
-=== RUN   TestPrePatchToSAcceptance
---- PASS: TestPrePatchToSAcceptance (0.03s)
-=== RUN   TestSyncAppStorageToS_PreservesOtherKeys
---- PASS: TestSyncAppStorageToS_PreservesOtherKeys (0.01s)
-=== RUN   TestSyncAppStorageToS_BothGcpTosStates
---- PASS: TestSyncAppStorageToS_BothGcpTosStates (0.02s)
-=== RUN   TestSyncAppStorageToS_RecoveryFromMissingAndCorrupted
---- PASS: TestSyncAppStorageToS_RecoveryFromMissingAndCorrupted (0.03s)
-=== RUN   TestSyncAppStorageToS_AtomicWriteAndCleanup
---- PASS: TestSyncAppStorageToS_AtomicWriteAndCleanup (0.04s)
-=== RUN   TestSyncAppStorageToS_InvalidEmail
---- PASS: TestSyncAppStorageToS_InvalidEmail (0.00s)
-=== RUN   TestSessionReloader_SyncAppStorageToS_Method
---- PASS: TestSessionReloader_SyncAppStorageToS_Method (0.01s)
-=== RUN   TestPrepatchToS
---- PASS: TestPrepatchToS (0.00s)
-=== RUN   TestRecycleLanguageServer_Success
---- PASS: TestRecycleLanguageServer_Success (0.00s)
-=== RUN   TestRecycleLanguageServer_DiscovererFails
---- PASS: TestRecycleLanguageServer_DiscovererFails (0.00s)
-=== RUN   TestRecycleLanguageServer_ContextCancelled
---- PASS: TestRecycleLanguageServer_ContextCancelled (0.00s)
-=== RUN   TestDefaultKillLanguageServer
---- PASS: TestDefaultKillLanguageServer (0.00s)
-=== RUN   TestDefaultKillLanguageServer_ContextCancelled
---- PASS: TestDefaultKillLanguageServer_ContextCancelled (0.00s)
-=== RUN   TestDefaultKillLanguageServer_ContextTimeout
---- PASS: TestDefaultKillLanguageServer_ContextTimeout (0.02s)
-=== RUN   TestDefaultKillLanguageServer_ErrorPropagation
---- PASS: TestDefaultKillLanguageServer_ErrorPropagation (0.00s)
-=== RUN   TestRecycleLanguageServer_DefaultProcessKillerDelegation
---- PASS: TestRecycleLanguageServer_DefaultProcessKillerDelegation (0.00s)
-PASS
-ok  	antigravity-switch/internal/reloader	1.872s
-```
-
-### 3.2 Kiểm thử Module `internal/manager/...`
-```
-=== RUN   TestExtractEmailFromToken
---- PASS: TestExtractEmailFromToken (0.00s)
-=== RUN   TestCaptureCurrentSession
---- PASS: TestCaptureCurrentSession (0.02s)
-=== RUN   TestGetCurrentActiveEmail
---- PASS: TestGetCurrentActiveEmail (0.01s)
-=== RUN   TestGetAccountStates
---- PASS: TestGetAccountStates (0.03s)
-=== RUN   TestSwitchAccount
---- PASS: TestSwitchAccount (1.84s)
-=== RUN   TestSwitchAccount_WithSessionContinuation
---- PASS: TestSwitchAccount_WithSessionContinuation (0.07s)
-=== RUN   TestSwitchAccount_ProactiveTokenRefresh
---- PASS: TestSwitchAccount_ProactiveTokenRefresh (4.12s)
-=== RUN   TestSwitchAccount_AtomicAppStorageSync
---- PASS: TestSwitchAccount_AtomicAppStorageSync (1.76s)
-=== RUN   TestSwitchAccount_CivilizedReAuth_HotSwapped
---- PASS: TestSwitchAccount_CivilizedReAuth_HotSwapped (0.60s)
-=== RUN   TestSwitchAccount_ReAuthFallback_TriggerReauthError
---- PASS: TestSwitchAccount_ReAuthFallback_TriggerReauthError (0.04s)
-=== RUN   TestSwitchAccount_ReAuthFallback_EmailMismatch
---- PASS: TestSwitchAccount_ReAuthFallback_EmailMismatch (0.04s)
-=== RUN   TestSwitchAccount_ReAuthFallback_ClientNil
---- PASS: TestSwitchAccount_ReAuthFallback_ClientNil (0.04s)
-=== RUN   TestSwitchAccount_8SecondWaitAnd4StepWorkflow
---- PASS: TestSwitchAccount_8SecondWaitAnd4StepWorkflow (0.10s)
-PASS
-ok  	antigravity-switch/internal/manager	10.264s
-```
-
-### 3.3 Kiểm thử Toàn Diện Toàn Bộ Repository (`go test ./...`)
-```
-ok  	antigravity-switch/cmd/switcher	(cached)
-ok  	antigravity-switch/internal/connector	(cached)
-ok  	antigravity-switch/internal/manager	14.110s
-ok  	antigravity-switch/internal/model	(cached)
-ok  	antigravity-switch/internal/reloader	2.428s
-ok  	antigravity-switch/internal/scanner	(cached)
-ok  	antigravity-switch/internal/store	(cached)
-ok  	antigravity-switch/internal/telemetry	(cached)
-ok  	antigravity-switch/internal/ui	9.048s
-ok  	antigravity-switch/internal/wincred	(cached)
-```
-**Kết quả:** 100% gói vượt qua kiểm thử thành công (`PASS 100%`).
-
----
-
-## 4. Bằng Chứng Biên Dịch Nhị Phân Windows PE (`scripts/build_windows.ps1`)
-
-Đã thực thi kịch bản biên dịch `scripts/build_windows.ps1 -Mode all`:
+Đã thực thi kịch bản `scripts/build_windows.ps1 -Mode all`:
 ```
 ⚡ Antigravity Multi-Account Switcher - Windows Build System
    Mode: all | OutDir: bin | SkipTests: False | Clean: False
@@ -189,10 +74,10 @@ ok  	antigravity-switch/internal/wincred	(cached)
   [SUCCESS] Compiled PE resource object: cmd\switchersrc_windows_amd64.syso (12552 bytes)
   -> Building Standalone CLI Binary (Pure Go, CGO_ENABLED=0)...
   [SUCCESS] Created: binntigravity-switch.exe
-  Compile Duration: 2697 ms | Size: 6.82 MB (7150592 bytes)
+  Compile Duration: 3761 ms | Size: 10.5 MB (11013632 bytes)
   -> Building Standalone GUI Binary (Fyne, CGO_ENABLED=1)...
   [SUCCESS] Created: binntigravity-switch-gui.exe
-  Compile Duration: 5335 ms | Size: 23.71 MB (24865280 bytes)
+  Compile Duration: 7142 ms | Size: 27.53 MB (28863488 bytes)
 [4/4] Executing quick verification...
   [PASS] Embedded PE application icon verified on binntigravity-switch.exe (32x32)
   [PASS] Embedded PE application icon verified on binntigravity-switch-gui.exe (32x32)
@@ -200,8 +85,8 @@ ok  	antigravity-switch/internal/wincred	(cached)
 ================================================================================
 ⚡ ANTIGRAVITY SESSION STATUS
 ================================================================================
-Active Email:    daohien204ccyersin@gmail.com
-Language Server: Running (PID: 25656 | Port: 58093 | CSRF: Present)
+Active Email:    hokinhdoanh.anvien.sales@gmail.com
+Language Server: Running (PID: 23124 | Port: 61586 | CSRF: Present)
 Win32 Credential: Present (260 bytes access token)
 ================================================================================
 ================================================================================
@@ -211,8 +96,12 @@ Win32 Credential: Present (260 bytes access token)
 
 ---
 
-## 5. Kết Luận & Bàn Giao
+## 4. Kết Luận & Bàn Giao
 
-Mã nguồn 6 tệp trong Touch-Map đã được triển khai cơ học 100%, kiểm thử và biên dịch thành công tuyệt đối:
-- **Tình trạng:** Sẵn sàng cho làn Supervisor kiểm định độc lập Zero-Trust.
-- **Hành động tiếp theo:** Gửi thông điệp nghiệm thu đến CEO Session (`01a14378-4a08-77c1-88d5-666ad8c3592d`) và dừng tiến trình (HARD STOP).
+Toàn bộ 5 vấn đề F1 đến F5 đã được xử lý triệt để tận gốc rễ:
+- Invariant xác thực RAM trước khi gửi tin nhắn hoặc báo thành công đã được khóa cứng.
+- Đọc SQLite có hiểu schema cột `workspace_uris` và WAL, triệt tiêu hoàn toàn regex trên preview.
+- Lọc UUID nghiêm ngặt cho tệp conversation.
+- Tách biệt rõ ràng tham số cấu hình wrapper ToS vs conversation.
+- Mã nguồn sạch sẽ, không dead code, biên dịch và chạy thành công trên Windows PE.
+- Sẵn sàng bàn giao cho Làn Supervisor tái thẩm định Zero-Trust.

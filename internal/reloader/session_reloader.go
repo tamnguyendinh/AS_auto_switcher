@@ -45,11 +45,13 @@ type SessionReloader struct {
 	ProcessKiller    func(ctx context.Context) error
 	ServerDiscoverer func() (*connector.ServerInfo, error)
 	Sleeper          func(ctx context.Context, d time.Duration) error
+	ConversationsDir string
+	SummariesDbPath  string
 	StoragePath      string
 	BrainDir         string
 	OutputDir        string
 
-	SnapshotCapturer   func(storagePath, brainDir, outputDir string) (string, []ActiveThread, error)
+	SnapshotCapturer   func(conversationsDir, summariesDbPath, outputDir string) (string, []ActiveThread, error)
 	ContinuationRunner func(ctx context.Context, client *connector.Client, activeThreads []ActiveThread, promptText string) error
 }
 
@@ -394,18 +396,19 @@ func PrePatchToSAcceptance(targetEmail string, storagePath string) error {
 	return SyncAppStorageToS(targetEmail, false, storagePath)
 }
 
-// CaptureActiveThreadsSnapshot captures active conversation threads from Antigravity's layout state.
-func (r *SessionReloader) CaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir string) (string, []ActiveThread, error) {
+// CaptureActiveThreadsSnapshot captures active conversation threads from Antigravity's SQLite state.
+// F4: conversationsDir and summariesDbPath are strictly decoupled from StoragePath (which is for ToS).
+func (r *SessionReloader) CaptureActiveThreadsSnapshot(conversationsDir, summariesDbPath, outputDir string) (string, []ActiveThread, error) {
 	if r == nil {
-		return defaultReloader.CaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir)
+		return defaultReloader.CaptureActiveThreadsSnapshot(conversationsDir, summariesDbPath, outputDir)
 	}
 	r.mu.RLock()
 	capturer := r.SnapshotCapturer
-	if storagePath == "" {
-		storagePath = r.StoragePath
+	if conversationsDir == "" {
+		conversationsDir = r.ConversationsDir
 	}
-	if brainDir == "" {
-		brainDir = r.BrainDir
+	if summariesDbPath == "" {
+		summariesDbPath = r.SummariesDbPath
 	}
 	if outputDir == "" {
 		outputDir = r.OutputDir
@@ -413,15 +416,15 @@ func (r *SessionReloader) CaptureActiveThreadsSnapshot(storagePath, brainDir, ou
 	r.mu.RUnlock()
 
 	if capturer != nil {
-		return capturer(storagePath, brainDir, outputDir)
+		return capturer(conversationsDir, summariesDbPath, outputDir)
 	}
 
-	return defaultCaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir)
+	return defaultCaptureActiveThreadsSnapshot(conversationsDir, summariesDbPath, outputDir)
 }
 
 // CaptureActiveThreadsSnapshot is the package-level entry point delegating to defaultReloader.
-func CaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir string) (string, []ActiveThread, error) {
-	return defaultReloader.CaptureActiveThreadsSnapshot(storagePath, brainDir, outputDir)
+func CaptureActiveThreadsSnapshot(conversationsDir, summariesDbPath, outputDir string) (string, []ActiveThread, error) {
+	return defaultReloader.CaptureActiveThreadsSnapshot(conversationsDir, summariesDbPath, outputDir)
 }
 
 // ReloadAntigravitySession is retained as a compatibility bridge, delegating to RecycleLanguageServer.

@@ -1,7 +1,7 @@
 package reloader
 
 import (
-	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"antigravity-switch/internal/store"
+
+	_ "modernc.org/sqlite"
 )
 
 // ActiveThread represents a conversation thread extracted from Antigravity's layout state.
@@ -31,6 +33,8 @@ type ActiveThreadsSnapshot struct {
 }
 
 var (
+	reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
 	reActiveWorkspaces = regexp.MustCompile(`(?i)Active Workspaces:\s*[
 ]+\s*-\s*([^
 ]+)`)
@@ -41,10 +45,7 @@ var (
 	reFileURI          = regexp.MustCompile(`file:///([^
 "'#]+)`)
 
-	projectKeys = []string{
-		"workingDirectory", "working_directory", "workspaceUri", "workspace_uri",
-		"project", "workspace", "active_workspace", "activeWorkspace", "cwd", "Cwd",
-	}
+
 )
 
 // GetDefaultThreadsHistoryDir returns the canonical accounts_store/active_threads_history directory.
@@ -66,6 +67,7 @@ type threadCandidate struct {
 
 // ScanActiveConversations2h scans %USERPROFILE%/.gemini/antigravity/conversations/
 // for all threads with MAX(mtime(.db), mtime(.db-wal)) >= startTime - 2h.
+// It strictly requires basenames to be valid UUIDs (F3).
 func ScanActiveConversations2h(conversationsDir string, summariesDbPath string, startTime time.Time) ([]ActiveThread, error) {
 	cDir := conversationsDir
 	if cDir == "" {
@@ -105,7 +107,8 @@ func ScanActiveConversations2h(conversationsDir string, summariesDbPath string, 
 		}
 
 		tID = strings.TrimSpace(tID)
-		if tID == "" || strings.EqualFold(tID, "conversation_summaries") {
+		// F3: Strict UUID validation on basename
+		if !reUUID.MatchString(tID) {
 			continue
 		}
 
@@ -162,6 +165,8 @@ func ScanActiveConversations2h(conversationsDir string, summariesDbPath string, 
 	return result, nil
 }
 
+// resolveProjectFromSummaries queries workspace_uris directly from SQLite (F2).
+// It avoids reading chat preview text or raw binary patterns.
 func resolveProjectFromSummaries(summariesDbPath, threadID string) string {
 	if threadID == "" {
 		return ""
@@ -178,30 +183,26 @@ func resolveProjectFromSummaries(summariesDbPath, threadID string) string {
 	}
 
 	if isFile(sDb) {
-		if raw, err := os.ReadFile(sDb); err == nil {
-			idBytes := []byte(threadID)
-			idx := bytes.Index(raw, idBytes)
-			if idx != -1 {
-				end := idx + 2048
-				if end > len(raw) {
-					end = len(raw)
+		dsn := fmt.Sprintf("file:%s?mode=ro", filepath.ToSlash(sDb))
+		db, err := sql.Open("sqlite", dsn)
+		if err == nil {
+			defer db.Close()
+			var rawURIs string
+			err = db.QueryRow("SELECT workspace_uris FROM conversation_summaries WHERE conversation_id = ? LIMIT 1", threadID).Scan(&rawURIs)
+			if err == nil && strings.TrimSpace(rawURIs) != "" {
+				var uris []string
+				if json.Unmarshal([]byte(rawURIs), &uris) == nil && len(uris) > 0 {
+					uri := uris[0]
+					if strings.HasPrefix(uri, "file:///") {
+						return cleanFileURI(uri[len("file:///"):])
+					}
+					return uri
 				}
-				window := string(raw[idx:end])
-				if extracted := extractProjectFromText(window); extracted != "" {
-					return extracted
+				if strings.HasPrefix(rawURIs, "file:///") {
+					return cleanFileURI(rawURIs[len("file:///"):])
 				}
+				return rawURIs
 			}
-		}
-	}
-
-	home, _ := os.UserHomeDir()
-	if home == "" {
-		home = os.Getenv("USERPROFILE")
-	}
-	if home != "" {
-		brainDir := filepath.Join(home, ".gemini", "antigravity", "brain")
-		if extracted := resolveThreadProject(threadID, nil, brainDir, nil); extracted != "" {
-			return extracted
 		}
 	}
 
@@ -272,29 +273,6 @@ func ReadActiveThreadsSnapshot(snapshotPath string) ([]ActiveThread, error) {
 	return snapshot.ActiveThreads, nil
 }
 
-
-func isFileViewTab(tab map[string]interface{}) bool {
-	if tab == nil {
-		return false
-	}
-	tabID := getMapString(tab, "id")
-	if tabID == "" {
-		tabID = getMapString(tab, "tabId")
-	}
-	if strings.HasPrefix(tabID, "file__") {
-		return true
-	}
-	if content, ok := tab["content"].(map[string]interface{}); ok {
-		if getMapString(content, "type") == "fileView" {
-			return true
-		}
-	}
-	if getMapString(tab, "content.type") == "fileView" || getMapString(tab, "type") == "fileView" {
-		return true
-	}
-	return false
-}
-
 func cleanFileURI(raw string) string {
 	decoded, err := url.PathUnescape(raw)
 	if err == nil && decoded != "" {
@@ -322,7 +300,7 @@ func extractProjectFromText(text string) string {
 
 	if m := reJSONCwd.FindStringSubmatch(text); len(m) > 1 {
 		p := strings.TrimSpace(m[1])
-		p = strings.ReplaceAll(p, "\\\\", "\\")
+		p = strings.ReplaceAll(p, `\\`, `\`)
 		if p != "" {
 			return p
 		}
@@ -330,7 +308,7 @@ func extractProjectFromText(text string) string {
 
 	if m := reJSONProj.FindStringSubmatch(text); len(m) > 1 {
 		p := strings.TrimSpace(m[1])
-		p = strings.ReplaceAll(p, "\\\\", "\\")
+		p = strings.ReplaceAll(p, `\\`, `\`)
 		if p != "" {
 			return p
 		}
@@ -346,87 +324,9 @@ func extractProjectFromText(text string) string {
 	return ""
 }
 
-func resolveThreadProject(threadID string, paneData map[string]interface{}, brainDir string, sdata map[string]interface{}) string {
-	if paneData != nil {
-		for _, k := range projectKeys {
-			if val := getMapString(paneData, k); val != "" {
-				if strings.HasPrefix(val, "file:///") {
-					return cleanFileURI(val[len("file:///"):])
-				}
-				return val
-			}
-		}
 
-		if tabs, ok := paneData["tabs"].([]interface{}); ok {
-			for _, t := range tabs {
-				if tabMap, ok := t.(map[string]interface{}); ok {
-					meta, _ := tabMap["metadata"].(map[string]interface{})
-					target := tabMap
-					if meta != nil {
-						target = meta
-					}
-					for _, k := range projectKeys {
-						if val := getMapString(target, k); val != "" {
-							if strings.HasPrefix(val, "file:///") {
-								return cleanFileURI(val[len("file:///"):])
-							}
-							return val
-						}
-					}
-				}
-			}
-		}
-
-		if bytes, err := json.Marshal(paneData); err == nil {
-			if extracted := extractProjectFromText(string(bytes)); extracted != "" {
-				return extracted
-			}
-		}
-	}
-
-	if brainDir != "" && isDir(brainDir) && threadID != "" {
-		threadDir := filepath.Join(brainDir, threadID)
-		if isDir(threadDir) {
-			metaPath := filepath.Join(threadDir, "metadata.json")
-			if isFile(metaPath) {
-				if raw, err := os.ReadFile(metaPath); err == nil {
-					var meta map[string]interface{}
-					if json.Unmarshal(raw, &meta) == nil && meta != nil {
-						for _, k := range projectKeys {
-							if val := getMapString(meta, k); val != "" {
-								if strings.HasPrefix(val, "file:///") {
-									return cleanFileURI(val[len("file:///"):])
-								}
-								return val
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return ""
-}
-
-func isDir(p string) bool {
-	stat, err := os.Stat(p)
-	return err == nil && stat.IsDir()
-}
 
 func isFile(p string) bool {
 	stat, err := os.Stat(p)
 	return err == nil && !stat.IsDir()
-}
-
-func getMapString(m map[string]interface{}, key string) string {
-	if m == nil {
-		return ""
-	}
-	if v, ok := m[key]; ok && v != nil {
-		if s, ok := v.(string); ok {
-			return strings.TrimSpace(s)
-		}
-	}
-	return ""
 }

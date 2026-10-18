@@ -368,8 +368,16 @@ func TestSwitchAccount(t *testing.T) {
 	}
 
 	// 2d. Verify graceful handling when language server recycling encounters an error
+	mockActiveAtomicEmail := "current@example.com"
+	atomicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"email":"` + mockActiveAtomicEmail + `"}`))
+	}))
+	defer atomicServer.Close()
+	partsAtomic := strings.Split(atomicServer.URL, ":")
+	portAtomic, _ := strconv.Atoi(partsAtomic[len(partsAtomic)-1])
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
-		return nil, connector.ErrLanguageServerNotFound
+		return connector.NewClientWithHTTP(&connector.ServerInfo{PID: 1234, Port: portAtomic, CSRFToken: "tok"}, atomicServer.Client()), nil
 	})
 	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
 		return nil, errors.New("simulated discover error")
@@ -380,11 +388,11 @@ func TestSwitchAccount(t *testing.T) {
 		IDToken:     makeTestJWT(warningEmail),
 	})
 	resWarn, err := mgr.SwitchAccount(context.Background(), warningEmail)
-	if err != nil || !resWarn.Success {
-		t.Fatalf("SwitchAccount should succeed even with recycle warning, got err=%v, res=%+v", err, resWarn)
+	if err == nil || resWarn.Success {
+		t.Fatalf("SwitchAccount should fail when recycle/discovery encounters an error, got err=%v, res=%+v", err, resWarn)
 	}
-	if !strings.Contains(resWarn.Message, "cảnh báo khởi động lại Language Server") {
-		t.Errorf("Expected warning in message, got: %s", resWarn.Message)
+	if !strings.Contains(resWarn.Message, "Khởi động lại Language Server thất bại") {
+		t.Errorf("Expected failure in message, got: %s", resWarn.Message)
 	}
 
 	// Restore discoverer for subsequent tests
@@ -579,15 +587,30 @@ func TestSwitchAccount_ProactiveTokenRefresh(t *testing.T) {
 	}
 
 	var writtenToken *model.TokenData
+	mockActiveEmail := "current@example.com"
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"email":"` + mockActiveEmail + `"}`))
+	}))
+	defer mockServer.Close()
+	parts := strings.Split(mockServer.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return connector.NewClientWithHTTP(&connector.ServerInfo{PID: 1234, Port: port, CSRFToken: "tok"}, mockServer.Client()), nil
+	})
+
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
 			return &model.TokenData{
 				AccessToken: "current-active",
-				IDToken:     makeTestJWT("current@example.com"),
+				IDToken:     makeTestJWT(mockActiveEmail),
 			}, nil
 		},
 		func(token *model.TokenData) error {
 			writtenToken = token
+			if e := ExtractEmailFromToken(token); e != "" {
+				mockActiveEmail = e
+			}
 			return nil
 		},
 	)
@@ -719,6 +742,18 @@ func TestSwitchAccount_AtomicAppStorageSync(t *testing.T) {
 
 	mgr, _ := NewAccountManager(accStore, rel)
 
+	mockActiveAtomicEmail := "current@example.com"
+	atomicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"email":"` + mockActiveAtomicEmail + `"}`))
+	}))
+	defer atomicServer.Close()
+	partsAtomic := strings.Split(atomicServer.URL, ":")
+	portAtomic, _ := strconv.Atoi(partsAtomic[len(partsAtomic)-1])
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return connector.NewClientWithHTTP(&connector.ServerInfo{PID: 1234, Port: portAtomic, CSRFToken: "tok"}, atomicServer.Client()), nil
+	})
+
 	// Verify that SyncAppStorageToS runs BEFORE wincredWriter
 	var appStorageDuringWincred map[string]interface{}
 	mgr.SetWincredHandlers(
@@ -733,12 +768,12 @@ func TestSwitchAccount_AtomicAppStorageSync(t *testing.T) {
 			if data, err := os.ReadFile(storagePath); err == nil {
 				_ = json.Unmarshal(data, &appStorageDuringWincred)
 			}
+			if e := ExtractEmailFromToken(token); e != "" {
+				mockActiveAtomicEmail = e
+			}
 			return nil
 		},
 	)
-	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
-		return nil, connector.ErrLanguageServerNotFound
-	})
 
 	// 1. Switch to GCP account
 	resGcp, err := mgr.SwitchAccount(context.Background(), gcpEmail, false)
@@ -920,17 +955,11 @@ func TestSwitchAccount_ReAuthFallback_TriggerReauthError(t *testing.T) {
 	)
 
 	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
-	if err != nil {
-		t.Fatalf("SwitchAccount failed: %v", err)
-	}
-	if !result.Success {
-		t.Fatalf("Expected success through recycle fallback, got false: %s", result.Message)
-	}
-	if result.HotSwapped {
-		t.Errorf("Expected HotSwapped = false when ReAuth errors, got true")
+	if err == nil || result.Success {
+		t.Fatalf("Expected failure due to RAM mismatch when server returns current email, got res=%+v", result)
 	}
 	if killerCallCount.Load() != 1 {
-		t.Errorf("Expected exactly 1 killer call on fallback, got %d", killerCallCount.Load())
+		t.Errorf("Expected exactly 1 killer call on recycle, got %d", killerCallCount.Load())
 	}
 }
 
@@ -1001,17 +1030,11 @@ func TestSwitchAccount_ReAuthFallback_EmailMismatch(t *testing.T) {
 	)
 
 	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
-	if err != nil {
-		t.Fatalf("SwitchAccount failed: %v", err)
-	}
-	if !result.Success {
-		t.Fatalf("Expected success through recycle fallback, got false: %s", result.Message)
-	}
-	if result.HotSwapped {
-		t.Errorf("Expected HotSwapped = false when email does not match, got true")
+	if err == nil || result.Success {
+		t.Fatalf("Expected failure due to RAM mismatch when server returns stale email, got res=%+v", result)
 	}
 	if killerCallCount.Load() != 1 {
-		t.Errorf("Expected exactly 1 killer call on fallback, got %d", killerCallCount.Load())
+		t.Errorf("Expected exactly 1 killer call on recycle, got %d", killerCallCount.Load())
 	}
 }
 
@@ -1042,8 +1065,16 @@ func TestSwitchAccount_ReAuthFallback_ClientNil(t *testing.T) {
 
 	mgr, _ := NewAccountManager(accStore, rel)
 	// client is nil (LS not running)
+	mockActiveAtomicEmail := "current@example.com"
+	atomicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"email":"` + mockActiveAtomicEmail + `"}`))
+	}))
+	defer atomicServer.Close()
+	partsAtomic := strings.Split(atomicServer.URL, ":")
+	portAtomic, _ := strconv.Atoi(partsAtomic[len(partsAtomic)-1])
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
-		return nil, connector.ErrLanguageServerNotFound
+		return connector.NewClientWithHTTP(&connector.ServerInfo{PID: 1234, Port: portAtomic, CSRFToken: "tok"}, atomicServer.Client()), nil
 	})
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
@@ -1058,16 +1089,10 @@ func TestSwitchAccount_ReAuthFallback_ClientNil(t *testing.T) {
 	)
 
 	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
-	if err != nil {
-		t.Fatalf("SwitchAccount failed: %v", err)
-	}
-	if !result.Success {
-		t.Fatalf("Expected success through recycle fallback, got false: %s", result.Message)
-	}
-	if result.HotSwapped {
-		t.Errorf("Expected HotSwapped = false when client is nil, got true")
+	if err == nil || result.Success {
+		t.Fatalf("Expected failure when respawned language server client is nil, got res=%+v", result)
 	}
 	if killerCallCount.Load() != 1 {
-		t.Errorf("Expected exactly 1 killer call on fallback, got %d", killerCallCount.Load())
+		t.Errorf("Expected exactly 1 killer call on recycle, got %d", killerCallCount.Load())
 	}
 }
