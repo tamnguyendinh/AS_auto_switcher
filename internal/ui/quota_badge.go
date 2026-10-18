@@ -391,3 +391,221 @@ func CreateQuotaCycleRow(prefix string, claudeFrac, geminiFrac float64, hasData 
 
 	return container.New(&quotaCycleRowLayout{}, lbl, claudeItem, geminiItem)
 }
+
+// MatrixMiniBarWidth defines the 40px width for 3x3 matrix quota mini progress bars per architect spec.
+const MatrixMiniBarWidth float32 = 40.0
+
+// matrixCellLayout lays out [miniBar, pctLabel] horizontally with vertical centering.
+type matrixCellLayout struct {
+	barWidth float32
+}
+
+func (l *matrixCellLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) < 2 {
+		return fyne.NewSize(76.0, 15.0)
+	}
+	bw := l.barWidth
+	if bw <= 0 {
+		bw = MatrixMiniBarWidth
+	}
+	return fyne.NewSize(bw+4.0+objects[1].MinSize().Width, 15.0)
+}
+
+func (l *matrixCellLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) < 2 {
+		return
+	}
+	bar := objects[0]
+	pct := objects[1]
+
+	bw := l.barWidth
+	if bw <= 0 {
+		bw = MatrixMiniBarWidth
+	}
+	spacing := float32(4.0)
+
+	bar.Move(fyne.NewPos(0, (size.Height-6.0)/2))
+	bar.Resize(fyne.NewSize(bw, 6.0))
+
+	pctH := pct.MinSize().Height
+	pct.Move(fyne.NewPos(bw+spacing, (size.Height-pctH)/2))
+	pct.Resize(fyne.NewSize(pct.MinSize().Width, pctH))
+}
+
+// createMatrixQuotaCell creates a graphical mini progress bar (40px) and percentage text label.
+func createMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) fyne.CanvasObject {
+	if !hasData || fraction < 0 {
+		bar := createMiniProgressBar(-1, MatrixMiniBarWidth)
+		pct := canvas.NewText("--%", ColorQuotaMuted)
+		pct.TextSize = 11
+		pct.TextStyle = fyne.TextStyle{Bold: true}
+		return container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, bar, pct)
+	}
+
+	tierColor := GetQuotaTierColor(fraction)
+	pctStr := formatFraction(fraction)
+	bar := createMiniProgressBar(fraction, MatrixMiniBarWidth)
+
+	pct := canvas.NewText(pctStr, tierColor)
+	pct.TextSize = 11
+	pct.TextStyle = fyne.TextStyle{Bold: true}
+
+	return container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, bar, pct)
+}
+
+// matrixColumnLayout lays out 3 rows in a column with fixed row heights and subtle spacing.
+type matrixColumnLayout struct{}
+
+func (l *matrixColumnLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	maxW := float32(0)
+	totalH := float32(0)
+	for i, o := range objects {
+		ms := o.MinSize()
+		if ms.Width > maxW {
+			maxW = ms.Width
+		}
+		totalH += 15.0
+		if i > 0 {
+			totalH += 2.0
+		}
+	}
+	return fyne.NewSize(maxW, totalH)
+}
+
+func (l *matrixColumnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	rowH := float32(15.0)
+	spacing := float32(2.0)
+	y := float32(0)
+	for _, o := range objects {
+		o.Move(fyne.NewPos(0, y))
+		o.Resize(fyne.NewSize(size.Width, rowH))
+		y += rowH + spacing
+	}
+}
+
+// matrixTableLayout provides responsive layout for the 3x3 quota matrix:
+// [colModel, sep1, col5h, sep2, colWeek]
+type matrixTableLayout struct{}
+
+func (l *matrixTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) < 5 {
+		return fyne.NewSize(236.0, 49.0)
+	}
+	col1W := objects[0].MinSize().Width
+	if col1W < 50.0 {
+		col1W = 50.0
+	}
+	col2W := objects[2].MinSize().Width
+	if col2W < 85.0 {
+		col2W = 85.0
+	}
+	col3W := objects[4].MinSize().Width
+	if col3W < 85.0 {
+		col3W = 85.0
+	}
+	totalW := col1W + 1.0 + col2W + 1.0 + col3W + 16.0
+	return fyne.NewSize(totalW, 49.0)
+}
+
+func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) < 5 {
+		return
+	}
+	colModel := objects[0]
+	sep1 := objects[1]
+	col5h := objects[2]
+	sep2 := objects[3]
+	colWeek := objects[4]
+
+	h := size.Height
+	col1W := float32(50.0)
+	sepW := float32(1.0)
+	colGap := float32(4.0)
+
+	fixedW := col1W + 2*sepW + 4*colGap
+	remainW := size.Width - fixedW
+	colCycleW := float32(88.0)
+	if remainW >= 170.0 {
+		colCycleW = remainW / 2.0
+	}
+
+	x := float32(0)
+	// Col 1: Model
+	colModel.Move(fyne.NewPos(x, 0))
+	colModel.Resize(fyne.NewSize(col1W, h))
+	x += col1W + colGap
+
+	// Sep 1
+	sep1.Move(fyne.NewPos(x, 1))
+	sep1.Resize(fyne.NewSize(sepW, h-2))
+	x += sepW + colGap
+
+	// Col 2: 5h
+	col5h.Move(fyne.NewPos(x, 0))
+	col5h.Resize(fyne.NewSize(colCycleW, h))
+	x += colCycleW + colGap
+
+	// Sep 2
+	sep2.Move(fyne.NewPos(x, 1))
+	sep2.Resize(fyne.NewSize(sepW, h-2))
+	x += sepW + colGap
+
+	// Col 3: Week
+	colWeek.Move(fyne.NewPos(x, 0))
+	colWeek.Resize(fyne.NewSize(colCycleW, h))
+}
+
+// CreateMatrixQuotaTable builds a 3x3 matrix table for model quota display per architect spec:
+// Row 0: Quota  | 5h           | Week
+// Row 1: Gemini | [bar] <pct>% | [bar] <pct>%
+// Row 2: Claude | [bar] <pct>% | [bar] <pct>%
+func CreateMatrixQuotaTable(dq DualCycleQuota, palette ThemePalette) fyne.CanvasObject {
+	// Col 1: Model Labels
+	txtQuota := canvas.NewText("Quota", palette.TextMuted)
+	txtQuota.TextSize = 11
+	txtQuota.TextStyle = fyne.TextStyle{Bold: true}
+
+	txtGemini := canvas.NewText("Gemini", palette.Text)
+	txtGemini.TextSize = 11
+	txtGemini.TextStyle = fyne.TextStyle{Bold: true}
+
+	txtClaude := canvas.NewText("Claude", palette.Text)
+	txtClaude.TextSize = 11
+	txtClaude.TextStyle = fyne.TextStyle{Bold: true}
+
+	colModel := container.New(&matrixColumnLayout{}, txtQuota, txtGemini, txtClaude)
+
+	// Vertical Separator 1 (1px)
+	sep1 := canvas.NewRectangle(palette.BorderSubtle)
+
+	// Col 2: 5h Cycle
+	txt5h := canvas.NewText("5h", palette.TextMuted)
+	txt5h.TextSize = 11
+	txt5h.TextStyle = fyne.TextStyle{Bold: true}
+
+	hasGemini5h := !dq.IsError && dq.HasData && dq.Gemini5h >= 0
+	cellGemini5h := createMatrixQuotaCell(dq.Gemini5h, hasGemini5h, palette)
+
+	hasClaude5h := !dq.IsError && dq.HasData && dq.Claude5h >= 0
+	cellClaude5h := createMatrixQuotaCell(dq.Claude5h, hasClaude5h, palette)
+
+	col5h := container.New(&matrixColumnLayout{}, txt5h, cellGemini5h, cellClaude5h)
+
+	// Vertical Separator 2 (1px)
+	sep2 := canvas.NewRectangle(palette.BorderSubtle)
+
+	// Col 3: Week Cycle
+	txtWeek := canvas.NewText("Week", palette.TextMuted)
+	txtWeek.TextSize = 11
+	txtWeek.TextStyle = fyne.TextStyle{Bold: true}
+
+	hasGeminiWeek := !dq.IsError && dq.HasData && dq.GeminiWeek >= 0
+	cellGeminiWeek := createMatrixQuotaCell(dq.GeminiWeek, hasGeminiWeek, palette)
+
+	hasClaudeWeek := !dq.IsError && dq.HasData && dq.ClaudeWeek >= 0
+	cellClaudeWeek := createMatrixQuotaCell(dq.ClaudeWeek, hasClaudeWeek, palette)
+
+	colWeek := container.New(&matrixColumnLayout{}, txtWeek, cellGeminiWeek, cellClaudeWeek)
+
+	return container.New(&matrixTableLayout{}, colModel, sep1, col5h, sep2, colWeek)
+}

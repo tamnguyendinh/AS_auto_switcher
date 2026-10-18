@@ -376,10 +376,10 @@ func TestElevationTokensAndBorders(t *testing.T) {
 	if ColorCardActive.R != 0x1e || ColorCardActive.G != 0x1e || ColorCardActive.B != 0x2e || ColorCardActive.A != 0xff {
 		t.Errorf("unexpected ColorCardActive: %#v", ColorCardActive)
 	}
-	if ColorBorderSubtle.R != 0x31 || ColorBorderSubtle.G != 0x32 || ColorBorderSubtle.B != 0x44 || ColorBorderSubtle.A != 0xff {
+	if ColorBorderSubtle.R != 0x58 || ColorBorderSubtle.G != 0x5b || ColorBorderSubtle.B != 0x70 || ColorBorderSubtle.A != 0xff {
 		t.Errorf("unexpected ColorBorderSubtle: %#v", ColorBorderSubtle)
 	}
-	if ColorBorderActive.R != 0xa6 || ColorBorderActive.G != 0xe3 || ColorBorderActive.B != 0xa1 || ColorBorderActive.A != 0xdd {
+	if ColorBorderActive.R != 0xa6 || ColorBorderActive.G != 0xe3 || ColorBorderActive.B != 0xa1 || ColorBorderActive.A != 0xff {
 		t.Errorf("unexpected ColorBorderActive: %#v", ColorBorderActive)
 	}
 
@@ -400,8 +400,8 @@ func TestElevationTokensAndBorders(t *testing.T) {
 	if bgRect.CornerRadius != 8 {
 		t.Errorf("expected CornerRadius 8, got %f", bgRect.CornerRadius)
 	}
-	if bgRect.StrokeWidth != 1.0 {
-		t.Errorf("expected StrokeWidth 1.0, got %f", bgRect.StrokeWidth)
+	if bgRect.StrokeWidth != 1.8 {
+		t.Errorf("expected StrokeWidth 1.8, got %f", bgRect.StrokeWidth)
 	}
 
 	activeItem := manager.AccountDisplayItem{
@@ -418,8 +418,8 @@ func TestElevationTokensAndBorders(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected canvas.Rectangle background for active card")
 	}
-	if activeBgRect.StrokeWidth != 1.5 {
-		t.Errorf("expected StrokeWidth 1.5, got %f", activeBgRect.StrokeWidth)
+	if activeBgRect.StrokeWidth != 2.0 {
+		t.Errorf("expected StrokeWidth 2.0, got %f", activeBgRect.StrokeWidth)
 	}
 }
 
@@ -1122,9 +1122,9 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 		t.Fatalf("expected card VBox")
 	}
 
-	// MUST be exactly 3 rows per Owner Spec
-	if len(cardVBox.Objects) != 3 {
-		t.Fatalf("CRITICAL VIOLATION: expected exactly 3 rows in AccountCard, got %d", len(cardVBox.Objects))
+	// MUST be exactly 2 main sections (Header + Matrix Table) per 3x3 Matrix Spec
+	if len(cardVBox.Objects) != 2 {
+		t.Fatalf("CRITICAL VIOLATION: expected exactly 2 main sections in AccountCard, got %d", len(cardVBox.Objects))
 	}
 
 	// Line 1: Header row (Border layout with email & action cluster)
@@ -1189,34 +1189,41 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 		t.Errorf("expected switchedEmail 'inactive_owner@gmail.com', got '%s'", switchedEmail)
 	}
 
-	// Line 2 (5h Quota)
+	// Line 2: Matrix Quota Table (3x3 Matrix with 3 columns and 2 vertical separators)
 	line2, ok := cardVBox.Objects[1].(*fyne.Container)
 	if !ok {
-		t.Fatalf("expected line 2 container")
+		t.Fatalf("expected line 2 to be matrix table container")
 	}
-	prefix5h := false
-	for _, child := range line2.Objects {
-		if txt, ok := child.(*canvas.Text); ok && txt.Text == "5h:" {
-			prefix5h = true
-		}
-	}
-	if !prefix5h {
-		t.Errorf("expected line 2 to start with '5h:'")
+	if len(line2.Objects) != 5 {
+		t.Fatalf("expected 5 objects in matrix table (3 cols + 2 seps), got %d", len(line2.Objects))
 	}
 
-	// Line 3 (week Quota)
-	line3, ok := cardVBox.Objects[2].(*fyne.Container)
-	if !ok {
-		t.Fatalf("expected line 3 container")
-	}
-	prefixWeek := false
-	for _, child := range line3.Objects {
-		if txt, ok := child.(*canvas.Text); ok && txt.Text == "week:" {
-			prefixWeek = true
+	// Verify required labels: Quota, Gemini, Claude, 5h, Week
+	matrixTexts := extractAllTexts(line2)
+	requiredLabels := []string{"Quota", "Gemini", "Claude", "5h", "Week"}
+	for _, req := range requiredLabels {
+		found := false
+		for _, txt := range matrixTexts {
+			if txt == req {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected label '%s' in matrix quota table, got texts: %v", req, matrixTexts)
 		}
 	}
-	if !prefixWeek {
-		t.Errorf("expected line 3 to start with 'week:'")
+
+	// Verify separators have BorderSubtle color
+	if sep1, ok := line2.Objects[1].(*canvas.Rectangle); ok {
+		assertColorMatches(t, "MatrixTable", "sep1", sep1.FillColor, DarkPalette.BorderSubtle)
+	} else {
+		t.Errorf("expected separator 1 to be canvas.Rectangle")
+	}
+	if sep2, ok := line2.Objects[3].(*canvas.Rectangle); ok {
+		assertColorMatches(t, "MatrixTable", "sep2", sep2.FillColor, DarkPalette.BorderSubtle)
+	} else {
+		t.Errorf("expected separator 2 to be canvas.Rectangle")
 	}
 }
 
@@ -1652,7 +1659,7 @@ func TestF1_ExtractDualCycleQuota_BothCyclesZero_NoRaw_NoReset(t *testing.T) {
 			t.Errorf("unexpected placeholder --%%%% on zero-cycle card, text: %s", text)
 		}
 	}
-	if claudeCount != 2 || geminiCount != 2 || zeroCount != 4 {
+	if claudeCount != 1 || geminiCount != 1 || zeroCount != 4 {
 		t.Errorf("expected Claude (2), Gemini (2), and 0%% (4) on zero-cycle card, got texts: %v", cardTexts)
 	}
 
@@ -1790,7 +1797,7 @@ func TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero(t *t
 			t.Errorf("CRITICAL VIOLATION: card displayed placeholder '--%%' instead of explicit 0%%: %s", txt)
 		}
 	}
-	if claudeCount != 2 || geminiCount != 2 || zeroCount != 4 {
+	if claudeCount != 1 || geminiCount != 1 || zeroCount != 4 {
 		t.Errorf("expected Claude to have two 'Claude' and two '0%%' labels, got texts: %v", texts)
 	}
 
@@ -1921,5 +1928,109 @@ func TestMiniProgressBar_DepletionAndGeometry(t *testing.T) {
 			}
 			assertColorMatches(t, tc.name, "fill_color", fill.FillColor, tc.expectedColor)
 		})
+	}
+}
+
+// extractAllTexts recursively extracts text from all canvas.Text and widget.Label objects.
+func extractAllTexts(o fyne.CanvasObject) []string {
+	var res []string
+	if txt, ok := o.(*canvas.Text); ok {
+		res = append(res, txt.Text)
+	}
+	if lbl, ok := o.(*widget.Label); ok {
+		res = append(res, lbl.Text)
+	}
+	if cont, ok := o.(*fyne.Container); ok {
+		for _, child := range cont.Objects {
+			res = append(res, extractAllTexts(child)...)
+		}
+	}
+	return res
+}
+
+func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	// 1. Populated DualCycleQuota with various tier percentages
+	dq := DualCycleQuota{
+		Claude5h:   1.0,  // 100% -> Green
+		ClaudeWeek: 0.46, // 46% -> Amber
+		Gemini5h:   0.88, // 88% -> Green
+		GeminiWeek: 0.12, // 12% -> Red
+		HasData:    true,
+		IsError:    false,
+	}
+
+	for _, palette := range []ThemePalette{DarkPalette, LightPalette, WarmPalette} {
+		t.Run("Palette_"+palette.Name, func(t *testing.T) {
+			matrix := CreateMatrixQuotaTable(dq, palette)
+			cont, ok := matrix.(*fyne.Container)
+			if !ok {
+				t.Fatalf("expected matrix to be a *fyne.Container")
+			}
+			if len(cont.Objects) != 5 {
+				t.Fatalf("expected 5 objects in matrix (3 cols + 2 seps), got %d", len(cont.Objects))
+			}
+
+			// Verify 2 vertical separators
+			sep1, ok := cont.Objects[1].(*canvas.Rectangle)
+			if !ok {
+				t.Fatalf("expected sep1 to be canvas.Rectangle")
+			}
+			assertColorMatches(t, palette.Name, "sep1", sep1.FillColor, palette.BorderSubtle)
+
+			sep2, ok := cont.Objects[3].(*canvas.Rectangle)
+			if !ok {
+				t.Fatalf("expected sep2 to be canvas.Rectangle")
+			}
+			assertColorMatches(t, palette.Name, "sep2", sep2.FillColor, palette.BorderSubtle)
+
+			// Verify labels and percentages
+			texts := extractAllTexts(matrix)
+			expectedTexts := []string{"Quota", "Gemini", "Claude", "5h", "88%", "100%", "Week", "12%", "46%"}
+			for _, exp := range expectedTexts {
+				found := false
+				for _, txt := range texts {
+					if txt == exp {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("missing expected text '%s' in matrix, got %v", exp, texts)
+				}
+			}
+		})
+	}
+
+	// 2. Missing data / Error state renders "--%"
+	dqError := DualCycleQuota{
+		Claude5h:   -1,
+		ClaudeWeek: -1,
+		Gemini5h:   -1,
+		GeminiWeek: -1,
+		HasData:    false,
+		IsError:    true,
+	}
+	matrixErr := CreateMatrixQuotaTable(dqError, DarkPalette)
+	errTexts := extractAllTexts(matrixErr)
+	dashCount := 0
+	for _, txt := range errTexts {
+		if txt == "--%" {
+			dashCount++
+		}
+	}
+	if dashCount != 4 {
+		t.Errorf("expected 4 '--%%' labels on error matrix, got %d (texts: %v)", dashCount, errTexts)
+	}
+
+	// 3. Dimensions: MinSize width ~236px, fits well inside 252px card
+	minSize := matrixErr.MinSize()
+	if minSize.Width > 252.0 {
+		t.Errorf("expected matrix MinSize.Width <= 252, got %f", minSize.Width)
+	}
+	if minSize.Height > 60.0 {
+		t.Errorf("expected matrix MinSize.Height <= 60, got %f", minSize.Height)
 	}
 }

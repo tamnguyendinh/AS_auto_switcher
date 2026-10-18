@@ -51,8 +51,8 @@ var (
 		Background:   color.NRGBA{R: 0x11, G: 0x11, B: 0x1b, A: 0xff}, // #11111b (Deep Crust Canvas)
 		Card:         color.NRGBA{R: 0x18, G: 0x18, B: 0x25, A: 0xff}, // #181825 (Surface Mantle)
 		CardActive:   color.NRGBA{R: 0x1e, G: 0x1e, B: 0x2e, A: 0xff}, // #1e1e2e (Surface Base Active)
-		BorderSubtle: color.NRGBA{R: 0x31, G: 0x32, B: 0x44, A: 0xff}, // #313244 (Surface0 - Specular Highlight)
-		BorderActive: color.NRGBA{R: 0xa6, G: 0xe3, B: 0xa1, A: 0xdd}, // #a6e3a1 (Green Ambient Accent)
+		BorderSubtle: color.NRGBA{R: 0x58, G: 0x5b, B: 0x70, A: 0xff}, // #585b70 (High-Contrast Border)
+		BorderActive: color.NRGBA{R: 0xa6, G: 0xe3, B: 0xa1, A: 0xff}, // #a6e3a1 (Green Accent sáng rõ)
 		Text:         color.NRGBA{R: 0xcd, G: 0xd6, B: 0xf4, A: 0xff}, // #cdd6f4
 		TextMuted:    color.NRGBA{R: 0xa6, G: 0xad, B: 0xc8, A: 0xff}, // #a6adc8
 		Primary:      color.NRGBA{R: 0x89, G: 0xb4, B: 0xfa, A: 0xff}, // #89b4fa
@@ -68,7 +68,7 @@ var (
 		Background:   color.NRGBA{R: 0xf8, G: 0xfa, B: 0xfc, A: 0xff}, // #f8fafc
 		Card:         color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}, // #ffffff
 		CardActive:   color.NRGBA{R: 0xf1, G: 0xf5, B: 0xf9, A: 0xff}, // #f1f5f9
-		BorderSubtle: color.NRGBA{R: 0xe2, G: 0xe8, B: 0xf0, A: 0xff}, // #e2e8f0
+		BorderSubtle: color.NRGBA{R: 0x94, G: 0xa3, B: 0xb8, A: 0xff}, // #94a3b8 (Slate-400 sắc sảo)
 		BorderActive: color.NRGBA{R: 0x25, G: 0x63, B: 0xeb, A: 0xff}, // #2563eb
 		Text:         color.NRGBA{R: 0x0f, G: 0x17, B: 0x2a, A: 0xff}, // #0f172a
 		TextMuted:    color.NRGBA{R: 0x64, G: 0x74, B: 0x8b, A: 0xff}, // #64748b
@@ -85,7 +85,7 @@ var (
 		Background:   color.NRGBA{R: 0x24, G: 0x1e, B: 0x17, A: 0xff}, // #241e17
 		Card:         color.NRGBA{R: 0x33, G: 0x2a, B: 0x20, A: 0xff}, // #332a20
 		CardActive:   color.NRGBA{R: 0x3d, G: 0x32, B: 0x26, A: 0xff}, // #3d3226
-		BorderSubtle: color.NRGBA{R: 0x4a, G: 0x3d, B: 0x2f, A: 0xff}, // #4a3d2f
+		BorderSubtle: color.NRGBA{R: 0x7d, G: 0x66, B: 0x4d, A: 0xff}, // #7d664d (Coffee Border)
 		BorderActive: color.NRGBA{R: 0xd9, G: 0x77, B: 0x06, A: 0xff}, // #d97706 (Amber)
 		Text:         color.NRGBA{R: 0xe8, G: 0xd8, B: 0xbe, A: 0xff}, // #e8d8be
 		TextMuted:    color.NRGBA{R: 0xb3, G: 0x9f, B: 0x82, A: 0xff}, // #b39f82

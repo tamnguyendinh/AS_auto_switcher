@@ -93,10 +93,9 @@ func (l *emailLabelWithTooltip) MouseOut() {
 	}
 }
 
-// NewAccountCardWithQuota creates a standardized 3-row account card matching the Owner's specification:
+// NewAccountCardWithQuota creates a standardized account card matching the Owner's specification:
 // Line 1: Email (with truncation/tooltip) + Action Cluster: [✔ Dùng]/[Chuyển] + [🔄]
-// Line 2: 5h: Claude <pct>% Gemini <pct>%
-// Line 3: week: Claude <pct>% Gemini <pct>%
+// Line 2: 3x3 Matrix Table: Quota | 5h | Week with Gemini and Claude rows separated by 1px vertical borders.
 func NewAccountCardWithQuota(
 	item manager.AccountDisplayItem,
 	quota *telemetry.AccountQuotaData,
@@ -136,16 +135,12 @@ func NewAccountCardWithQuota(
 	// Extract Dual Cycle Quota (Claude and Gemini only, no GPT)
 	dq := ExtractDualCycleQuota(quota)
 
-	// Line 2: 5h Quota
-	row5h := CreateQuotaCycleRow("5h:", dq.Claude5h, dq.Gemini5h, dq.HasData, dq.IsError)
-
-	// Line 3: Weekly Quota
-	rowWeek := CreateQuotaCycleRow("week:", dq.ClaudeWeek, dq.GeminiWeek, dq.HasData, dq.IsError)
+	// 3x3 Matrix Quota Table (Gemini & Claude rows, 5h & Week cycles)
+	matrixTable := CreateMatrixQuotaTable(dq, palette)
 
 	cardVBox := container.NewVBox(
 		topRow,
-		row5h,
-		rowWeek,
+		matrixTable,
 	)
 
 	// Card Background with Elevation & Micro-Border adapted to current theme palette
@@ -154,11 +149,11 @@ func NewAccountCardWithQuota(
 	if item.IsActive {
 		cardBg.FillColor = palette.CardActive
 		cardBg.StrokeColor = palette.BorderActive
-		cardBg.StrokeWidth = 1.5
+		cardBg.StrokeWidth = 2.0
 	} else {
 		cardBg.FillColor = palette.Card
 		cardBg.StrokeColor = palette.BorderSubtle
-		cardBg.StrokeWidth = 1.0
+		cardBg.StrokeWidth = 1.8
 	}
 
 	return container.NewStack(cardBg, container.NewPadded(cardVBox))
