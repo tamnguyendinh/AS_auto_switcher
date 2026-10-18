@@ -1,0 +1,172 @@
+package reloader
+
+import (
+    "context"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "net/url"
+    "os"
+    "path/filepath"
+    "reflect"
+    "strconv"
+    "strings"
+    "sync"
+    "testing"
+    "time"
+
+    "antigravity-switch/internal/connector"
+)
+
+const supervisorThreadA = "11111111-1111-4111-8111-111111111111"
+const supervisorThreadB = "22222222-2222-4222-8222-222222222222"
+const supervisorThreadC = "33333333-3333-4333-8333-333333333333"
+
+func supervisorFile(t *testing.T, directory, name string, modified time.Time) {
+    t.Helper()
+    path := filepath.Join(directory, name)
+    if err := os.WriteFile(path, []byte("synthetic conversation file"), 0600); err != nil {
+        t.Fatal(err)
+    }
+    if err := os.Chtimes(path, modified, modified); err != nil {
+        t.Fatal(err)
+    }
+}
+
+func TestSupervisorThresholdInclusiveAndWAL(t *testing.T) {
+    t.Setenv("USERPROFILE", t.TempDir())
+    dir := t.TempDir()
+    now := time.Date(2026, 10, 18, 1, 0, 0, 0, time.UTC)
+    supervisorFile(t, dir, supervisorThreadA+".db", now.Add(-2*time.Hour))
+    supervisorFile(t, dir, supervisorThreadB+".db", now.Add(-3*time.Hour))
+    supervisorFile(t, dir, supervisorThreadB+".db-wal", now.Add(-time.Minute))
+    supervisorFile(t, dir, supervisorThreadC+".db", now.Add(-2*time.Hour-time.Second))
+    threads, err := ScanActiveConversations2h(dir, filepath.Join(dir, "absent-summary.db"), now)
+    if err != nil {
+        t.Fatal(err)
+    }
+    if len(threads) != 2 || threads[0].ThreadID != supervisorThreadB || !threads[0].IsMainPane || threads[1].ThreadID != supervisorThreadA || threads[1].IsMainPane {
+        t.Fatalf("inclusive threshold or WAL ordering violated: %+v", threads)
+    }
+    t.Log("exactly -2h included; older DB rescued by newer WAL; older-than-threshold thread excluded")
+}
+
+func TestSupervisorRejectNonUUIDDatabase(t *testing.T) {
+    t.Setenv("USERPROFILE", t.TempDir())
+    dir := t.TempDir()
+    now := time.Now()
+    supervisorFile(t, dir, supervisorThreadA+".db", now.Add(-time.Minute))
+    supervisorFile(t, dir, "index.db", now)
+    threads, err := ScanActiveConversations2h(dir, filepath.Join(dir, "absent-summary.db"), now)
+    if err != nil {
+        t.Fatal(err)
+    }
+    t.Logf("scan result: %+v", threads)
+    if len(threads) != 1 || threads[0].ThreadID != supervisorThreadA {
+        t.Fatalf("non-UUID file was admitted as a Cascade thread: %+v", threads)
+    }
+}
+
+func TestSupervisorSQLiteWorkspaceColumn(t *testing.T) {
+    t.Setenv("USERPROFILE", t.TempDir())
+    dir := t.TempDir()
+    now := time.Now()
+    supervisorFile(t, dir, supervisorThreadA+".db", now.Add(-time.Minute))
+    db := os.Getenv("SUPERVISOR_SQLITE_FIXTURE")
+    if db == "" {
+        t.Fatal("run reproduce.ps1 to generate the synthetic real SQLite fixture")
+    }
+    threads, err := ScanActiveConversations2h(dir, db, now)
+    if err != nil || len(threads) != 1 {
+        t.Fatalf("scan: threads=%+v err=%v", threads, err)
+    }
+    t.Logf("workspace_uris says C:/ActualProject; scanner returned %q", threads[0].Project)
+    if threads[0].Project != "C:/ActualProject" {
+        t.Fatalf("project came from unrelated SQLite record text instead of workspace_uris: %q", threads[0].Project)
+    }
+}
+
+func TestSupervisorStoragePathDoesNotReplaceConversationsDirectory(t *testing.T) {
+    profile := t.TempDir()
+    t.Setenv("USERPROFILE", profile)
+    conversations := filepath.Join(profile, ".gemini", "antigravity", "conversations")
+    if err := os.MkdirAll(conversations, 0700); err != nil {
+        t.Fatal(err)
+    }
+    supervisorFile(t, conversations, supervisorThreadA+".db", time.Now())
+    storage := filepath.Join(profile, "app_storage.json")
+    if err := os.WriteFile(storage, []byte("{}"), 0600); err != nil {
+        t.Fatal(err)
+    }
+    rel := NewSessionReloader()
+    rel.StoragePath = storage
+    rel.OutputDir = t.TempDir()
+    path, threads, err := rel.CaptureActiveThreadsSnapshot("", "", "")
+    t.Logf("configured app_storage path: capture path=%q threads=%+v error=%v", path, threads, err)
+    if err != nil || len(threads) != 1 || threads[0].ThreadID != supervisorThreadA {
+        t.Fatalf("app_storage.json was used as the conversations directory: %v", err)
+    }
+}
+
+func TestSupervisorFirstThreadFailureStillPacesAndSendsRemainingThreads(t *testing.T) {
+    t.Setenv("USERPROFILE", t.TempDir())
+    var mu sync.Mutex
+    var events []string
+    var models []string
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        var body map[string]interface{}
+        _ = json.NewDecoder(r.Body).Decode(&body)
+        mu.Lock()
+        defer mu.Unlock()
+        if r.URL.Path == connector.EndpointCascadeModelConfigData {
+            events = append(events, "model")
+            _, _ = w.Write([]byte(`{"defaultOverrideModelConfig":{"modelOrAlias":{"model":"SUPERVISOR_SELECTED_MODEL"}}}`))
+            return
+        }
+        id, _ := body["cascadeId"].(string)
+        events = append(events, filepath.Base(r.URL.Path)+":"+id)
+        if r.URL.Path == connector.EndpointSendUserCascadeMessage {
+            cfg, _ := body["cascadeConfig"].(map[string]interface{})
+            planner, _ := cfg["plannerConfig"].(map[string]interface{})
+            model, _ := planner["planModel"].(string)
+            models = append(models, model)
+            if id == supervisorThreadA {
+                w.WriteHeader(http.StatusInternalServerError)
+                return
+            }
+        }
+        w.WriteHeader(http.StatusOK)
+    }))
+    defer server.Close()
+    address, _ := url.Parse(server.URL)
+    port, _ := strconv.Atoi(address.Port())
+    client := connector.NewClientWithHTTP(&connector.ServerInfo{PID: 101, Port: port, CSRFToken: "fixture"}, server.Client())
+    rel := NewSessionReloader()
+    rel.Sleeper = func(_ context.Context, d time.Duration) error {
+        mu.Lock()
+        defer mu.Unlock()
+        events = append(events, "sleep:"+d.String())
+        return nil
+    }
+    threads := []ActiveThread{{ThreadID: supervisorThreadA}, {ThreadID: supervisorThreadB}, {ThreadID: supervisorThreadC}}
+    summary, err := rel.PerformSessionContinuation(context.Background(), client, threads, "")
+    var expected []string
+    expected = append(expected, "model")
+    for index, thread := range threads {
+        if index > 0 {
+            expected = append(expected, "sleep:3s")
+        }
+        for _, call := range []string{"SmartFocusConversation", "LoadTrajectory", "SendUserCascadeMessage"} {
+            expected = append(expected, call+":"+thread.ThreadID)
+        }
+    }
+    mu.Lock()
+    defer mu.Unlock()
+    if err != nil || summary == nil || summary.TotalThreads != 3 || summary.SuccessCount != 2 || summary.FailedCount != 1 || !reflect.DeepEqual(summary.SuccessThreads, []string{supervisorThreadB, supervisorThreadC}) || len(summary.Errors) != 1 || !strings.Contains(summary.Errors[0], supervisorThreadA) {
+        t.Fatalf("first-thread failure summary: %+v error=%v", summary, err)
+    }
+    if !reflect.DeepEqual(events, expected) || !reflect.DeepEqual(models, []string{"SUPERVISOR_SELECTED_MODEL", "SUPERVISOR_SELECTED_MODEL", "SUPERVISOR_SELECTED_MODEL"}) {
+        t.Fatalf("RPC ordering/pacing/model mismatch: events=%v models=%v", events, models)
+    }
+    t.Logf("ordered events=%v summary=%+v", events, summary)
+}
