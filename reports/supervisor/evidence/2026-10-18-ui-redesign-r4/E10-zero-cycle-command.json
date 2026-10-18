@@ -1,0 +1,5 @@
+{
+  "command": "go run reports/supervisor/evidence/2026-10-18-ui-redesign-r4/zero_cycle_card_probe.go",
+  "exit": 1,
+  "elapsed_ms": 7636
+}

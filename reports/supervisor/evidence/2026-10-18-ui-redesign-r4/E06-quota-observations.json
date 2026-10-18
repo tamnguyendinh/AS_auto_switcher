@@ -1,0 +1,3958 @@
+[
+  {
+    "case": "full",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"gemini-5h\",\"window\":\"5h\",\"remainingFraction\":0.88,\"resetTime\":\"2026-10-18T12:00:00Z\"},{\"bucketId\":\"gemini-weekly\",\"window\":\"weekly\",\"remainingFraction\":0.90,\"resetTime\":\"2026-10-24T12:00:00Z\"}]},{\"displayName\":\"Claude and GPT models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0.46,\"resetTime\":\"2026-10-18T13:00:00Z\"},{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\",\"remainingFraction\":0.12,\"resetTime\":\"2026-10-24T13:00:00Z\"}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.46,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.9,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.46,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.9,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 46%",
+      "Gemini 88%",
+      "week:",
+      "Claude 12%",
+      "Gemini 90%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-weekly",
+        "remaining_fraction": 0.12,
+        "reset_time": "2026-10-24T13:00:00Z",
+        "five_hour_fraction": 0.46,
+        "weekly_fraction": 0.12,
+        "five_hour_reset": "2026-10-18T13:00:00Z",
+        "weekly_reset": "2026-10-24T13:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-5h",
+        "remaining_fraction": 0.88,
+        "reset_time": "2026-10-18T12:00:00Z",
+        "five_hour_fraction": 0.88,
+        "weekly_fraction": 0.9,
+        "five_hour_reset": "2026-10-18T12:00:00Z",
+        "weekly_reset": "2026-10-24T12:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "full",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"gemini-5h\",\"window\":\"5h\",\"remainingFraction\":0.88,\"resetTime\":\"2026-10-18T12:00:00Z\"},{\"bucketId\":\"gemini-weekly\",\"window\":\"weekly\",\"remainingFraction\":0.90,\"resetTime\":\"2026-10-24T12:00:00Z\"}]},{\"displayName\":\"Claude and GPT models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0.46,\"resetTime\":\"2026-10-18T13:00:00Z\"},{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\",\"remainingFraction\":0.12,\"resetTime\":\"2026-10-24T13:00:00Z\"}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.46,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.9,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.46,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.9,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 46%",
+      "Gemini 88%",
+      "week:",
+      "Claude 12%",
+      "Gemini 90%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-weekly",
+        "remaining_fraction": 0.12,
+        "reset_time": "2026-10-24T13:00:00Z",
+        "five_hour_fraction": 0.46,
+        "weekly_fraction": 0.12,
+        "five_hour_reset": "2026-10-18T13:00:00Z",
+        "weekly_reset": "2026-10-24T13:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-5h",
+        "remaining_fraction": 0.88,
+        "reset_time": "2026-10-18T12:00:00Z",
+        "five_hour_fraction": 0.88,
+        "weekly_fraction": 0.9,
+        "five_hour_reset": "2026-10-18T12:00:00Z",
+        "weekly_reset": "2026-10-24T12:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "full",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"gemini-5h\",\"window\":\"5h\",\"remainingFraction\":0.88,\"resetTime\":\"2026-10-18T12:00:00Z\"},{\"bucketId\":\"gemini-weekly\",\"window\":\"weekly\",\"remainingFraction\":0.90,\"resetTime\":\"2026-10-24T12:00:00Z\"}]},{\"displayName\":\"Claude and GPT models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0.46,\"resetTime\":\"2026-10-18T13:00:00Z\"},{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\",\"remainingFraction\":0.12,\"resetTime\":\"2026-10-24T13:00:00Z\"}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.46,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.9,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.46,
+      "ClaudeWeek": 0.12,
+      "Gemini5h": 0.88,
+      "GeminiWeek": 0.9,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 46%",
+      "Gemini 88%",
+      "week:",
+      "Claude 12%",
+      "Gemini 90%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-weekly",
+        "remaining_fraction": 0.12,
+        "reset_time": "2026-10-24T13:00:00Z",
+        "five_hour_fraction": 0.46,
+        "weekly_fraction": 0.12,
+        "five_hour_reset": "2026-10-18T13:00:00Z",
+        "weekly_reset": "2026-10-24T13:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-5h",
+        "remaining_fraction": 0.88,
+        "reset_time": "2026-10-18T12:00:00Z",
+        "five_hour_fraction": 0.88,
+        "weekly_fraction": 0.9,
+        "five_hour_reset": "2026-10-18T12:00:00Z",
+        "weekly_reset": "2026-10-24T12:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "empty_rest",
+    "input": "{\"groups\":[]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "empty_rest",
+    "input": "{\"groups\":[]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "empty_rest",
+    "input": "{\"groups\":[]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "empty_rpc",
+    "input": "{\"response\":{\"groups\":[]}}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "empty_rpc",
+    "input": "{\"response\":{\"groups\":[]}}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "empty_rpc",
+    "input": "{\"response\":{\"groups\":[]}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "missing_fraction",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\"}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "missing_fraction",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\"}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "missing_fraction",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\"}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "null_fraction",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":null}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "null_fraction",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":null}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "null_fraction",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":null}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_5h_standard_id",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-5h",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_5h_standard_id",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-5h",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_5h_standard_id",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-5h",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_week_standard_id",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-weekly",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_week_standard_id",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-weekly",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_week_standard_id",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-weekly",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_5h_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"5h\",\"remainingFraction\":0}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_5h_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"5h\",\"remainingFraction\":0}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_5h_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"5h\",\"remainingFraction\":0}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "zero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "nonzero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0.37}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0.37,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0.37,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini 37%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "opaque",
+        "remaining_fraction": 0.37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0.37,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "nonzero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0.37}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0.37,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0.37,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini 37%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "opaque",
+        "remaining_fraction": 0.37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0.37,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "nonzero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0.37}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0.37,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0.37,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini 37%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "opaque",
+        "remaining_fraction": 0.37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0.37,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "mixed_missing",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0.23},{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\"}]},{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"gemini-5h\",\"window\":\"5h\"}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.23,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.23,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 23%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-5h",
+        "remaining_fraction": 0.23,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0.23,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "mixed_missing",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0.23},{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\"}]},{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"gemini-5h\",\"window\":\"5h\"}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.23,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.23,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 23%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-5h",
+        "remaining_fraction": 0.23,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0.23,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "mixed_missing",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"3p-5h\",\"window\":\"5h\",\"remainingFraction\":0.23},{\"bucketId\":\"3p-weekly\",\"window\":\"weekly\"}]},{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"gemini-5h\",\"window\":\"5h\"}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.23,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.23,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 23%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "3p-5h",
+        "remaining_fraction": 0.23,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0.23,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_missing_fraction",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\"}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_missing_fraction",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\"}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_zero_no_cycle",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingFraction\":0}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_zero_no_cycle",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingFraction\":0}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_amount_camel",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingAmount\":37}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "remaining_amount": 37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_amount_camel",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingAmount\":37}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "remaining_amount": 37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_amount_snake",
+    "input": "{\"buckets\":[{\"model_id\":\"gemini-2-5\",\"remaining_amount\":37}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "remaining_amount": 37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_amount_snake",
+    "input": "{\"buckets\":[{\"model_id\":\"gemini-2-5\",\"remaining_amount\":37}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "remaining_amount": 37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_zero_amount",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingAmount\":0}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_zero_amount",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingAmount\":0}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_null_fraction",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingFraction\":null,\"remainingAmount\":37}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "remaining_amount": 37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_null_fraction",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingFraction\":null,\"remainingAmount\":37}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "remaining_amount": 37,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_unknown_then_valid",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-a\"},{\"modelId\":\"claude-b\",\"remainingFraction\":0.2}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-b",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_unknown_then_valid",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-a\"},{\"modelId\":\"claude-b\",\"remainingFraction\":0.2}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-b",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_valid_then_unknown",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-b\",\"remainingFraction\":0.2},{\"modelId\":\"claude-a\"}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-b",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_REST_valid_then_unknown",
+    "input": "{\"buckets\":[{\"modelId\":\"claude-b\",\"remainingFraction\":0.2},{\"modelId\":\"claude-a\"}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-b",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "both_zero_without_resets",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque-1\",\"window\":\"5h\",\"remainingFraction\":0},{\"bucketId\":\"opaque-2\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque-1",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "both_zero_without_resets",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque-1\",\"window\":\"5h\",\"remainingFraction\":0},{\"bucketId\":\"opaque-2\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque-1",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "both_zero_without_resets",
+    "input": "{\"groups\":[{\"displayName\":\"Claude models\",\"buckets\":[{\"bucketId\":\"opaque-1\",\"window\":\"5h\",\"remainingFraction\":0},{\"bucketId\":\"opaque-2\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "opaque-1",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "gemini_zero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "summary_parser",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini 0%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "gemini_zero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "HTTP_pool",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini 0%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "gemini_zero_week_window_only",
+    "input": "{\"groups\":[{\"displayName\":\"Gemini Models\",\"buckets\":[{\"bucketId\":\"opaque\",\"window\":\"weekly\",\"remainingFraction\":0}]}]}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": 0,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini 0%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "opaque",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_nonzero",
+    "input": "{\"claude\":{\"remaining_fraction\":0.2},\"gemini\":{\"remaining_fraction\":0.8}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini 80%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": 0.8,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_nonzero",
+    "input": "{\"claude\":{\"remaining_fraction\":0.2},\"gemini\":{\"remaining_fraction\":0.8}}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini 80%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": 0.8,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_zero",
+    "input": "{\"claude\":{\"remaining_fraction\":0},\"gemini\":{\"remaining_fraction\":0.8}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini 80%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": 0.8,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_zero",
+    "input": "{\"claude\":{\"remaining_fraction\":0},\"gemini\":{\"remaining_fraction\":0.8}}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini 80%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": 0.8,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_missing_model",
+    "input": "{\"claude\":{\"remaining_fraction\":0.2}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_missing_model",
+    "input": "{\"claude\":{\"remaining_fraction\":0.2}}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_missing_fraction",
+    "input": "{\"claude\":{\"model_id\":\"claude-4-6\"},\"gemini\":{\"remaining_fraction\":-1}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_missing_fraction",
+    "input": "{\"claude\":{\"model_id\":\"claude-4-6\"},\"gemini\":{\"remaining_fraction\":-1}}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_missing_claude",
+    "input": "{\"gemini\":{\"remaining_fraction\":0.8}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini 80%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": 0.8,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_missing_claude",
+    "input": "{\"gemini\":{\"remaining_fraction\":0.8}}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0.8,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini 80%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": 0.8,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_null_family",
+    "input": "{\"claude\":{\"remaining_fraction\":0.2},\"gemini\":null}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "legacy_cache_null_family",
+    "input": "{\"claude\":{\"remaining_fraction\":0.2},\"gemini\":null}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0.2,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 20%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0.2,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_no_families",
+    "input": "{}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_no_families",
+    "input": "{}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_null_fraction",
+    "input": "{\"claude\":{\"remaining_fraction\":null}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_null_fraction",
+    "input": "{\"claude\":{\"remaining_fraction\":null}}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_weekly_zero_without_raw",
+    "input": "{\"claude\":{\"remaining_fraction\":0,\"five_hour_fraction\":-1,\"weekly_fraction\":0}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_weekly_zero_without_raw",
+    "input": "{\"claude\":{\"remaining_fraction\":0,\"five_hour_fraction\":-1,\"weekly_fraction\":0}}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_both_zero_without_raw",
+    "input": "{\"claude\":{\"remaining_fraction\":0,\"five_hour_fraction\":0,\"weekly_fraction\":0}}",
+    "stage": "disk_reload",
+    "matches": false,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_both_zero_without_raw",
+    "input": "{\"claude\":{\"remaining_fraction\":0,\"five_hour_fraction\":0,\"weekly_fraction\":0}}",
+    "stage": "disk_resave_reload",
+    "matches": false,
+    "actual": {
+      "Claude5h": 0,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": 0,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude 0%",
+      "Gemini --%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_gemini_both_zero_without_raw",
+    "input": "{\"gemini\":{\"remaining_fraction\":0,\"five_hour_fraction\":0,\"weekly_fraction\":0}}",
+    "stage": "disk_reload",
+    "matches": false,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0,
+      "GeminiWeek": 0,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini 0%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_gemini_both_zero_without_raw",
+    "input": "{\"gemini\":{\"remaining_fraction\":0,\"five_hour_fraction\":0,\"weekly_fraction\":0}}",
+    "stage": "disk_resave_reload",
+    "matches": false,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": 0,
+      "GeminiWeek": 0,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini 0%",
+      "week:",
+      "Claude --%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": 0,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_camel_weekly_zero",
+    "input": "{\"claude\":{\"remainingFraction\":0,\"fiveHourFraction\":-1,\"weeklyFraction\":0}}",
+    "stage": "disk_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  },
+  {
+    "case": "cache_camel_weekly_zero",
+    "input": "{\"claude\":{\"remainingFraction\":0,\"fiveHourFraction\":-1,\"weeklyFraction\":0}}",
+    "stage": "disk_resave_reload",
+    "matches": true,
+    "actual": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": 0,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": true,
+      "IsError": false
+    },
+    "badge_text": [
+      "5h:",
+      "Claude --%",
+      "Gemini --%",
+      "week:",
+      "Claude 0%",
+      "Gemini --%"
+    ],
+    "cycle_storage": {
+      "claude": {
+        "model_id": "claude-4-6",
+        "remaining_fraction": 0,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": 0,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      },
+      "gemini": {
+        "model_id": "gemini-2-5",
+        "remaining_fraction": -1,
+        "reset_time": "0001-01-01T00:00:00Z",
+        "five_hour_fraction": -1,
+        "weekly_fraction": -1,
+        "five_hour_reset": "0001-01-01T00:00:00Z",
+        "weekly_reset": "0001-01-01T00:00:00Z"
+      }
+    }
+  }
+]
