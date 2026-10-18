@@ -26,6 +26,9 @@ var (
 // DefaultMiniBarWidth defines the standard 50px width for quota mini progress bars.
 const DefaultMiniBarWidth float32 = 50.0
 
+// CompactMiniBarWidth defines the compact width for quota mini progress bars.
+const CompactMiniBarWidth float32 = 36.0
+
 // miniProgressBarLayout lays out the background track and dynamic fill bar of a mini progress bar.
 type miniProgressBarLayout struct {
 	barWidth  float32
@@ -251,14 +254,47 @@ func createModelQuotaItem(modelName string, fraction float64, hasData bool) fyne
 	return container.NewHBox(txtModel, bar, txtPct)
 }
 
-// createErrorBadge creates a compact badge indicating a connection error in muted gray.
-func createErrorBadge() fyne.CanvasObject {
-	dot := canvas.NewCircle(ColorQuotaMuted)
-	dotWrap := container.NewGridWrap(fyne.NewSize(7, 7), dot)
-	txt := canvas.NewText("[!] Lỗi kết nối", ColorQuotaMuted)
-	txt.TextSize = 11
-	txt.TextStyle = fyne.TextStyle{Bold: true}
-	return container.NewHBox(container.NewCenter(dotWrap), txt)
+// quotaCycleRowLayout provides responsive layout for quota cycle rows.
+// It reports a compact minimum width (<= 260px) so the 3-column account grid
+// fits within the 840x525 minimum window without clipping, while laying out
+// full 50px bars at default 1008x630.
+type quotaCycleRowLayout struct{}
+
+func (l *quotaCycleRowLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(260.0, 15.0)
+}
+
+func (l *quotaCycleRowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) == 0 {
+		return
+	}
+	lbl := objects[0]
+	lblW := lbl.MinSize().Width
+	lbl.Move(fyne.NewPos(0, 0))
+	lbl.Resize(fyne.NewSize(lblW, size.Height))
+
+	if len(objects) < 3 {
+		return
+	}
+	claudeItem := objects[1]
+	geminiItem := objects[2]
+
+	cW := claudeItem.MinSize().Width
+	gW := geminiItem.MinSize().Width
+
+	spacing := float32(4.0)
+	modelSpacing := float32(8.0)
+
+	if size.Width < 300 {
+		spacing = 3.0
+		modelSpacing = 4.0
+	}
+
+	claudeItem.Move(fyne.NewPos(lblW+spacing, 0))
+	claudeItem.Resize(fyne.NewSize(cW, size.Height))
+
+	geminiItem.Move(fyne.NewPos(lblW+spacing+cW+modelSpacing, 0))
+	geminiItem.Resize(fyne.NewSize(gW, size.Height))
 }
 
 // CreateQuotaCycleRow builds a single cycle row (e.g. "5h: Claude [██] 100% Gemini [██] 88%" or "week: Claude [██] 100% Gemini [██] 90%").
@@ -267,13 +303,14 @@ func CreateQuotaCycleRow(prefix string, claudeFrac, geminiFrac float64, hasData 
 	lbl.TextSize = 11
 	lbl.TextStyle = fyne.TextStyle{Bold: true}
 
-	if isError {
-		errBadge := createErrorBadge()
-		return container.NewHBox(lbl, errBadge)
+	if isError || !hasData {
+		claudeItem := createModelQuotaItem("Claude", -1, false)
+		geminiItem := createModelQuotaItem("Gemini", -1, false)
+		return container.New(&quotaCycleRowLayout{}, lbl, claudeItem, geminiItem)
 	}
 
 	claudeItem := createModelQuotaItem("Claude", claudeFrac, hasData)
 	geminiItem := createModelQuotaItem("Gemini", geminiFrac, hasData)
 
-	return container.NewHBox(lbl, claudeItem, geminiItem)
+	return container.New(&quotaCycleRowLayout{}, lbl, claudeItem, geminiItem)
 }

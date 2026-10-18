@@ -881,7 +881,7 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 		Gemini:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0, FiveHourFraction: -1, WeeklyFraction: -1},
 	}
 
-	// 1. Dual-cycle rows with StatusError must render [!] Lỗi kết nối and NEVER 0% red
+	// 1. Dual-cycle rows with StatusError must render placeholder --% with muted MiniProgressBar and NEVER 0% red
 	dq := ExtractDualCycleQuota(errQuota)
 	r5h := CreateQuotaCycleRow("5h:", dq.Claude5h, dq.Gemini5h, dq.HasData, dq.IsError)
 	rWeek := CreateQuotaCycleRow("week:", dq.ClaudeWeek, dq.GeminiWeek, dq.HasData, dq.IsError)
@@ -894,10 +894,11 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 
 	hasErrorText := false
 	hasMutedColor := false
-	var walkText func(fyne.CanvasObject)
-	walkText = func(o fyne.CanvasObject) {
+	miniBarCount := 0
+	var walkObj func(fyne.CanvasObject)
+	walkObj = func(o fyne.CanvasObject) {
 		if txt, ok := o.(*canvas.Text); ok {
-			if strings.Contains(txt.Text, "[!] Lỗi kết nối") {
+			if strings.Contains(txt.Text, "[!] Lỗi kết nối") || strings.Contains(txt.Text, "--%") {
 				hasErrorText = true
 			}
 			if txt.Color == ColorQuotaMuted {
@@ -908,18 +909,28 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 			}
 		}
 		if cont, ok := o.(*fyne.Container); ok {
+			if len(cont.Objects) == 2 {
+				if r1, ok1 := cont.Objects[0].(*canvas.Rectangle); ok1 && r1.CornerRadius == 3 {
+					if r2, ok2 := cont.Objects[1].(*canvas.Rectangle); ok2 && r2.CornerRadius == 3 {
+						miniBarCount++
+					}
+				}
+			}
 			for _, child := range cont.Objects {
-				walkText(child)
+				walkObj(child)
 			}
 		}
 	}
-	walkText(badges)
+	walkObj(badges)
 
 	if !hasErrorText {
-		t.Errorf("expected error badge to contain '[!] Lỗi kết nối'")
+		t.Errorf("expected error badge to contain placeholder '--%%' or '[!] Lỗi kết nối'")
 	}
 	if !hasMutedColor {
 		t.Errorf("expected error badge text color to be ColorQuotaMuted")
+	}
+	if miniBarCount != 4 {
+		t.Errorf("expected 4 MiniProgressBar widgets across dual-cycle error rows, got %d", miniBarCount)
 	}
 }
 
@@ -993,8 +1004,23 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 	}
 
 	minSize := win.Content().MinSize()
-	if minSize.Width < 840 || minSize.Height < 525 {
-		t.Errorf("expected content MinSize >= 840x525, got %v", minSize)
+	if minSize.Width != 840 || minSize.Height != 525 {
+		t.Errorf("expected content MinSize exactly 840x525, got %v", minSize)
+	}
+}
+
+func TestOwnerRedesign_QuotaCycleRowMinSizeFits840Window(t *testing.T) {
+	// Regression test for blocking finding: Quota cycle row MinSize must remain <= 264px
+	// so that account cards and 3-column grid fit within the 840x525 minimum window without clipping column 3.
+	r5h := CreateQuotaCycleRow("5h:", 1.0, 0.916, true, false)
+	rWeek := CreateQuotaCycleRow("week:", 0.46, 0.12, true, false)
+	rErr := CreateQuotaCycleRow("5h:", -1, -1, false, true)
+
+	for name, row := range map[string]fyne.CanvasObject{"5h": r5h, "week": rWeek, "err": rErr} {
+		min := row.MinSize()
+		if min.Width > 264.0 {
+			t.Errorf("row %s MinSize.Width %f exceeds card content limit 264px", name, min.Width)
+		}
 	}
 }
 
