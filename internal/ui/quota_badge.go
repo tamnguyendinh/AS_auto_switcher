@@ -66,20 +66,11 @@ func extractFamilyCycles(bucket telemetry.ModelQuotaBucket, rawBuckets []telemet
 	h5 = -1
 	week = -1
 
-	// Check if bucket has cycle data
-	has5h := bucket.FiveHourFraction >= 0
-	hasWeek := bucket.WeeklyFraction >= 0
-
-	// Special case: if Go struct literal in tests only initialized RemainingFraction > 0 and left cycle fractions as 0
-	if bucket.RemainingFraction > 0 && bucket.FiveHourFraction == 0 && bucket.WeeklyFraction == 0 && bucket.FiveHourReset.IsZero() && bucket.WeeklyReset.IsZero() {
-		has5h = false
-		hasWeek = false
-	}
-
-	if has5h {
+	// Explicit cycle fractions (>= 0) always take precedence regardless of RemainingFraction.
+	if bucket.FiveHourFraction >= 0 {
 		h5 = bucket.FiveHourFraction
 	}
-	if hasWeek {
+	if bucket.WeeklyFraction >= 0 {
 		week = bucket.WeeklyFraction
 	}
 

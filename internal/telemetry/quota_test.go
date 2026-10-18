@@ -109,8 +109,8 @@ func TestAccountQuotaData_ZeroGPTSerialization(t *testing.T) {
 
 	data := &AccountQuotaData{
 		Email:       "user@example.com",
-		Claude:      ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 0.50},
-		Gemini:      ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 0.80},
+		Claude:      ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 0.50, FiveHourFraction: -1, WeeklyFraction: -1},
+		Gemini:      ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 0.80, FiveHourFraction: -1, WeeklyFraction: -1},
 		Status:      StatusPlentiful,
 		LastUpdated: time.Now().UTC(),
 	}
@@ -531,6 +531,123 @@ func TestF1_BothCyclesZero_ClaudeAndGemini_NoRaw_NoReset(t *testing.T) {
 	if reloaded.Claude.FiveHourFraction != 0.0 || reloaded.Claude.WeeklyFraction != 0.0 {
 		t.Errorf("expected reloaded Claude cycles (0.0, 0.0), got 5h=%f, week=%f",
 			reloaded.Claude.FiveHourFraction, reloaded.Claude.WeeklyFraction)
+	}
+	if reloaded.Gemini.FiveHourFraction != 0.0 || reloaded.Gemini.WeeklyFraction != 0.0 {
+		t.Errorf("expected reloaded Gemini cycles (0.0, 0.0), got 5h=%f, week=%f",
+			reloaded.Gemini.FiveHourFraction, reloaded.Gemini.WeeklyFraction)
+	}
+	if len(reloaded.RawBuckets) != 0 {
+		t.Errorf("expected 0 raw buckets, got %d", len(reloaded.RawBuckets))
+	}
+}
+
+// TestF1_PositiveLegacyFraction_WithBothCyclesZero verifies F1 invariant where positive RemainingFraction
+// (e.g. 0.2 or 0.8) exists alongside explicit zero cycle fractions (FiveHourFraction: 0.0, WeeklyFraction: 0.0).
+// 1. JSON unmarshaling preserves both cycle fractions at 0.0 and RemainingFraction at positive values.
+// 2. QuotaCache SaveToDisk and LoadFromDisk preserves both cycle fractions at 0.0 and RemainingFraction at positive values.
+// 3. RawBuckets are empty, reset times are zero, and cycle fractions remain strictly 0.0 (never overwritten or treated as missing).
+func TestF1_PositiveLegacyFraction_WithBothCyclesZero(t *testing.T) {
+	// 1. JSON Unmarshaling of cache data with positive remaining_fraction and explicit zero cycle fractions
+	cacheJSON := []byte(`{
+		"matrix": {
+			"pos_legacy_zero_cycles@example.com": {
+				"email": "pos_legacy_zero_cycles@example.com",
+				"claude": {
+					"model_id": "claude-4-6",
+					"remaining_fraction": 0.2,
+					"five_hour_fraction": 0.0,
+					"weekly_fraction": 0.0
+				},
+				"gemini": {
+					"model_id": "gemini-2-5",
+					"remaining_fraction": 0.8,
+					"five_hour_fraction": 0.0,
+					"weekly_fraction": 0.0
+				},
+				"status": "depleted"
+			}
+		}
+	}`)
+
+	var snapshot QuotaCacheSnapshot
+	if err := json.Unmarshal(cacheJSON, &snapshot); err != nil {
+		t.Fatalf("unmarshal snapshot failed: %v", err)
+	}
+
+	acc, ok := snapshot.Matrix["pos_legacy_zero_cycles@example.com"]
+	if !ok || acc == nil {
+		t.Fatalf("expected account loaded from snapshot")
+	}
+
+	// Claude assertions
+	if acc.Claude.RemainingFraction != 0.2 {
+		t.Errorf("expected Claude RemainingFraction 0.2, got %f", acc.Claude.RemainingFraction)
+	}
+	if acc.Claude.FiveHourFraction != 0.0 {
+		t.Errorf("expected Claude FiveHourFraction 0.0, got %f", acc.Claude.FiveHourFraction)
+	}
+	if acc.Claude.WeeklyFraction != 0.0 {
+		t.Errorf("expected Claude WeeklyFraction 0.0, got %f", acc.Claude.WeeklyFraction)
+	}
+
+	// Gemini assertions
+	if acc.Gemini.RemainingFraction != 0.8 {
+		t.Errorf("expected Gemini RemainingFraction 0.8, got %f", acc.Gemini.RemainingFraction)
+	}
+	if acc.Gemini.FiveHourFraction != 0.0 {
+		t.Errorf("expected Gemini FiveHourFraction 0.0, got %f", acc.Gemini.FiveHourFraction)
+	}
+	if acc.Gemini.WeeklyFraction != 0.0 {
+		t.Errorf("expected Gemini WeeklyFraction 0.0, got %f", acc.Gemini.WeeklyFraction)
+	}
+
+	// 2. Cache disk persistence round-trip
+	tempDir := t.TempDir()
+	cachePath := filepath.Join(tempDir, "pos_legacy_zero_cache.json")
+	cache := NewQuotaCache(cachePath)
+
+	data := &AccountQuotaData{
+		Email: "pos_legacy_zero_cycles@example.com",
+		Claude: ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: 0.2,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Gemini: ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: 0.8,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Status:      StatusDepleted,
+		LastUpdated: time.Now().UTC(),
+	}
+
+	cache.Update(data)
+	if err := cache.SaveToDisk(); err != nil {
+		t.Fatalf("SaveToDisk failed: %v", err)
+	}
+
+	reloadedCache := NewQuotaCache(cachePath)
+	if err := reloadedCache.LoadFromDisk(); err != nil {
+		t.Fatalf("LoadFromDisk failed: %v", err)
+	}
+
+	reloaded, ok := reloadedCache.Get(data.Email)
+	if !ok || reloaded == nil {
+		t.Fatalf("expected account loaded from reloaded cache")
+	}
+
+	if reloaded.Claude.RemainingFraction != 0.2 {
+		t.Errorf("expected reloaded Claude RemainingFraction 0.2, got %f", reloaded.Claude.RemainingFraction)
+	}
+	if reloaded.Claude.FiveHourFraction != 0.0 || reloaded.Claude.WeeklyFraction != 0.0 {
+		t.Errorf("expected reloaded Claude cycles (0.0, 0.0), got 5h=%f, week=%f",
+			reloaded.Claude.FiveHourFraction, reloaded.Claude.WeeklyFraction)
+	}
+	if reloaded.Gemini.RemainingFraction != 0.8 {
+		t.Errorf("expected reloaded Gemini RemainingFraction 0.8, got %f", reloaded.Gemini.RemainingFraction)
 	}
 	if reloaded.Gemini.FiveHourFraction != 0.0 || reloaded.Gemini.WeeklyFraction != 0.0 {
 		t.Errorf("expected reloaded Gemini cycles (0.0, 0.0), got 5h=%f, week=%f",

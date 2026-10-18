@@ -571,8 +571,8 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 	// 3. Dual-cycle rows with populated quota & deep canvas assertion (FINDING-03)
 	quota := &telemetry.AccountQuotaData{
 		Email:  "user@example.com",
-		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.235},
+		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
+		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.235, FiveHourFraction: -1, WeeklyFraction: -1},
 	}
 	dq := ExtractDualCycleQuota(quota)
 	r5hObj := CreateQuotaCycleRow("5h:", dq.Claude5h, dq.Gemini5h, dq.HasData, dq.IsError)
@@ -650,8 +650,8 @@ func (c *testQuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken st
 	}
 	return &telemetry.AccountQuotaData{
 		Email:       "acc1@gmail.com",
-		Claude:      telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-		Gemini:      telemetry.ModelQuotaBucket{RemainingFraction: 0.85},
+		Claude:      telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
+		Gemini:      telemetry.ModelQuotaBucket{RemainingFraction: 0.85, FiveHourFraction: -1, WeeklyFraction: -1},
 		ResetTime:   time.Now().Add(2 * time.Hour),
 		LastUpdated: time.Now(),
 	}, nil
@@ -687,8 +687,8 @@ func TestAccountCardWithQuotaAndRefresh(t *testing.T) {
 
 	quota := &telemetry.AccountQuotaData{
 		Email:  "test@example.com",
-		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.08, ResetTime: time.Now().Add(45 * time.Minute)},
+		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
+		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.08, ResetTime: time.Now().Add(45 * time.Minute), FiveHourFraction: -1, WeeklyFraction: -1},
 	}
 
 	card := NewAccountCardWithQuota(
@@ -795,8 +795,8 @@ func TestExtractDualCycleQuota_Contract(t *testing.T) {
 
 	// Populated quota
 	q := &telemetry.AccountQuotaData{
-		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.235},
+		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
+		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.235, FiveHourFraction: -1, WeeklyFraction: -1},
 	}
 	dq := ExtractDualCycleQuota(q)
 	if dq.Claude5h != 1.0 || dq.ClaudeWeek != -1 {
@@ -876,8 +876,8 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 		Email:        "err@example.com",
 		Status:       telemetry.StatusError,
 		ErrorMessage: "server returned status 403",
-		Claude:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
-		Gemini:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
+		Claude:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0, FiveHourFraction: -1, WeeklyFraction: -1},
+		Gemini:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0, FiveHourFraction: -1, WeeklyFraction: -1},
 	}
 
 	// 1. Dual-cycle rows with StatusError must render [!] Lỗi kết nối and NEVER 0% red
@@ -938,8 +938,8 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 	client := &testQuotaClient{
 		quota: &telemetry.AccountQuotaData{
 			Email:  "ok@gmail.com",
-			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
+			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
 		},
 	}
 	pool, err := telemetry.NewTelemetryPoolWithSource(client, cache, source)
@@ -952,8 +952,8 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 		if email == "ok@gmail.com" {
 			return &telemetry.AccountQuotaData{
 				Email:  email,
-				Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-				Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+				Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
+				Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
 				Status: telemetry.StatusPristine,
 			}, nil
 		}
@@ -1016,9 +1016,13 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 		Email: "active_owner@gmail.com",
 		Claude: telemetry.ModelQuotaBucket{
 			RemainingFraction: 1.0,
+			FiveHourFraction:  -1,
+			WeeklyFraction:    -1,
 		},
 		Gemini: telemetry.ModelQuotaBucket{
 			RemainingFraction: 0.88,
+			FiveHourFraction:  -1,
+			WeeklyFraction:    -1,
 		},
 		RawBuckets: []telemetry.ModelQuotaBucket{
 			{ModelID: "gemini-5h", RemainingFraction: 0.88},
@@ -1224,8 +1228,8 @@ func TestOwnerRedesign_ThreeColumnGrid(t *testing.T) {
 func TestOwnerRedesign_NoGPTInCardsOrSummary(t *testing.T) {
 	quota := &telemetry.AccountQuotaData{
 		Email:  "user@example.com",
-		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.88},
+		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1},
+		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.88, FiveHourFraction: -1, WeeklyFraction: -1},
 		RawBuckets: []telemetry.ModelQuotaBucket{
 			{ModelID: "gemini-5h", RemainingFraction: 0.88},
 			{ModelID: "gemini-weekly", RemainingFraction: 0.90},
@@ -1380,8 +1384,8 @@ func TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings(t *testing.T) {
 	pool.SetLocalQuotaFetcher(func(ctx context.Context, email string) (*telemetry.AccountQuotaData, error) {
 		return &telemetry.AccountQuotaData{
 			Email:  email,
-			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 0.50},
-			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.75},
+			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 0.50, FiveHourFraction: -1, WeeklyFraction: -1},
+			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.75, FiveHourFraction: -1, WeeklyFraction: -1},
 			Status: telemetry.StatusPlentiful,
 		}, nil
 	})
@@ -1629,5 +1633,176 @@ func TestF1_ExtractDualCycleQuota_BothCyclesZero_NoRaw_NoReset(t *testing.T) {
 	}
 	if dqGemini.Gemini5h != 0.0 || dqGemini.GeminiWeek != 0.0 {
 		t.Errorf("expected Gemini (0.0, 0.0), got 5h=%f, week=%f", dqGemini.Gemini5h, dqGemini.GeminiWeek)
+	}
+}
+
+// TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero verifies that
+// when positive RemainingFraction (> 0, e.g. 0.2 or 0.8) exists alongside explicit zero cycle fractions (0.0, 0.0)
+// without raw buckets or reset times:
+// 1. ExtractDualCycleQuota returns exactly (0.0, 0.0) for 5h and weekly, NEVER falling back to (RemainingFraction, -1).
+// 2. NewAccountCardWithQuota renders "0%" in ColorQuotaRed for both cycles (never "20%", "80%", or "--%").
+// 3. Asymmetric positive legacy with zero cycles is preserved independently per model family.
+// 4. Pure legacy without cycle fractions (-1, -1) still correctly falls back to (RemainingFraction, -1).
+func TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	// Helper to extract all text strings from a canvas object hierarchy
+	var extractTexts func(fyne.CanvasObject) []string
+	extractTexts = func(o fyne.CanvasObject) []string {
+		var res []string
+		if txt, ok := o.(*canvas.Text); ok {
+			res = append(res, txt.Text)
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				res = append(res, extractTexts(child)...)
+			}
+		}
+		return res
+	}
+
+	// Case 1: Both Claude and Gemini have positive RemainingFraction and explicit zero cycle fractions
+	bothPosLegacyBothZeroCycles := &telemetry.AccountQuotaData{
+		Email: "both_pos_legacy_zero@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: 0.2,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: 0.8,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Status: telemetry.StatusDepleted,
+	}
+
+	dq := ExtractDualCycleQuota(bothPosLegacyBothZeroCycles)
+	if !dq.HasData {
+		t.Errorf("expected HasData=true for explicit zero cycles with positive legacy fraction")
+	}
+	if dq.Claude5h != 0.0 || dq.ClaudeWeek != 0.0 {
+		t.Errorf("expected Claude (0.0, 0.0), got 5h=%f, week=%f (must NOT fall back to RemainingFraction 0.2)",
+			dq.Claude5h, dq.ClaudeWeek)
+	}
+	if dq.Gemini5h != 0.0 || dq.GeminiWeek != 0.0 {
+		t.Errorf("expected Gemini (0.0, 0.0), got 5h=%f, week=%f (must NOT fall back to RemainingFraction 0.8)",
+			dq.Gemini5h, dq.GeminiWeek)
+	}
+
+	item := manager.AccountDisplayItem{
+		Email:    "both_pos_legacy_zero@example.com",
+		State:    model.StateReady,
+		IsActive: false,
+	}
+	card := NewAccountCardWithQuota(item, bothPosLegacyBothZeroCycles, DarkPalette, nil, nil, nil)
+	texts := extractTexts(card)
+
+	hasClaude5h0 := false
+	hasClaudeWk0 := false
+	hasGemini5h0 := false
+	hasGeminiWk0 := false
+	for _, txt := range texts {
+		if strings.Contains(txt, "Claude 0%") {
+			if !hasClaude5h0 {
+				hasClaude5h0 = true
+			} else {
+				hasClaudeWk0 = true
+			}
+		}
+		if strings.Contains(txt, "Gemini 0%") {
+			if !hasGemini5h0 {
+				hasGemini5h0 = true
+			} else {
+				hasGeminiWk0 = true
+			}
+		}
+		if strings.Contains(txt, "20%") || strings.Contains(txt, "80%") {
+			t.Errorf("CRITICAL VIOLATION: card displayed legacy percentage instead of 0%%: %s", txt)
+		}
+		if strings.Contains(txt, "--%") {
+			t.Errorf("CRITICAL VIOLATION: card displayed placeholder '--%%' instead of explicit 0%%: %s", txt)
+		}
+	}
+	if !hasClaude5h0 || !hasClaudeWk0 {
+		t.Errorf("expected Claude to have two 'Claude 0%%' labels (5h and week), got texts: %v", texts)
+	}
+	if !hasGemini5h0 || !hasGeminiWk0 {
+		t.Errorf("expected Gemini to have two 'Gemini 0%%' labels (5h and week), got texts: %v", texts)
+	}
+
+	// Case 2: Asymmetric — Claude has positive RemainingFraction with zero cycles; Gemini is unknown (-1)
+	claudePosZeroGeminiUnknown := &telemetry.AccountQuotaData{
+		Email: "claude_zero_gemini_unk@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: 0.25,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: -1,
+			FiveHourFraction:  -1,
+			WeeklyFraction:    -1,
+		},
+	}
+	dqClaude := ExtractDualCycleQuota(claudePosZeroGeminiUnknown)
+	if dqClaude.Claude5h != 0.0 || dqClaude.ClaudeWeek != 0.0 {
+		t.Errorf("expected Claude (0.0, 0.0), got 5h=%f, week=%f", dqClaude.Claude5h, dqClaude.ClaudeWeek)
+	}
+	if dqClaude.Gemini5h != -1.0 || dqClaude.GeminiWeek != -1.0 {
+		t.Errorf("expected Gemini (-1.0, -1.0), got 5h=%f, week=%f", dqClaude.Gemini5h, dqClaude.GeminiWeek)
+	}
+
+	// Case 3: Asymmetric — Gemini has positive RemainingFraction with zero cycles; Claude is unknown (-1)
+	geminiPosZeroClaudeUnknown := &telemetry.AccountQuotaData{
+		Email: "gemini_zero_claude_unk@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: -1,
+			FiveHourFraction:  -1,
+			WeeklyFraction:    -1,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: 0.75,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+	}
+	dqGemini := ExtractDualCycleQuota(geminiPosZeroClaudeUnknown)
+	if dqGemini.Claude5h != -1.0 || dqGemini.ClaudeWeek != -1.0 {
+		t.Errorf("expected Claude (-1.0, -1.0), got 5h=%f, week=%f", dqGemini.Claude5h, dqGemini.ClaudeWeek)
+	}
+	if dqGemini.Gemini5h != 0.0 || dqGemini.GeminiWeek != 0.0 {
+		t.Errorf("expected Gemini (0.0, 0.0), got 5h=%f, week=%f", dqGemini.Gemini5h, dqGemini.GeminiWeek)
+	}
+
+	// Case 4: True legacy fallback — cycles are -1, positive RemainingFraction is used for 5h, week is -1
+	legacyFallbackQuota := &telemetry.AccountQuotaData{
+		Email: "legacy_fallback@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: 0.35,
+			FiveHourFraction:  -1,
+			WeeklyFraction:    -1,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: 0.65,
+			FiveHourFraction:  -1,
+			WeeklyFraction:    -1,
+		},
+	}
+	dqLegacy := ExtractDualCycleQuota(legacyFallbackQuota)
+	if dqLegacy.Claude5h != 0.35 || dqLegacy.ClaudeWeek != -1.0 {
+		t.Errorf("expected Claude legacy fallback (0.35, -1.0), got 5h=%f, week=%f", dqLegacy.Claude5h, dqLegacy.ClaudeWeek)
+	}
+	if dqLegacy.Gemini5h != 0.65 || dqLegacy.GeminiWeek != -1.0 {
+		t.Errorf("expected Gemini legacy fallback (0.65, -1.0), got 5h=%f, week=%f", dqLegacy.Gemini5h, dqLegacy.GeminiWeek)
 	}
 }
