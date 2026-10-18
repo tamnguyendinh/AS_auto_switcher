@@ -1,0 +1,84 @@
+231:	FiveHourFraction  float64   `json:"five_hour_fraction,omitempty"`
+232:	WeeklyFraction    float64   `json:"weekly_fraction,omitempty"`
+238:// UnmarshalJSON custom unmarshaler ensures cycle fractions default to -1 when absent in JSON (legacy cache).
+239:func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
+252:		m.FiveHourFraction = *aux.FiveHour
+254:		m.FiveHourFraction = -1
+257:		m.WeeklyFraction = *aux.Weekly
+259:		m.WeeklyFraction = -1
+265:type AccountQuotaData struct {
+381:func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
+433:func AggregateBuckets(rawBuckets []ModelQuotaBucket) (claude, gemini, gpt ModelQuotaBucket, canonicalReset time.Time, status string) {
+434:	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+435:	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+436:	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+447:				claude = b
+452:				gemini = b
+579:		var checkResp rawQuotaSummaryResponse
+580:		if json.Unmarshal(bodyBytes, &checkResp) == nil && (checkResp.Response.Groups != nil || checkResp.Groups != nil) {
+599:	for _, rawB := range rawResp.Buckets {
+600:		rawBuckets = append(rawBuckets, rawB.toModelQuotaBucket())
+660:	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+661:	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+662:	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+691:			rawB := ModelQuotaBucket{
+700:			is5h := strings.Contains(lowerID, "5h") || strings.Contains(lowerWindow, "5h")
+701:			isWeek := strings.Contains(lowerID, "week") || strings.Contains(lowerWindow, "week")
+705:					gemini.FiveHourFraction = frac
+708:					gemini.WeeklyFraction = frac
+720:					claude.FiveHourFraction = frac
+722:					gpt.FiveHourFraction = frac
+725:					claude.WeeklyFraction = frac
+727:					gpt.WeeklyFraction = frac
+78:	hasAnyBucket := false
+92:				hasAnyBucket = true
+95:				hasAnyBucket = true
+100:				hasAnyBucket = true
+103:				hasAnyBucket = true
+109:	hasClaudeCycles := (quota.Claude.FiveHourFraction > 0 || quota.Claude.WeeklyFraction > 0 || !quota.Claude.FiveHourReset.IsZero() || !quota.Claude.WeeklyReset.IsZero()) ||
+111:	if hasClaudeCycles {
+114:			hasAnyBucket = true
+118:			hasAnyBucket = true
+122:	hasGeminiCycles := (quota.Gemini.FiveHourFraction > 0 || quota.Gemini.WeeklyFraction > 0 || !quota.Gemini.FiveHourReset.IsZero() || !quota.Gemini.WeeklyReset.IsZero()) ||
+124:	if hasGeminiCycles {
+127:			hasAnyBucket = true
+131:			hasAnyBucket = true
+135:	// Priority 3: Fallback for legacy single-bucket data if no cycle-specific fraction found
+136:	if !hasAnyBucket && (quota.Claude.RemainingFraction >= 0 || quota.Gemini.RemainingFraction >= 0) {
+140:			hasAnyBucket = true
+145:			hasAnyBucket = true
+149:	dq.HasData = hasAnyBucket
+203:// NewDualCycleQuotaBadge constructs a 2-row container:
+207:func NewDualCycleQuotaBadge(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
+214:// NewQuotaBadgeGroup delegates to NewDualCycleQuotaBadge for backwards compatibility with tests.
+215:func NewQuotaBadgeGroup(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
+216:	return NewDualCycleQuotaBadge(quota)
+219:// BuildActiveQuotaSummary builds a one-line summary string of active quota (Claude and Gemini only, no GPT).
+220:func BuildActiveQuotaSummary(quota *telemetry.AccountQuotaData) string {
+44:	activeDotContainer   *fyne.Container
+53:	monogramBg           *canvas.Rectangle
+178:	if a.monogramBg != nil {
+179:		a.monogramBg.FillColor = palette.Primary
+180:		a.monogramBg.Refresh()
+345:// RefreshSingleAccountQuota triggers quota retrieval for a single specified account independently.
+346:func (a *App) RefreshSingleAccountQuota(email string) {
+399:					newCard := NewAccountCardWithQuota(
+405:						a.RefreshSingleAccountQuota,
+407:					a.accountListContainer.Objects[targetIdx] = newCard
+421:// RefreshSingleQuota delegates to RefreshSingleAccountQuota for backwards compatibility.
+422:func (a *App) RefreshSingleQuota(email string) {
+423:	a.RefreshSingleAccountQuota(email)
+651:		if a.activeDotContainer != nil {
+652:			a.activeDotContainer.Objects = []fyne.CanvasObject{NewStatusDot(palette.Success, 12)}
+653:			a.activeDotContainer.Refresh()
+656:		if a.activeDotContainer != nil {
+657:			a.activeDotContainer.Objects = []fyne.CanvasObject{NewStatusDot(palette.Warning, 12)}
+658:			a.activeDotContainer.Refresh()
+674:				card := NewAccountCardWithQuota(acc, quotaData, palette, a.SwitchAccount, a.SaveSession, a.RefreshSingleAccountQuota)
+678:		minH := a.accountListContainer.MinSize().Height
+internal/ui/widgets.go:97:func NewAccountCard(item manager.AccountDisplayItem, onSwitch func(email string), onSave func()) fyne.CanvasObject {
+internal/ui/widgets.go:105:func NewAccountCardWithQuota(
+internal/ui/window.go:86:	a.monogramBg = canvas.NewRectangle(palette.Primary)
+internal/ui/window.go:87:	a.monogramBg.CornerRadius = 6
+internal/ui/window.go:92:	monogramStack := container.NewStack(a.monogramBg, container.NewCenter(monogramText))
+internal/ui/window.go:172:	scrollList := container.NewVScroll(container.NewPadded(container.NewVBox(a.accountListContainer)))

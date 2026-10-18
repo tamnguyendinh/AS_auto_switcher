@@ -1,0 +1,66 @@
+package telemetry
+
+// Loaded only as an extra _test.go through the Go overlay runner. No product source is changed.
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"antigravity-switch/internal/connector"
+)
+
+type r3NoCloud struct{}
+func (r3NoCloud) RetrieveUserQuota(context.Context, string) (*AccountQuotaData, error) {
+	return nil, errors.New("unexpected cloud fallback")
+}
+type r3Source struct{}
+func (r3Source) ListAccounts() ([]AccountTokenInfo, error) {return nil,nil}
+func (r3Source) GetRefreshToken(string) (string,error) {return "synthetic",nil}
+
+func TestSupervisorR3ActualRPCPoolCache(t *testing.T) {
+	cases := []struct{name,payload string; want [4]float64}{
+		{"empty", `{"groups":[]}`, [4]float64{-1,-1,-1,-1}},
+		{"missing_fraction", `{"groups":[{"displayName":"Claude models","buckets":[{"bucketId":"3p-5h","window":"5h"}]}]}`, [4]float64{-1,-1,-1,-1}},
+		{"full", `{"groups":[{"displayName":"Claude and GPT models","buckets":[{"bucketId":"3p-5h","window":"5h","remainingFraction":0.46},{"bucketId":"3p-weekly","window":"weekly","remainingFraction":0.12}]},{"displayName":"Gemini Models","buckets":[{"bucketId":"gemini-5h","window":"5h","remainingFraction":0.88},{"bucketId":"gemini-weekly","window":"weekly","remainingFraction":0.90}]}]}`, [4]float64{.46,.12,.88,.90}},
+		{"window_weekly_zero", `{"groups":[{"displayName":"Claude models","buckets":[{"bucketId":"opaque","window":"weekly","remainingFraction":0}]}]}`, [4]float64{-1,0,-1,-1}},
+	}
+	for _,tc := range cases {t.Run(tc.name,func(t *testing.T){
+		var mu sync.Mutex
+		var requests []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+			mu.Lock(); requests=append(requests,r.URL.Path); mu.Unlock()
+			if r.Method!=http.MethodPost || r.Header.Get("X-Csrf-Token")!="synthetic-csrf" {t.Error("wrong method/CSRF")}
+			w.Header().Set("Content-Type","application/json")
+			if strings.HasSuffix(r.URL.Path,"RetrieveUserQuotaSummary") {fmt.Fprint(w,`{"response":`+tc.payload+`}`)} else {fmt.Fprint(w,`{"userStatus":{"email":"r3@example.com"}}`)}
+		}))
+		defer server.Close()
+		_,portText,err:=net.SplitHostPort(strings.TrimPrefix(server.URL,"http://")); if err!=nil {t.Fatal(err)}
+		port,err:=strconv.Atoi(portText); if err!=nil {t.Fatal(err)}
+		cache:=NewQuotaCache(filepath.Join(t.TempDir(),"quota.json"))
+		pool,err:=NewTelemetryPoolWithSource(r3NoCloud{},cache,r3Source{}); if err!=nil {t.Fatal(err)}
+		// This only seeds the discovery cache of the synthetic pool; HTTP method/identity/parser/cache are real.
+		pool.cachedServerInfo=&connector.ServerInfo{Port:port,CSRFToken:"synthetic-csrf"}
+		pool.cachedServerTime=time.Now()
+		data,err:=pool.PollAccount(context.Background(),"r3@example.com"); if err!=nil {t.Fatal(err)}
+		cycles:=func(q *AccountQuotaData)[4]float64{return [4]float64{q.Claude.FiveHourFraction,q.Claude.WeeklyFraction,q.Gemini.FiveHourFraction,q.Gemini.WeeklyFraction}}
+		before:=cycles(data)
+		if before!=tc.want {t.Errorf("RPC parser cycles: got %v want %v",before,tc.want)}
+		reloaded:=NewQuotaCache(cache.FilePath()); if err:=reloaded.LoadFromDisk();err!=nil {t.Fatal(err)}
+		persisted,ok:=reloaded.Get("r3@example.com");if !ok {t.Fatal("disk cache missing")}
+		after:=cycles(persisted)
+		mu.Lock(); observedRequests:=append([]string(nil),requests...);mu.Unlock()
+		encoded,_:=json.Marshal(map[string]any{"case":tc.name,"requests":observedRequests,"before":before,"after_disk_reload":after,"want":tc.want,"raw_buckets":persisted.RawBuckets})
+		t.Log(string(encoded))
+		if after!=tc.want {t.Errorf("F1 cycle presence lost across actual RPC/cache: got %v want %v",after,tc.want)}
+	})}
+}

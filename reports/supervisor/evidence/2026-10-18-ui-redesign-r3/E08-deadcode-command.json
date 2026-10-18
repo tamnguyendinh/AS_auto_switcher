@@ -1,0 +1,5 @@
+{
+  "command": "go run golang.org/x/tools/cmd/deadcode@v0.52.0 -tags gui ./cmd/switcher",
+  "exit": 0,
+  "elapsed_ms": 11873
+}

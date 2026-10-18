@@ -1,0 +1,1196 @@
+{
+  "total_observations": 41,
+  "matches": 33,
+  "mismatches": 8,
+  "observations": [
+    {
+      "case": "full",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": 0.46,
+        "ClaudeWeek": 0.12,
+        "Gemini5h": 0.88,
+        "GeminiWeek": 0.9,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0.46,
+        "ClaudeWeek": 0.12,
+        "Gemini5h": 0.88,
+        "GeminiWeek": 0.9,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 46%",
+        "Gemini 88%",
+        "week:",
+        "Claude 12%",
+        "Gemini 90%"
+      ]
+    },
+    {
+      "case": "full",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": 0.46,
+        "ClaudeWeek": 0.12,
+        "Gemini5h": 0.88,
+        "GeminiWeek": 0.9,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0.46,
+        "ClaudeWeek": 0.12,
+        "Gemini5h": 0.88,
+        "GeminiWeek": 0.9,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 46%",
+        "Gemini 88%",
+        "week:",
+        "Claude 12%",
+        "Gemini 90%"
+      ]
+    },
+    {
+      "case": "full",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": 0.46,
+        "ClaudeWeek": 0.12,
+        "Gemini5h": 0.88,
+        "GeminiWeek": 0.9,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0.46,
+        "ClaudeWeek": 0.12,
+        "Gemini5h": 0.88,
+        "GeminiWeek": 0.9,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 46%",
+        "Gemini 88%",
+        "week:",
+        "Claude 12%",
+        "Gemini 90%"
+      ]
+    },
+    {
+      "case": "empty_rest",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "empty_rest",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "empty_rest",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "empty_rpc",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "empty_rpc",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "empty_rpc",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "missing_fraction",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "missing_fraction",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "missing_fraction",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "null_fraction",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "null_fraction",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "null_fraction",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_5h_standard_id",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_5h_standard_id",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_5h_standard_id",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_week_standard_id",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude 0%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_week_standard_id",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude 0%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_week_standard_id",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude 0%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_5h_window_only",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_5h_window_only",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_5h_window_only",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_week_window_only",
+      "stage": "summary_parser",
+      "match": false,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_week_window_only",
+      "stage": "HTTP_pool",
+      "match": false,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "zero_week_window_only",
+      "stage": "disk_reload",
+      "match": false,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "nonzero_week_window_only",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": 0.37,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": 0.37,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini 37%"
+      ]
+    },
+    {
+      "case": "nonzero_week_window_only",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": 0.37,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": 0.37,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini 37%"
+      ]
+    },
+    {
+      "case": "nonzero_week_window_only",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": 0.37,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": 0.37,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini 37%"
+      ]
+    },
+    {
+      "case": "mixed_missing",
+      "stage": "summary_parser",
+      "match": true,
+      "expected": {
+        "Claude5h": 0.23,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0.23,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 23%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "mixed_missing",
+      "stage": "HTTP_pool",
+      "match": true,
+      "expected": {
+        "Claude5h": 0.23,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0.23,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 23%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "mixed_missing",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": 0.23,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0.23,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 23%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "legacy_REST_missing_fraction",
+      "stage": "HTTP_pool",
+      "match": false,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude 0%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "legacy_REST_missing_fraction",
+      "stage": "disk_reload",
+      "match": false,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "legacy_REST_zero_no_cycle",
+      "stage": "HTTP_pool",
+      "match": false,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": 0,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude 0%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "legacy_REST_zero_no_cycle",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "legacy_cache_nonzero",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": 0.2,
+        "ClaudeWeek": -1,
+        "Gemini5h": 0.8,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0.2,
+        "ClaudeWeek": -1,
+        "Gemini5h": 0.8,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 20%",
+        "Gemini 80%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "legacy_cache_zero",
+      "stage": "disk_reload",
+      "match": true,
+      "expected": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": 0.8,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": 0.8,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini 80%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    },
+    {
+      "case": "legacy_cache_missing_model",
+      "stage": "disk_reload",
+      "match": false,
+      "expected": {
+        "Claude5h": 0.2,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": 0,
+        "GeminiWeek": 0,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini 0%",
+        "week:",
+        "Claude --%",
+        "Gemini 0%"
+      ]
+    },
+    {
+      "case": "legacy_cache_missing_fraction",
+      "stage": "disk_reload",
+      "match": false,
+      "expected": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": false,
+        "IsError": false
+      },
+      "actual": {
+        "Claude5h": 0,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ]
+    }
+  ]
+}

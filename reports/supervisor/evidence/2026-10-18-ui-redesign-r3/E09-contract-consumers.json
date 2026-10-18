@@ -1,0 +1,9 @@
+{
+  "search": "\\.GPT\\b|GPT\\s+ModelQuotaBucket|GPT:",
+  "roots": [
+    "internal",
+    "cmd"
+  ],
+  "match_count": 0,
+  "matches": []
+}
