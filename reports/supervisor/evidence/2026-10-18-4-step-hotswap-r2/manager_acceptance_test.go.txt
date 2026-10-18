@@ -1,0 +1,189 @@
+package manager
+
+import (
+    "context"
+    "encoding/base64"
+    "encoding/json"
+    "errors"
+    "net/http"
+    "net/http/httptest"
+    "net/url"
+    "os"
+    "path/filepath"
+    "reflect"
+    "strconv"
+    "strings"
+    "sync"
+    "sync/atomic"
+    "testing"
+    "time"
+
+    "antigravity-switch/internal/connector"
+    "antigravity-switch/internal/model"
+    "antigravity-switch/internal/reloader"
+    "antigravity-switch/internal/store"
+)
+
+func r2Token(email string) *model.TokenData {
+    claims, _ := json.Marshal(map[string]string{"email": email})
+    return &model.TokenData{
+        AccessToken: "synthetic-review-token",
+        IDToken: "header."+base64.RawURLEncoding.EncodeToString(claims)+".signature",
+        Expiry: time.Now().Add(time.Hour),
+        AuthMethod: "consumer",
+    }
+}
+
+func TestR2RAMGateEveryOutcome(t *testing.T) {
+    for _, scenario := range []string{"target", "stale", "http-error", "empty-email", "nil-client-with-error", "nil-client-without-error"} {
+        t.Run(scenario, func(t *testing.T) {
+            profile := t.TempDir()
+            t.Setenv("USERPROFILE", profile)
+            accounts, err := store.NewAccountStore(filepath.Join(profile, "accounts"))
+            if err != nil { t.Fatal(err) }
+            target := "target@r2.invalid"
+            targetToken := r2Token(target)
+            if err := accounts.SaveAccount(target, targetToken); err != nil { t.Fatal(err) }
+            var killed atomic.Bool
+            var postKillStatus atomic.Int32
+            var continued atomic.Int32
+            var finderAfterKill atomic.Int32
+            var wrote atomic.Bool
+            var credential atomic.Pointer[model.TokenData]
+            credential.Store(r2Token("old@r2.invalid"))
+            server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                if r.URL.Path != connector.EndpointGetUserStatus {
+                    w.WriteHeader(http.StatusNotFound)
+                    return
+                }
+                if !killed.Load() {
+                    _, _ = w.Write([]byte(`{"email":"old@r2.invalid"}`))
+                    return
+                }
+                postKillStatus.Add(1)
+                switch scenario {
+                case "http-error": w.WriteHeader(http.StatusInternalServerError)
+                case "empty-email": _, _ = w.Write([]byte(`{"email":""}`))
+                case "target": _, _ = w.Write([]byte(`{"email":" TARGET@R2.INVALID "}`))
+                default: _, _ = w.Write([]byte(`{"email":"old@r2.invalid"}`))
+                }
+            }))
+            defer server.Close()
+            address, _ := url.Parse(server.URL)
+            port, _ := strconv.Atoi(address.Port())
+            info := &connector.ServerInfo{PID: 777, Port: port, CSRFToken: "synthetic"}
+            client := connector.NewClientWithHTTP(info, server.Client())
+            rel := reloader.NewSessionReloader()
+            rel.StoragePath = filepath.Join(profile, "app_storage.json")
+            rel.SnapshotCapturer = func(_, _, _ string) (string, []reloader.ActiveThread, error) {
+                threads := []reloader.ActiveThread{{ThreadID: "11111111-1111-4111-8111-111111111111"}}
+                data, err := json.Marshal(reloader.ActiveThreadsSnapshot{ActiveThreads: threads})
+                if err != nil { return "", nil, err }
+                path := filepath.Join(profile, "snapshot.json")
+                return path, threads, os.WriteFile(path, data, 0600)
+            }
+            rel.ProcessKiller = func(context.Context) error { killed.Store(true); return nil }
+            rel.ServerDiscoverer = func() (*connector.ServerInfo, error) { return info, nil }
+            var waits []time.Duration
+            rel.Sleeper = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
+            rel.ContinuationRunner = func(context.Context, *connector.Client, []reloader.ActiveThread, string) error {
+                continued.Add(1)
+                return nil
+            }
+            mgr, err := NewAccountManager(accounts, rel)
+            if err != nil { t.Fatal(err) }
+            mgr.SetWincredHandlers(func() (*model.TokenData, error) { return credential.Load(), nil }, func(token *model.TokenData) error {
+                credential.Store(token)
+                wrote.Store(true)
+                return nil
+            })
+            mgr.SetClientFinder(func(context.Context) (*connector.Client, error) {
+                if killed.Load() {
+                    finderAfterKill.Add(1)
+                    if scenario == "nil-client-with-error" { return nil, errors.New("synthetic discovery failure") }
+                    if scenario == "nil-client-without-error" { return nil, nil }
+                }
+                return client, nil
+            })
+            result, err := mgr.SwitchAccount(context.Background(), target)
+            if result == nil { t.Fatalf("nil result: %v", err) }
+            t.Logf("scenario=%s success=%v error=%v credential_email=%s status_after_kill=%d continued=%d finder_after_kill=%d waits=%v", scenario, result.Success, err, ExtractEmailFromToken(credential.Load()), postKillStatus.Load(), continued.Load(), finderAfterKill.Load(), waits)
+            if !wrote.Load() || !killed.Load() || !reflect.DeepEqual(waits, []time.Duration{8*time.Second}) || finderAfterKill.Load() != 1 {
+                t.Fatal("fixture did not reach the post-recycle gate")
+            }
+            if scenario == "target" {
+                if err != nil || !result.Success || postKillStatus.Load() == 0 || continued.Load() != 1 {
+                    t.Fatal("valid normalized RAM identity must allow continuation")
+                }
+            } else {
+                if result.Success || err == nil { t.Error("unverified RAM identity must return Success=false and an error, including nil client with nil discovery error") }
+                if continued.Load() != 0 { t.Error("PerformSessionContinuation must not be invoked before RAM confirmation") }
+            }
+        })
+    }
+}
+
+func TestR2ExactDiskSnapshotAfterEightSecondWaitAndRAM(t *testing.T) {
+    profile := t.TempDir()
+    t.Setenv("USERPROFILE", profile)
+    accounts, err := store.NewAccountStore(filepath.Join(profile, "accounts"))
+    if err != nil { t.Fatal(err) }
+    target := "target@r2.invalid"
+    if err := accounts.SaveAccount(target, r2Token(target)); err != nil { t.Fatal(err) }
+    var killed atomic.Bool
+    var mu sync.Mutex
+    var events []string
+    event := func(value string) { mu.Lock(); events = append(events, value); mu.Unlock() }
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if r.URL.Path != connector.EndpointGetUserStatus { w.WriteHeader(http.StatusNotFound); return }
+        if killed.Load() { event("ram-confirm"); _, _ = w.Write([]byte(`{"email":"target@r2.invalid"}`)); return }
+        _, _ = w.Write([]byte(`{"email":"old@r2.invalid"}`))
+    }))
+    defer server.Close()
+    address, _ := url.Parse(server.URL)
+    port, _ := strconv.Atoi(address.Port())
+    info := &connector.ServerInfo{PID: 888, Port: port, CSRFToken: "synthetic"}
+    rel := reloader.NewSessionReloader()
+    rel.StoragePath = filepath.Join(profile, "app_storage.json")
+    disk := []reloader.ActiveThread{
+        {ThreadID: "22222222-2222-4222-8222-222222222222", Project: "C:/DiskProject", IsMainPane: true, Model: "disk-model"},
+        {ThreadID: "33333333-3333-4333-8333-333333333333", Project: "D:/OtherProject"},
+    }
+    rel.SnapshotCapturer = func(_, _, _ string) (string, []reloader.ActiveThread, error) {
+        event("snapshot")
+        bytes, err := json.Marshal(reloader.ActiveThreadsSnapshot{ActiveThreads: disk})
+        if err != nil { return "", nil, err }
+        path := filepath.Join(profile, "exact-step1-file.json")
+        return path, []reloader.ActiveThread{{ThreadID: "11111111-1111-4111-8111-111111111111"}}, os.WriteFile(path, bytes, 0600)
+    }
+    rel.ProcessKiller = func(context.Context) error { event("kill"); killed.Store(true); return nil }
+    rel.Sleeper = func(_ context.Context, d time.Duration) error { event("wait:"+d.String()); return nil }
+    rel.ServerDiscoverer = func() (*connector.ServerInfo, error) { event("discover"); return info, nil }
+    var got []reloader.ActiveThread
+    rel.ContinuationRunner = func(_ context.Context, _ *connector.Client, threads []reloader.ActiveThread, _ string) error {
+        event("continue"); got = threads; return nil
+    }
+    mgr, err := NewAccountManager(accounts, rel)
+    if err != nil { t.Fatal(err) }
+    mgr.SetWincredHandlers(func() (*model.TokenData, error) { return r2Token("old@r2.invalid"), nil }, func(*model.TokenData) error {
+        data, err := os.ReadFile(rel.StoragePath)
+        if err != nil { return err }
+        var storage map[string]interface{}
+        if err := json.Unmarshal(data, &storage); err != nil { return err }
+        if storage["jetski.onboarding.lastLoginUsername"] != target || storage["jetski.onboarding.lastLoginIsGcpTos"] != "false" { t.Error("ToS must precede credential write") }
+        event("write-credential"); return nil
+    })
+    mgr.SetClientFinder(func(context.Context) (*connector.Client, error) {
+        if killed.Load() { event("new-client") }
+        return connector.NewClientWithHTTP(info, server.Client()), nil
+    })
+    result, err := mgr.SwitchAccount(context.Background(), target)
+    expected := []string{"snapshot", "write-credential", "kill", "wait:8s", "discover", "new-client", "ram-confirm", "continue"}
+    mu.Lock()
+    defer mu.Unlock()
+    if err != nil || result == nil || !result.Success || !reflect.DeepEqual(events, expected) || !reflect.DeepEqual(got, disk) || !reflect.DeepEqual(result.ActiveThreads, disk) {
+        t.Fatalf("sequence/disk snapshot mismatch: events=%v got=%+v result=%+v err=%v", events, got, result, err)
+    }
+    if result.ContinuationSummary == nil || result.ContinuationSummary.SuccessCount != 2 || !strings.Contains(result.Message, "2/2") { t.Fatalf("summary/message mismatch: %+v", result) }
+    t.Logf("events=%v; disk list used despite deliberately different capture memory list", events)
+}

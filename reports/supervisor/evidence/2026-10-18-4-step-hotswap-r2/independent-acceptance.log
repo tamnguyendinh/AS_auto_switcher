@@ -1,0 +1,47 @@
+=== RUN   TestR2SQLiteCommittedWALAndMultipleProjects
+    zz_r2_extra_acceptance_test.go:42: committed WAL bytes=16512; IDLE plus RUNNING threads across projects=[{ThreadID:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa Project:C:/Project One IsMainPane:true Model:} {ThreadID:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb Project:D:/ProjectTwo IsMainPane:false Model:}]
+--- PASS: TestR2SQLiteCommittedWALAndMultipleProjects (0.11s)
+=== RUN   TestR2PreviousThresholdInclusiveAndWAL
+    zz_r2_previous_acceptance_test.go:51: exactly -2h included; older DB rescued by newer WAL; older-than-threshold thread excluded
+--- PASS: TestR2PreviousThresholdInclusiveAndWAL (0.01s)
+=== RUN   TestR2PreviousRejectNonUUIDDatabase
+    zz_r2_previous_acceptance_test.go:64: scan result: [{ThreadID:11111111-1111-4111-8111-111111111111 Project: IsMainPane:true Model:}]
+--- PASS: TestR2PreviousRejectNonUUIDDatabase (0.01s)
+=== RUN   TestR2PreviousSQLiteWorkspaceColumn
+    zz_r2_previous_acceptance_test.go:83: workspace_uris says C:/ActualProject; scanner returned "C:/ActualProject"
+--- PASS: TestR2PreviousSQLiteWorkspaceColumn (0.01s)
+=== RUN   TestR2PreviousStoragePathDoesNotReplaceConversationsDirectory
+    zz_r2_previous_acceptance_test.go:105: configured app_storage path: capture path="C:\\Users\\TAMNGU~1\\AppData\\Local\\Temp\\TestR2PreviousStoragePathDoesNotReplaceConversationsDirectory2664408725\\002\\2026-10-18-09-26-40_active_threads.json" threads=[{ThreadID:11111111-1111-4111-8111-111111111111 Project: IsMainPane:true Model:}] error=<nil>
+--- PASS: TestR2PreviousStoragePathDoesNotReplaceConversationsDirectory (0.02s)
+=== RUN   TestR2PreviousFirstThreadFailureStillPacesAndSendsRemainingThreads
+    zz_r2_previous_acceptance_test.go:171: ordered events=[model SmartFocusConversation:11111111-1111-4111-8111-111111111111 LoadTrajectory:11111111-1111-4111-8111-111111111111 SendUserCascadeMessage:11111111-1111-4111-8111-111111111111 sleep:3s SmartFocusConversation:22222222-2222-4222-8222-222222222222 LoadTrajectory:22222222-2222-4222-8222-222222222222 SendUserCascadeMessage:22222222-2222-4222-8222-222222222222 sleep:3s SmartFocusConversation:33333333-3333-4333-8333-333333333333 LoadTrajectory:33333333-3333-4333-8333-333333333333 SendUserCascadeMessage:33333333-3333-4333-8333-333333333333] summary=&{TotalThreads:3 SuccessCount:2 FailedCount:1 SuccessThreads:[22222222-2222-4222-8222-222222222222 33333333-3333-4333-8333-333333333333] Errors:[Thread 11111111-1111-4111-8111-111111111111: SendUserCascadeMessage error: SendUserCascadeMessage returned HTTP 500]}
+--- PASS: TestR2PreviousFirstThreadFailureStillPacesAndSendsRemainingThreads (0.01s)
+PASS
+ok  	antigravity-switch/internal/reloader	2.546s
+=== RUN   TestR2RAMGateEveryOutcome
+=== RUN   TestR2RAMGateEveryOutcome/target
+    zz_r2_acceptance_test.go:110: scenario=target success=true error=<nil> credential_email=target@r2.invalid status_after_kill=1 continued=1 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/stale
+    zz_r2_acceptance_test.go:110: scenario=stale success=false error=identity mismatch in RAM: expected target@r2.invalid, got old@r2.invalid credential_email=target@r2.invalid status_after_kill=1 continued=0 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/http-error
+    zz_r2_acceptance_test.go:110: scenario=http-error success=false error=failed verifying user status in RAM: no candidate endpoint responded successfully: endpoint /exa.language_server_pb.LanguageServerService/GetUserStatus returned HTTP 500 credential_email=target@r2.invalid status_after_kill=1 continued=0 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/empty-email
+    zz_r2_acceptance_test.go:110: scenario=empty-email success=false error=failed verifying user status in RAM: %!w(<nil>) credential_email=target@r2.invalid status_after_kill=1 continued=0 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/nil-client-with-error
+    zz_r2_acceptance_test.go:110: scenario=nil-client-with-error success=false error=failed discovering or connecting to respawned language server: synthetic discovery failure credential_email=target@r2.invalid status_after_kill=0 continued=0 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/nil-client-without-error
+    zz_r2_acceptance_test.go:110: scenario=nil-client-without-error success=true error=<nil> credential_email=target@r2.invalid status_after_kill=0 continued=0 finder_after_kill=1 waits=[8s]
+    zz_r2_acceptance_test.go:119: unverified RAM identity must return Success=false and an error, including nil client with nil discovery error
+--- FAIL: TestR2RAMGateEveryOutcome (0.31s)
+    --- PASS: TestR2RAMGateEveryOutcome/target (0.06s)
+    --- PASS: TestR2RAMGateEveryOutcome/stale (0.06s)
+    --- PASS: TestR2RAMGateEveryOutcome/http-error (0.05s)
+    --- PASS: TestR2RAMGateEveryOutcome/empty-email (0.05s)
+    --- PASS: TestR2RAMGateEveryOutcome/nil-client-with-error (0.05s)
+    --- FAIL: TestR2RAMGateEveryOutcome/nil-client-without-error (0.04s)
+=== RUN   TestR2ExactDiskSnapshotAfterEightSecondWaitAndRAM
+    zz_r2_acceptance_test.go:188: events=[snapshot write-credential kill wait:8s discover new-client ram-confirm continue]; disk list used despite deliberately different capture memory list
+--- PASS: TestR2ExactDiskSnapshotAfterEightSecondWaitAndRAM (0.05s)
+FAIL
+FAIL	antigravity-switch/internal/manager	2.801s
+FAIL
