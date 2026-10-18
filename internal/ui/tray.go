@@ -47,9 +47,10 @@ func (a *App) setupTray() {
 
 	if a.win != nil {
 		desk.SetSystemTrayWindow(a.win)
-		// Minimize to tray on close
+		// Close window intercept: Thoát sạch hoàn toàn ứng dụng
 		a.win.SetCloseIntercept(func() {
-			a.win.Hide()
+			a.Close()    // 1. Dừng mọi background loop, timer, dọn dẹp tài nguyên
+			a.app.Quit() // 2. Thoát hoàn toàn tiến trình Fyne GUI và System Tray
 		})
 	}
 }
