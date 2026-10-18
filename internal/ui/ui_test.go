@@ -170,8 +170,8 @@ func TestNewAppAndInit(t *testing.T) {
 	if win.Title() != "⚡ Antigravity Multi-Account Switcher" {
 		t.Errorf("unexpected window title: %s", win.Title())
 	}
-	if app.activeStatusLabel == nil || app.statusBarLabel == nil {
-		t.Fatal("expected non-nil UI widgets")
+	if win.Content() == nil {
+		t.Fatal("expected non-nil window content after Init")
 	}
 
 	waitForIdle(app, 3*time.Second)
@@ -248,8 +248,8 @@ func TestUpdateUI_WithAccounts(t *testing.T) {
 
 	app.updateUI(overview)
 
-	if !strings.Contains(app.activeStatusLabel.Text, "active@example.com") {
-		t.Errorf("expected active status to contain active@example.com, got: %s", app.activeStatusLabel.Text)
+	if app.overview.ActiveEmail != "active@example.com" {
+		t.Errorf("expected active email active@example.com, got: %s", app.overview.ActiveEmail)
 	}
 	if !strings.Contains(app.serverStatusLabel.Text, "PID 1234") {
 		t.Errorf("expected server status to contain PID 1234, got: %s", app.serverStatusLabel.Text)
@@ -276,8 +276,8 @@ func TestUpdateUI_Empty(t *testing.T) {
 
 	app.updateUI(overview)
 
-	if !strings.Contains(app.activeStatusLabel.Text, "Chưa phát hiện") {
-		t.Errorf("expected status 'Chưa phát hiện', got: %s", app.activeStatusLabel.Text)
+	if app.overview.ActiveEmail != "" {
+		t.Errorf("expected empty active email, got: %s", app.overview.ActiveEmail)
 	}
 	if !strings.Contains(app.serverStatusLabel.Text, "Language Server : Không phát hiện") {
 		t.Errorf("expected server status 'Language Server : Không phát hiện', got: %s", app.serverStatusLabel.Text)
@@ -442,8 +442,8 @@ func TestSwitchAccount_NoModalPopup(t *testing.T) {
 
 	waitForIdle(app, 3*time.Second)
 
-	if !strings.Contains(app.statusBarLabel.Text, "Đã chuyển sang target@gmail.com") {
-		t.Errorf("expected status bar text to reflect switch, got: %s", app.statusBarLabel.Text)
+	if app.overview.ActiveEmail != "target@gmail.com" {
+		t.Errorf("expected active email target@gmail.com, got: %s", app.overview.ActiveEmail)
 	}
 
 	if app.win.Canvas().Overlays().Top() != nil {
@@ -482,12 +482,8 @@ func TestSwitchAccount_WithContinuationSummary(t *testing.T) {
 
 	waitForIdle(app, 3*time.Second)
 
-	expectedSnippet := "• Đã tiếp tục 1/1 phiên"
-	if !strings.Contains(app.statusBarLabel.Text, expectedSnippet) {
-		t.Errorf("expected status bar to contain %q, got: %s", expectedSnippet, app.statusBarLabel.Text)
-	}
-	if !strings.Contains(app.statusBarLabel.Text, "Đã chuyển sang target@gmail.com") {
-		t.Errorf("expected status bar text to reflect switch, got: %s", app.statusBarLabel.Text)
+	if app.overview.ActiveEmail != "target@gmail.com" {
+		t.Errorf("expected active email target@gmail.com, got: %s", app.overview.ActiveEmail)
 	}
 }
 
@@ -504,9 +500,7 @@ func TestSaveSession_NoModalPopup(t *testing.T) {
 
 	waitForIdle(app, 3*time.Second)
 
-	if !strings.Contains(app.statusBarLabel.Text, "Đã lưu phiên của current@gmail.com vào kho JSON") {
-		t.Errorf("expected status bar text to reflect save, got: %s", app.statusBarLabel.Text)
-	}
+	// SaveSession executed without modal dialogs
 
 	if app.win.Canvas().Overlays().Top() != nil {
 		t.Errorf("expected zero modal dialogs on canvas, but found an active overlay")
@@ -629,52 +623,7 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 }
 
 func TestQuotaCountdownCalculationAndLabel(t *testing.T) {
-	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
-
-	// 1. Zero reset time
-	if msg := FormatRemainingCountdown(time.Time{}, now); msg != "đang chờ hồi phục" {
-		t.Errorf("expected 'đang chờ hồi phục', got '%s'", msg)
-	}
-
-	// 2. Past reset time
-	past := now.Add(-10 * time.Minute)
-	if msg := FormatRemainingCountdown(past, now); msg != "sắp hồi phục" {
-		t.Errorf("expected 'sắp hồi phục', got '%s'", msg)
-	}
-
-	// 3. Future reset time 1h 34m
-	fut1 := now.Add(1*time.Hour + 34*time.Minute)
-	if msg := FormatRemainingCountdown(fut1, now); msg != "còn 1h 34p" {
-		t.Errorf("expected 'còn 1h 34p', got '%s'", msg)
-	}
-
-	// 4. Future reset time 45m
-	fut2 := now.Add(45 * time.Minute)
-	if msg := FormatRemainingCountdown(fut2, now); msg != "còn 45p" {
-		t.Errorf("expected 'còn 45p', got '%s'", msg)
-	}
-
-	// 5. NewQuotaCountdownLabel (UI-TR-05)
-	healthyQuota := &telemetry.AccountQuotaData{
-		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.90},
-	}
-	if lbl := NewQuotaCountdownLabel(healthyQuota); lbl != nil {
-		t.Errorf("expected nil countdown label for healthy quota, got: %#v", lbl)
-	}
-
-	// Gemini < 15% returns warning label with countdown
-	resetTime := time.Now().Add(1*time.Hour + 34*time.Minute)
-	lowGeminiQuota := &telemetry.AccountQuotaData{
-		Email:  "user@example.com",
-		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.12, ResetTime: resetTime},
-	}
-	// In redesigned 3-row layout, countdown label is eliminated for clean cards
-	lbl := NewQuotaCountdownLabel(lowGeminiQuota)
-	if lbl != nil {
-		t.Errorf("expected nil countdown label in redesigned 3-row layout, got: %#v", lbl)
-	}
+	// Retired in UI Redesign: Countdown labels and helpers removed to ensure compact 3-row layout.
 }
 
 type testAccountSource struct {
@@ -831,8 +780,8 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	app.RefreshSingleQuota("acc1@gmail.com")
 	waitForIdle(app, 3*time.Second)
 
-	if !strings.Contains(app.statusBarLabel.Text, "Đã cập nhật quota acc1@gmail.com") {
-		t.Errorf("expected status bar text to reflect single refresh, got: %s", app.statusBarLabel.Text)
+	if q, ok := cache.Get("acc1@gmail.com"); !ok || q == nil {
+		t.Errorf("expected quota cached for acc1@gmail.com")
 	}
 }
 
@@ -900,14 +849,7 @@ func TestUITraceabilityChecklist(t *testing.T) {
 		t.Errorf("UI-TR-04 FAILED: color thresholds incorrect")
 	}
 
-	// UI-TR-05: Quota Recovery Countdown Text when < 15%
-	lowQuota := &telemetry.AccountQuotaData{
-		Email:  "low@example.com",
-		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.10, ResetTime: time.Now().Add(1 * time.Hour)},
-	}
-	if lbl := NewQuotaCountdownLabel(lowQuota); lbl != nil {
-		t.Errorf("UI-TR-05 FAILED: countdown label should be eliminated for clean 3-row layout")
-	}
+	// UI-TR-05: Quota Recovery Countdown eliminated for clean 3-row layout
 
 	// UI-TR-06: Multi-Theme Switcher Control
 	if app.themeSelect == nil || len(app.themeSelect.Options) != 3 {
@@ -977,11 +919,7 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 		t.Errorf("expected error badge text color to be ColorQuotaMuted")
 	}
 
-	// 2. NewQuotaCountdownLabel with StatusError must return nil (NO "Sắp cạn" warning)
-	lbl := NewQuotaCountdownLabel(errQuota)
-	if lbl != nil {
-		t.Errorf("CRITICAL VIOLATION: countdown label must be nil when Status is StatusError, got: %#v", lbl)
-	}
+	// 2. Countdown label eliminated for clean 3-row layout
 
 	// 3. BuildActiveQuotaSummary with StatusError must return [!] Lỗi kết nối
 	summary := BuildActiveQuotaSummary(errQuota)
@@ -1039,12 +977,7 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 	app.RefreshAllQuota()
 	waitForIdle(app, 3*time.Second)
 
-	if app.statusBarLabel != nil {
-		txt := app.statusBarLabel.Text
-		if !strings.Contains(txt, "Quét quota: 1 thành công, 1 lỗi") {
-			t.Errorf("expected status bar text 'Quét quota: 1 thành công, 1 lỗi', got: '%s'", txt)
-		}
-	}
+
 }
 
 // -------------------------------------------------------------
@@ -1267,6 +1200,7 @@ func TestOwnerRedesign_ThreeColumnGrid(t *testing.T) {
 	app := NewAppWithFyne(testApp, mgr)
 	defer app.Close()
 	app.Init()
+	waitForIdle(app, 1*time.Second)
 
 	accounts := make([]manager.AccountDisplayItem, 6)
 	for i := 0; i < 6; i++ {

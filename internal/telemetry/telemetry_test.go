@@ -126,9 +126,7 @@ func TestQuotaClient_RetrieveUserQuota_Success(t *testing.T) {
 	if data.Gemini.RemainingFraction != 0.235 {
 		t.Errorf("expected Gemini 0.235, got %f", data.Gemini.RemainingFraction)
 	}
-	if data.GPT.RemainingFraction != 1.0 {
-		t.Errorf("expected GPT 1.0, got %f", data.GPT.RemainingFraction)
-	}
+
 	if !data.ResetTime.Equal(expectedReset.UTC()) {
 		t.Errorf("expected ResetTime %v, got %v", expectedReset.UTC(), data.ResetTime)
 	}
@@ -183,9 +181,7 @@ func TestQuotaClient_RetrieveUserQuota_SnakeCaseAndProtobuf(t *testing.T) {
 	if data.Gemini.RemainingFraction != 0.0 {
 		t.Errorf("expected Gemini 0.0, got %f", data.Gemini.RemainingFraction)
 	}
-	if data.GPT.RemainingFraction != 0.10 {
-		t.Errorf("expected GPT 0.10, got %f", data.GPT.RemainingFraction)
-	}
+
 	if data.Status != StatusDepleted {
 		t.Errorf("expected Status '%s', got '%s'", StatusDepleted, data.Status)
 	}
@@ -439,7 +435,6 @@ func (m *mockQuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken st
 	return &AccountQuotaData{
 		Claude:      ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 1.0},
 		Gemini:      ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 0.95},
-		GPT:         ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: 1.0},
 		Status:      StatusPlentiful,
 		LastUpdated: time.Now().UTC(),
 	}, nil
@@ -1137,7 +1132,6 @@ func TestHybridTelemetry_ActiveAccountConnectRPC(t *testing.T) {
 				Email:  email,
 				Claude: ModelQuotaBucket{RemainingFraction: 0.95},
 				Gemini: ModelQuotaBucket{RemainingFraction: 0.90},
-				GPT:    ModelQuotaBucket{RemainingFraction: 0.95},
 				Status: StatusPlentiful,
 			}, nil
 		}

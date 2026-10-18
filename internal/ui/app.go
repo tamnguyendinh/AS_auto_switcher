@@ -42,11 +42,8 @@ type App struct {
 
 	// Dynamic UI Widgets
 	activeDotContainer   *fyne.Container
-	activeStatusLabel    *widget.Label
-	activeQuotaLabel     *widget.Label
 	serverStatusLabel    *widget.Label
 	accountListContainer *fyne.Container
-	statusBarLabel       *widget.Label
 	refreshBtn           *widget.Button
 	quotaRefreshAllBtn   *widget.Button
 	autoRefreshLabel     *widget.Label
@@ -54,7 +51,6 @@ type App struct {
 	alwaysOnTopBtn       *widget.Button
 	themeSelect          *widget.Select
 	monogramBg           *canvas.Rectangle
-	headerBg             *canvas.Rectangle
 	accountScroll        *container.Scroll
 }
 
@@ -183,11 +179,7 @@ func (a *App) SetTheme(themeName string) {
 		a.monogramBg.FillColor = palette.Primary
 		a.monogramBg.Refresh()
 	}
-	if a.headerBg != nil {
-		a.headerBg.FillColor = palette.Card
-		a.headerBg.StrokeColor = palette.BorderSubtle
-		a.headerBg.Refresh()
-	}
+
 
 	a.mu.RLock()
 	overview := a.overview
@@ -238,9 +230,7 @@ func (a *App) Init() {
 				if a.autoRefreshLabel != nil {
 					a.autoRefreshLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
 				}
-				if a.statusBarLabel != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Tự động cập nhật quota lúc %s (%d tài khoản)", nowStr, len(results)))
-				}
+
 			})
 		})
 		_ = a.autoLoop.Start(context.Background())
@@ -294,9 +284,7 @@ func (a *App) RefreshAllQuota() {
 		a.quotaRefreshAllBtn.SetText("⏳ Đang quét...")
 		a.quotaRefreshAllBtn.Disable()
 	}
-	if a.statusBarLabel != nil {
-		a.statusBarLabel.SetText("Đang quét hạn ngạch toàn bộ tài khoản...")
-	}
+
 
 	go func() {
 		completed := false
@@ -319,7 +307,7 @@ func (a *App) RefreshAllQuota() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		_, successCount, errorCount, err := a.telemetryPool.PollAll(ctx)
+		_, _, _, _ = a.telemetryPool.PollAll(ctx)
 		if a.quotaCache != nil {
 			_ = a.quotaCache.SaveToDisk()
 		}
@@ -344,13 +332,7 @@ func (a *App) RefreshAllQuota() {
 			if a.autoRefreshLabel != nil {
 				a.autoRefreshLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
 			}
-			if a.statusBarLabel != nil {
-				if err != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Lỗi quét quota: %v", err))
-				} else {
-					a.statusBarLabel.SetText(fmt.Sprintf("Quét quota: %d thành công, %d lỗi", successCount, errorCount))
-				}
-			}
+
 			if a.quotaRefreshAllBtn != nil {
 				a.quotaRefreshAllBtn.SetText("🔄 Làm mới Quota")
 				a.quotaRefreshAllBtn.Enable()
@@ -370,11 +352,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 		return
 	}
 
-	if a.statusBarLabel != nil {
-		fyne.Do(func() {
-			a.statusBarLabel.SetText(fmt.Sprintf("Đang làm mới quota của %s...", email))
-		})
-	}
+
 
 	go func() {
 		defer a.accountRefreshing.Delete(email)
@@ -386,7 +364,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
-		data, err := a.telemetryPool.PollAccount(ctx, email)
+		data, _ := a.telemetryPool.PollAccount(ctx, email)
 		if a.quotaCache != nil {
 			_ = a.quotaCache.SaveToDisk()
 		}
@@ -435,17 +413,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 			if a.lastUpdatedLabel != nil {
 				a.lastUpdatedLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
 			}
-			if a.statusBarLabel != nil {
-				if err != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Lỗi làm mới quota %s: %v", email, err))
-				} else if data != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Đã cập nhật quota %s (Claude: %s, Gemini: %s)",
-						email,
-						formatFraction(data.Claude.RemainingFraction),
-						formatFraction(data.Gemini.RemainingFraction),
-					))
-				}
-			}
+
 		})
 	}()
 }
@@ -471,11 +439,7 @@ func (a *App) Refresh() {
 		})
 	}
 
-	if a.statusBarLabel != nil {
-		fyne.Do(func() {
-			a.statusBarLabel.SetText("Đang quét tài khoản Chrome & kho lưu trữ...")
-		})
-	}
+
 
 	go func() {
 		defer func() {
@@ -498,11 +462,7 @@ func (a *App) Refresh() {
 
 		overview, err := a.mgr.GetAccountStates(ctx)
 		if err != nil {
-			fyne.Do(func() {
-				if a.statusBarLabel != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Lỗi làm mới: %v", err))
-				}
-			})
+
 			return
 		}
 
@@ -533,11 +493,7 @@ func (a *App) SwitchAccount(targetEmail string) {
 	a.isBusy = true
 	a.mu.Unlock()
 
-	if a.statusBarLabel != nil {
-		fyne.Do(func() {
-			a.statusBarLabel.SetText(fmt.Sprintf("Đang chuyển sang %s...", targetEmail))
-		})
-	}
+
 
 	go func() {
 		defer func() {
@@ -550,13 +506,10 @@ func (a *App) SwitchAccount(targetEmail string) {
 			return
 		}
 
-		res, err := a.mgr.SwitchAccount(context.Background(), targetEmail, false)
+		_, err := a.mgr.SwitchAccount(context.Background(), targetEmail, false)
 
 		if err != nil {
 			fyne.Do(func() {
-				if a.statusBarLabel != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Chuyển thất bại: %v", err))
-				}
 				if a.win != nil {
 					dialog.ShowError(err, a.win)
 				}
@@ -572,15 +525,6 @@ func (a *App) SwitchAccount(targetEmail string) {
 
 		fyne.Do(func() {
 			a.updateUI(overview)
-			if a.statusBarLabel != nil {
-				statusText := fmt.Sprintf("Đã chuyển sang %s (%s)", res.TargetEmail, res.Duration.Round(time.Millisecond))
-				if res != nil && res.ContinuationSummary != nil && res.ContinuationSummary.TotalThreads > 0 {
-					statusText = fmt.Sprintf("Đã chuyển sang %s (%s) • Đã tiếp tục %d/%d phiên",
-						res.TargetEmail, res.Duration.Round(time.Millisecond),
-						res.ContinuationSummary.SuccessCount, res.ContinuationSummary.TotalThreads)
-				}
-				a.statusBarLabel.SetText(statusText)
-			}
 		})
 	}()
 }
@@ -595,11 +539,7 @@ func (a *App) SaveSession() {
 	a.isBusy = true
 	a.mu.Unlock()
 
-	if a.statusBarLabel != nil {
-		fyne.Do(func() {
-			a.statusBarLabel.SetText("Đang lưu phiên làm việc hiện tại vào kho JSON...")
-		})
-	}
+
 
 	go func() {
 		defer func() {
@@ -612,12 +552,9 @@ func (a *App) SaveSession() {
 			return
 		}
 
-		email, err := a.mgr.CaptureCurrentSession()
+		_, err := a.mgr.CaptureCurrentSession()
 		if err != nil {
 			fyne.Do(func() {
-				if a.statusBarLabel != nil {
-					a.statusBarLabel.SetText(fmt.Sprintf("Lưu phiên thất bại: %v", err))
-				}
 				if a.win != nil {
 					dialog.ShowError(err, a.win)
 				}
@@ -635,9 +572,6 @@ func (a *App) SaveSession() {
 
 		fyne.Do(func() {
 			a.updateUI(overview)
-			if a.statusBarLabel != nil {
-				a.statusBarLabel.SetText(fmt.Sprintf("Đã lưu phiên của %s vào kho JSON", email))
-			}
 		})
 	}()
 }
@@ -662,13 +596,7 @@ func (a *App) ToggleAlwaysOnTop() {
 		a.alwaysOnTopBtn.Refresh()
 	}
 
-	if a.statusBarLabel != nil {
-		if enabled {
-			a.statusBarLabel.SetText("Đã bật chế độ Ghim trên cùng (Always on Top)")
-		} else {
-			a.statusBarLabel.SetText("Đã tắt chế độ Ghim trên cùng")
-		}
-	}
+
 }
 
 // SetAlwaysOnTop explicitly sets the Always-on-Top state.
@@ -703,6 +631,9 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 	if overview == nil {
 		return
 	}
+	a.mu.Lock()
+	a.overview = overview
+	a.mu.Unlock()
 
 	palette := GetThemePalette(a.currentTheme)
 
@@ -717,34 +648,14 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 
 	// 2. Active Account info in-memory tracking
 	if overview.ActiveEmail != "" {
-		if a.activeStatusLabel != nil {
-			a.activeStatusLabel.SetText(fmt.Sprintf("● Đang hoạt động: %s", overview.ActiveEmail))
-		}
 		if a.activeDotContainer != nil {
 			a.activeDotContainer.Objects = []fyne.CanvasObject{NewStatusDot(palette.Success, 12)}
 			a.activeDotContainer.Refresh()
 		}
-		if a.activeQuotaLabel != nil {
-			if a.quotaCache != nil {
-				if activeQuota, exists := a.quotaCache.Get(overview.ActiveEmail); exists {
-					a.activeQuotaLabel.SetText(BuildActiveQuotaSummary(activeQuota))
-				} else {
-					a.activeQuotaLabel.SetText("Hạn ngạch: Chưa có dữ liệu telemetry")
-				}
-			} else {
-				a.activeQuotaLabel.SetText("Hạn ngạch: Telemetry chưa kích hoạt")
-			}
-		}
 	} else {
-		if a.activeStatusLabel != nil {
-			a.activeStatusLabel.SetText("● Chưa phát hiện phiên Antigravity")
-		}
 		if a.activeDotContainer != nil {
 			a.activeDotContainer.Objects = []fyne.CanvasObject{NewStatusDot(palette.Warning, 12)}
 			a.activeDotContainer.Refresh()
-		}
-		if a.activeQuotaLabel != nil {
-			a.activeQuotaLabel.SetText("Hạn ngạch: Không có tài khoản hoạt động")
 		}
 	}
 
@@ -785,16 +696,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 		a.autoRefreshLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
 	}
 
-	// 5. In-memory status bar for legacy callers
-	if a.statusBarLabel != nil {
-		storedCount := 0
-		for _, acc := range overview.Accounts {
-			if acc.HasToken {
-				storedCount++
-			}
-		}
-		a.statusBarLabel.SetText(fmt.Sprintf("Đồng bộ lúc %s • %d tài khoản trong kho JSON • %d trên Chrome", nowStr, storedCount, len(overview.Accounts)))
-	}
+
 }
 
 // Logo returns the brand logo static resource.

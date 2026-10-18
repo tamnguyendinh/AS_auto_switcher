@@ -162,26 +162,26 @@ func TestAppSetThemeRuntime(t *testing.T) {
 	if app.CurrentTheme() != ThemeDark {
 		t.Errorf("expected initial theme %s, got %s", ThemeDark, app.CurrentTheme())
 	}
-	assertColorMatches(t, "Init(Dark)", "headerBg.FillColor", app.headerBg.FillColor, DarkPalette.Card)
+	assertColorMatches(t, "Init(Dark)", "monogramBg.FillColor", app.monogramBg.FillColor, DarkPalette.Primary)
 
 	// Switch to Light (UI-TR-06)
 	app.SetTheme(ThemeLight)
 	if app.CurrentTheme() != ThemeLight {
 		t.Errorf("expected theme %s, got %s", ThemeLight, app.CurrentTheme())
 	}
-	assertColorMatches(t, "SetTheme(Light)", "headerBg.FillColor", app.headerBg.FillColor, LightPalette.Card)
+	assertColorMatches(t, "SetTheme(Light)", "monogramBg.FillColor", app.monogramBg.FillColor, LightPalette.Primary)
 
 	// Switch to Warm (UI-TR-07)
 	app.SetTheme(ThemeWarm)
 	if app.CurrentTheme() != ThemeWarm {
 		t.Errorf("expected theme %s, got %s", ThemeWarm, app.CurrentTheme())
 	}
-	assertColorMatches(t, "SetTheme(Warm)", "headerBg.FillColor", app.headerBg.FillColor, WarmPalette.Card)
+	assertColorMatches(t, "SetTheme(Warm)", "monogramBg.FillColor", app.monogramBg.FillColor, WarmPalette.Primary)
 
 	// Switch back to Dark
 	app.SetTheme(ThemeDark)
 	if app.CurrentTheme() != ThemeDark {
 		t.Errorf("expected theme %s, got %s", ThemeDark, app.CurrentTheme())
 	}
-	assertColorMatches(t, "SetTheme(Dark)", "headerBg.FillColor", app.headerBg.FillColor, DarkPalette.Card)
+	assertColorMatches(t, "SetTheme(Dark)", "monogramBg.FillColor", app.monogramBg.FillColor, DarkPalette.Primary)
 }

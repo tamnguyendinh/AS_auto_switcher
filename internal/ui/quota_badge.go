@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image/color"
 	"strings"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -30,29 +29,6 @@ func GetQuotaTierColor(fraction float64) color.Color {
 		return ColorQuotaAmber
 	}
 	return ColorQuotaRed
-}
-
-// FormatRemainingCountdown formats the time remaining until resetTime as (còn Xh Yp).
-func FormatRemainingCountdown(resetTime time.Time, now time.Time) string {
-	if resetTime.IsZero() {
-		return "đang chờ hồi phục"
-	}
-
-	dur := resetTime.Sub(now)
-	if dur <= 0 {
-		return "sắp hồi phục"
-	}
-
-	hours := int(dur.Hours())
-	mins := int(dur.Minutes()) % 60
-
-	if hours > 0 {
-		return fmt.Sprintf("còn %dh %dp", hours, mins)
-	}
-	if mins > 0 {
-		return fmt.Sprintf("còn %dp", mins)
-	}
-	return "dưới 1 phút"
 }
 
 // formatFraction formats the fraction [0.0, 1.0] as a percentage string.
@@ -86,10 +62,10 @@ type DualCycleQuota struct {
 // ExtractDualCycleQuota parses 5h and weekly buckets from AccountQuotaData.
 func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
 	if quota == nil {
-		return DualCycleQuota{HasData: false}
+		return DualCycleQuota{Claude5h: -1, ClaudeWeek: -1, Gemini5h: -1, GeminiWeek: -1, HasData: false}
 	}
 	if quota.Status == telemetry.StatusError || quota.ErrorMessage != "" {
-		return DualCycleQuota{HasData: false, IsError: true}
+		return DualCycleQuota{Claude5h: -1, ClaudeWeek: -1, Gemini5h: -1, GeminiWeek: -1, HasData: false, IsError: true}
 	}
 
 	dq := DualCycleQuota{
@@ -103,6 +79,9 @@ func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
 
 	// Priority 1: Extract from RawBuckets if available
 	for _, b := range quota.RawBuckets {
+		if b.RemainingFraction < 0 {
+			continue
+		}
 		lower := strings.ToLower(b.ModelID)
 		is5h := strings.Contains(lower, "5h")
 		isWeek := strings.Contains(lower, "week")
@@ -126,8 +105,9 @@ func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
 		}
 	}
 
-	// Priority 2: Extract from ModelQuotaBucket FiveHourFraction and WeeklyFraction if explicitly set
-	hasClaudeCycles := quota.Claude.FiveHourFraction > 0 || quota.Claude.WeeklyFraction > 0 || !quota.Claude.FiveHourReset.IsZero() || !quota.Claude.WeeklyReset.IsZero()
+	// Priority 2: Extract from ModelQuotaBucket FiveHourFraction and WeeklyFraction if explicitly set (>= 0)
+	hasClaudeCycles := (quota.Claude.FiveHourFraction > 0 || quota.Claude.WeeklyFraction > 0 || !quota.Claude.FiveHourReset.IsZero() || !quota.Claude.WeeklyReset.IsZero()) ||
+		(quota.Claude.FiveHourFraction == 0 && (quota.Claude.WeeklyFraction != 0 || quota.Claude.RemainingFraction == 0))
 	if hasClaudeCycles {
 		if quota.Claude.FiveHourFraction >= 0 && dq.Claude5h < 0 {
 			dq.Claude5h = quota.Claude.FiveHourFraction
@@ -139,7 +119,8 @@ func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
 		}
 	}
 
-	hasGeminiCycles := quota.Gemini.FiveHourFraction > 0 || quota.Gemini.WeeklyFraction > 0 || !quota.Gemini.FiveHourReset.IsZero() || !quota.Gemini.WeeklyReset.IsZero()
+	hasGeminiCycles := (quota.Gemini.FiveHourFraction > 0 || quota.Gemini.WeeklyFraction > 0 || !quota.Gemini.FiveHourReset.IsZero() || !quota.Gemini.WeeklyReset.IsZero()) ||
+		(quota.Gemini.FiveHourFraction == 0 && (quota.Gemini.WeeklyFraction != 0 || quota.Gemini.RemainingFraction == 0))
 	if hasGeminiCycles {
 		if quota.Gemini.FiveHourFraction >= 0 && dq.Gemini5h < 0 {
 			dq.Gemini5h = quota.Gemini.FiveHourFraction
@@ -155,12 +136,12 @@ func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
 	if !hasAnyBucket && (quota.Claude.RemainingFraction >= 0 || quota.Gemini.RemainingFraction >= 0) {
 		if quota.Claude.RemainingFraction >= 0 {
 			dq.Claude5h = quota.Claude.RemainingFraction
-			dq.ClaudeWeek = quota.Claude.RemainingFraction
+			dq.ClaudeWeek = -1 // Never synthesize weekly cycle from legacy single bucket
 			hasAnyBucket = true
 		}
 		if quota.Gemini.RemainingFraction >= 0 {
 			dq.Gemini5h = quota.Gemini.RemainingFraction
-			dq.GeminiWeek = quota.Gemini.RemainingFraction
+			dq.GeminiWeek = -1 // Never synthesize weekly cycle from legacy single bucket
 			hasAnyBucket = true
 		}
 	}
@@ -233,11 +214,6 @@ func NewDualCycleQuotaBadge(quota *telemetry.AccountQuotaData) fyne.CanvasObject
 // NewQuotaBadgeGroup delegates to NewDualCycleQuotaBadge for backwards compatibility with tests.
 func NewQuotaBadgeGroup(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
 	return NewDualCycleQuotaBadge(quota)
-}
-
-// NewQuotaCountdownLabel returns nil as countdown warnings are removed in the redesigned UI.
-func NewQuotaCountdownLabel(quota *telemetry.AccountQuotaData) fyne.CanvasObject {
-	return nil
 }
 
 // BuildActiveQuotaSummary builds a one-line summary string of active quota (Claude and Gemini only, no GPT).

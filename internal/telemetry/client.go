@@ -235,11 +235,37 @@ type ModelQuotaBucket struct {
 }
 
 // AccountQuotaData encapsulates the parsed quota telemetry across model families for one account.
+// UnmarshalJSON custom unmarshaler ensures cycle fractions default to -1 when absent in JSON (legacy cache).
+func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
+	type Alias ModelQuotaBucket
+	aux := &struct {
+		FiveHour *float64 `json:"five_hour_fraction"`
+		Weekly   *float64 `json:"weekly_fraction"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.FiveHour != nil {
+		m.FiveHourFraction = *aux.FiveHour
+	} else {
+		m.FiveHourFraction = -1
+	}
+	if aux.Weekly != nil {
+		m.WeeklyFraction = *aux.Weekly
+	} else {
+		m.WeeklyFraction = -1
+	}
+	return nil
+}
+
+// AccountQuotaData encapsulates the parsed quota telemetry across model families for one account.
 type AccountQuotaData struct {
 	Email        string             `json:"email"`
 	Claude       ModelQuotaBucket   `json:"claude"`
 	Gemini       ModelQuotaBucket   `json:"gemini"`
-	GPT          ModelQuotaBucket   `json:"-"`
 	RawBuckets   []ModelQuotaBucket `json:"raw_buckets,omitempty"`
 	ResetTime    time.Time          `json:"reset_time"` // Canonical reset time (UTC)
 	Status       string             `json:"status"`     // Pristine, Plentiful, Low Gemini, Depleted, Error
@@ -405,9 +431,9 @@ func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
 
 // AggregateBuckets parses raw buckets into standard Claude, Gemini, and GPT families, and computes status.
 func AggregateBuckets(rawBuckets []ModelQuotaBucket) (claude, gemini, gpt ModelQuotaBucket, canonicalReset time.Time, status string) {
-	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 1.0}
-	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 1.0}
-	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: 1.0}
+	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
 
 	hasClaude := false
 	hasGemini := false
@@ -417,46 +443,53 @@ func AggregateBuckets(rawBuckets []ModelQuotaBucket) (claude, gemini, gpt ModelQ
 		lower := strings.ToLower(b.ModelID)
 		switch {
 		case strings.Contains(lower, "claude"):
-			if !hasClaude || b.RemainingFraction < claude.RemainingFraction {
+			if !hasClaude || (b.RemainingFraction >= 0 && b.RemainingFraction < claude.RemainingFraction) {
 				claude = b
 				hasClaude = true
 			}
 		case strings.Contains(lower, "gemini"):
-			if !hasGemini || b.RemainingFraction < gemini.RemainingFraction {
+			if !hasGemini || (b.RemainingFraction >= 0 && b.RemainingFraction < gemini.RemainingFraction) {
 				gemini = b
 				hasGemini = true
 			}
 		case strings.Contains(lower, "gpt") || strings.Contains(lower, "oss"):
-			if !hasGPT || b.RemainingFraction < gpt.RemainingFraction {
+			if !hasGPT || (b.RemainingFraction >= 0 && b.RemainingFraction < gpt.RemainingFraction) {
 				gpt = b
 				hasGPT = true
 			}
 		}
 	}
 
-	// Canonical reset time: prefer the reset time of the lowest fraction bucket
-	minFrac := claude.RemainingFraction
-	canonicalReset = claude.ResetTime
+	if !hasClaude && !hasGemini && !hasGPT {
+		return claude, gemini, gpt, canonicalReset, ""
+	}
 
-	if gemini.RemainingFraction < minFrac {
-		minFrac = gemini.RemainingFraction
-		if !gemini.ResetTime.IsZero() {
+	minFrac := -1.0
+	if hasClaude && claude.RemainingFraction >= 0 {
+		minFrac = claude.RemainingFraction
+		canonicalReset = claude.ResetTime
+	}
+	if hasGemini && gemini.RemainingFraction >= 0 {
+		if minFrac < 0 || gemini.RemainingFraction < minFrac {
+			minFrac = gemini.RemainingFraction
+			if !gemini.ResetTime.IsZero() {
+				canonicalReset = gemini.ResetTime
+			}
+		} else if canonicalReset.IsZero() && !gemini.ResetTime.IsZero() {
 			canonicalReset = gemini.ResetTime
 		}
-	} else if canonicalReset.IsZero() && !gemini.ResetTime.IsZero() {
-		canonicalReset = gemini.ResetTime
 	}
-
-	if gpt.RemainingFraction < minFrac {
-		minFrac = gpt.RemainingFraction
-		if !gpt.ResetTime.IsZero() {
+	if hasGPT && gpt.RemainingFraction >= 0 {
+		if minFrac < 0 || gpt.RemainingFraction < minFrac {
+			minFrac = gpt.RemainingFraction
+			if !gpt.ResetTime.IsZero() {
+				canonicalReset = gpt.ResetTime
+			}
+		} else if canonicalReset.IsZero() && !gpt.ResetTime.IsZero() {
 			canonicalReset = gpt.ResetTime
 		}
-	} else if canonicalReset.IsZero() && !gpt.ResetTime.IsZero() {
-		canonicalReset = gpt.ResetTime
 	}
 
-	// If canonical reset is still zero, try any bucket with non-zero reset time
 	if canonicalReset.IsZero() {
 		for _, b := range rawBuckets {
 			if !b.ResetTime.IsZero() {
@@ -466,28 +499,29 @@ func AggregateBuckets(rawBuckets []ModelQuotaBucket) (claude, gemini, gpt ModelQ
 		}
 	}
 
-	// Determine status
-	if minFrac < 0.15 {
-		if claude.RemainingFraction < 0.15 && gemini.RemainingFraction < 0.15 && gpt.RemainingFraction < 0.15 {
+	if minFrac < 0 {
+		status = ""
+	} else if minFrac < 0.15 {
+		if (hasClaude && claude.RemainingFraction < 0.15) && (hasGemini && gemini.RemainingFraction < 0.15) {
 			status = StatusDepleted
-		} else if gemini.RemainingFraction < 0.15 {
+		} else if hasGemini && gemini.RemainingFraction < 0.15 {
 			status = StatusLowGemini
-		} else if claude.RemainingFraction < 0.15 {
+		} else if hasClaude && claude.RemainingFraction < 0.15 {
 			status = StatusLowClaude
 		} else {
 			status = StatusLowGPT
 		}
 	} else if minFrac <= 0.50 {
-		if gemini.RemainingFraction <= 0.50 && claude.RemainingFraction > 0.50 {
+		if hasGemini && gemini.RemainingFraction <= 0.50 && (!hasClaude || claude.RemainingFraction > 0.50) {
 			status = StatusLowGemini
-		} else if claude.RemainingFraction <= 0.50 && gemini.RemainingFraction > 0.50 {
+		} else if hasClaude && claude.RemainingFraction <= 0.50 && (!hasGemini || gemini.RemainingFraction > 0.50) {
 			status = StatusLowClaude
-		} else if gpt.RemainingFraction <= 0.50 {
+		} else if hasGPT && gpt.RemainingFraction <= 0.50 {
 			status = StatusLowGPT
 		} else {
 			status = StatusLow
 		}
-	} else if claude.RemainingFraction >= 1.0 && gemini.RemainingFraction >= 1.0 && gpt.RemainingFraction >= 1.0 {
+	} else if (!hasClaude || claude.RemainingFraction >= 1.0) && (!hasGemini || gemini.RemainingFraction >= 1.0) && (!hasGPT || gpt.RemainingFraction >= 1.0) {
 		status = StatusPristine
 	} else {
 		status = StatusPlentiful
@@ -540,17 +574,19 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 	}
 
 	// 4. Try summary payload with groups first
-	claude, gemini, gpt, rawBuckets, resetTime, status, summaryErr := ParseQuotaSummaryWithBuckets(bodyBytes)
-	if summaryErr == nil && len(rawBuckets) > 0 {
-		return &AccountQuotaData{
-			Claude:      claude,
-			Gemini:      gemini,
-			GPT:         gpt,
-			RawBuckets:  rawBuckets,
-			ResetTime:   resetTime,
-			Status:      status,
-			LastUpdated: time.Now().UTC(),
-		}, nil
+	claude, gemini, _, rawBuckets, resetTime, status, summaryErr := ParseQuotaSummaryWithBuckets(bodyBytes)
+	if summaryErr == nil {
+		var checkResp rawQuotaSummaryResponse
+		if json.Unmarshal(bodyBytes, &checkResp) == nil && (checkResp.Response.Groups != nil || checkResp.Groups != nil) {
+			return &AccountQuotaData{
+				Claude:      claude,
+				Gemini:      gemini,
+				RawBuckets:  rawBuckets,
+				ResetTime:   resetTime,
+				Status:      status,
+				LastUpdated: time.Now().UTC(),
+			}, nil
+		}
 	}
 
 	// 5. Fallback to legacy rawQuotaResponse with top-level "buckets"
@@ -565,12 +601,11 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 	}
 
 	// 6. Aggregate into model families
-	claude, gemini, gpt, resetTime, status = AggregateBuckets(rawBuckets)
+	claude, gemini, _, resetTime, status = AggregateBuckets(rawBuckets)
 
 	return &AccountQuotaData{
 		Claude:      claude,
 		Gemini:      gemini,
-		GPT:         gpt,
 		RawBuckets:  rawBuckets,
 		ResetTime:   resetTime,
 		Status:      status,
@@ -616,23 +651,33 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 	}
 
 	groups := resp.Response.Groups
-	if len(groups) == 0 {
+	hasGroups := resp.Response.Groups != nil
+	if len(groups) == 0 && resp.Groups != nil {
 		groups = resp.Groups
+		hasGroups = true
 	}
 
-	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1}
-	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1}
-	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: 1.0, FiveHourFraction: -1, WeeklyFraction: -1}
+	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+
+	if hasGroups && len(groups) == 0 {
+		return claude, gemini, gpt, nil, canonicalReset, "", nil
+	}
 
 	hasGemini := false
 	hasClaudeGPT := false
+	hasValidFraction := false
 
 	for _, g := range groups {
 		lowerGroup := strings.ToLower(g.DisplayName)
 		for _, b := range g.Buckets {
-			frac := 1.0
+			frac := -1.0
+			hasFrac := false
 			if b.RemainingFraction != nil {
 				frac = *b.RemainingFraction
+				hasFrac = true
+				hasValidFraction = true
 			}
 			var resetT time.Time
 			if strings.TrimSpace(b.ResetTime) != "" {
@@ -656,14 +701,14 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 			isWeek := strings.Contains(lowerID, "week") || strings.Contains(lowerWindow, "week")
 
 			if strings.Contains(lowerGroup, "gemini") || strings.Contains(lowerID, "gemini") {
-				if is5h {
+				if is5h && hasFrac {
 					gemini.FiveHourFraction = frac
 					gemini.FiveHourReset = resetT
-				} else if isWeek {
+				} else if isWeek && hasFrac {
 					gemini.WeeklyFraction = frac
 					gemini.WeeklyReset = resetT
 				}
-				if !hasGemini || frac < gemini.RemainingFraction {
+				if hasFrac && (!hasGemini || frac < gemini.RemainingFraction) {
 					gemini.RemainingFraction = frac
 					gemini.ResetTime = resetT
 					gemini.ModelID = b.BucketID
@@ -671,18 +716,18 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 				}
 			} else if strings.Contains(lowerGroup, "claude") || strings.Contains(lowerGroup, "gpt") || strings.Contains(lowerGroup, "3p") ||
 				strings.Contains(lowerID, "claude") || strings.Contains(lowerID, "3p") {
-				if is5h {
+				if is5h && hasFrac {
 					claude.FiveHourFraction = frac
 					claude.FiveHourReset = resetT
 					gpt.FiveHourFraction = frac
 					gpt.FiveHourReset = resetT
-				} else if isWeek {
+				} else if isWeek && hasFrac {
 					claude.WeeklyFraction = frac
 					claude.WeeklyReset = resetT
 					gpt.WeeklyFraction = frac
 					gpt.WeeklyReset = resetT
 				}
-				if !hasClaudeGPT || frac < claude.RemainingFraction {
+				if hasFrac && (!hasClaudeGPT || frac < claude.RemainingFraction) {
 					claude.RemainingFraction = frac
 					claude.ResetTime = resetT
 					claude.ModelID = b.BucketID
@@ -696,48 +741,47 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 		}
 	}
 
-	minFrac := claude.RemainingFraction
-	canonicalReset = claude.ResetTime
+	if !hasValidFraction {
+		return claude, gemini, gpt, rawBuckets, canonicalReset, "", nil
+	}
 
-	if gemini.RemainingFraction < minFrac {
-		minFrac = gemini.RemainingFraction
-		if !gemini.ResetTime.IsZero() {
+	minFrac := -1.0
+	if hasClaudeGPT && claude.RemainingFraction >= 0 {
+		minFrac = claude.RemainingFraction
+		canonicalReset = claude.ResetTime
+	}
+	if hasGemini && gemini.RemainingFraction >= 0 {
+		if minFrac < 0 || gemini.RemainingFraction < minFrac {
+			minFrac = gemini.RemainingFraction
+			if !gemini.ResetTime.IsZero() {
+				canonicalReset = gemini.ResetTime
+			}
+		} else if canonicalReset.IsZero() && !gemini.ResetTime.IsZero() {
 			canonicalReset = gemini.ResetTime
 		}
-	} else if canonicalReset.IsZero() && !gemini.ResetTime.IsZero() {
-		canonicalReset = gemini.ResetTime
 	}
 
-	if gpt.RemainingFraction < minFrac {
-		minFrac = gpt.RemainingFraction
-		if !gpt.ResetTime.IsZero() {
-			canonicalReset = gpt.ResetTime
-		}
-	} else if canonicalReset.IsZero() && !gpt.ResetTime.IsZero() {
-		canonicalReset = gpt.ResetTime
-	}
-
-	if minFrac < 0.15 {
-		if claude.RemainingFraction < 0.15 && gemini.RemainingFraction < 0.15 && gpt.RemainingFraction < 0.15 {
+	if minFrac < 0 {
+		status = ""
+	} else if minFrac < 0.15 {
+		if (hasClaudeGPT && claude.RemainingFraction < 0.15) && (hasGemini && gemini.RemainingFraction < 0.15) {
 			status = StatusDepleted
-		} else if gemini.RemainingFraction < 0.15 {
+		} else if hasGemini && gemini.RemainingFraction < 0.15 {
 			status = StatusLowGemini
-		} else if claude.RemainingFraction < 0.15 {
+		} else if hasClaudeGPT && claude.RemainingFraction < 0.15 {
 			status = StatusLowClaude
-		} else {
-			status = StatusLowGPT
-		}
-	} else if minFrac <= 0.50 {
-		if gemini.RemainingFraction <= 0.50 && claude.RemainingFraction > 0.50 {
-			status = StatusLowGemini
-		} else if claude.RemainingFraction <= 0.50 && gemini.RemainingFraction > 0.50 {
-			status = StatusLowClaude
-		} else if gpt.RemainingFraction <= 0.50 {
-			status = StatusLowGPT
 		} else {
 			status = StatusLow
 		}
-	} else if claude.RemainingFraction >= 1.0 && gemini.RemainingFraction >= 1.0 && gpt.RemainingFraction >= 1.0 {
+	} else if minFrac <= 0.50 {
+		if hasGemini && gemini.RemainingFraction <= 0.50 && (!hasClaudeGPT || claude.RemainingFraction > 0.50) {
+			status = StatusLowGemini
+		} else if hasClaudeGPT && claude.RemainingFraction <= 0.50 && (!hasGemini || gemini.RemainingFraction > 0.50) {
+			status = StatusLowClaude
+		} else {
+			status = StatusLow
+		}
+	} else if (!hasClaudeGPT || claude.RemainingFraction >= 1.0) && (!hasGemini || gemini.RemainingFraction >= 1.0) {
 		status = StatusPristine
 	} else {
 		status = StatusPlentiful

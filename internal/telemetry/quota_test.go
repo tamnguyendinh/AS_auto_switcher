@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -97,13 +98,17 @@ func TestDualCycleQuota_IndependentFractionsAndMissingBuckets(t *testing.T) {
 	}
 }
 
-// TestAccountQuotaData_ZeroGPTSerialization verifies F2 requirement: zero GPT in JSON schema.
+// TestAccountQuotaData_ZeroGPTSerialization verifies F2 requirement: zero GPT in Go struct and JSON schema.
 func TestAccountQuotaData_ZeroGPTSerialization(t *testing.T) {
+	field, present := reflect.TypeOf(AccountQuotaData{}).FieldByName("GPT")
+	if present {
+		t.Fatalf("CRITICAL VIOLATION: struct AccountQuotaData still contains GPT field: %+v", field)
+	}
+
 	data := &AccountQuotaData{
 		Email:       "user@example.com",
 		Claude:      ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: 0.50},
 		Gemini:      ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: 0.80},
-		GPT:         ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: 0.90},
 		Status:      StatusPlentiful,
 		LastUpdated: time.Now().UTC(),
 	}
@@ -116,6 +121,48 @@ func TestAccountQuotaData_ZeroGPTSerialization(t *testing.T) {
 	encodedStr := string(encoded)
 	if strings.Contains(encodedStr, `"gpt":`) || strings.Contains(encodedStr, `"gpt"`) {
 		t.Fatalf("CRITICAL VIOLATION: serialized AccountQuotaData contains GPT key: %s", encodedStr)
+	}
+}
+
+// TestParseQuotaSummaryWithBuckets_F1EdgeCases verifies F1 requirements for empty, missing, and zero quota.
+func TestParseQuotaSummaryWithBuckets_F1EdgeCases(t *testing.T) {
+	// 1. Empty summary returns -1 fractions and empty status
+	c, g, _, raw, _, status, err := ParseQuotaSummaryWithBuckets([]byte(`{"groups":[]}`))
+	if err != nil {
+		t.Fatalf("ParseQuotaSummaryWithBuckets failed on empty summary: %v", err)
+	}
+	if len(raw) != 0 {
+		t.Errorf("expected 0 raw buckets, got %d", len(raw))
+	}
+	if c.RemainingFraction != -1 || g.RemainingFraction != -1 {
+		t.Errorf("expected -1 fractions for empty summary, got c=%f, g=%f", c.RemainingFraction, g.RemainingFraction)
+	}
+	if status != "" {
+		t.Errorf("expected empty status for empty summary, got '%s'", status)
+	}
+
+	// 2. Missing fraction returns -1
+	c, g, _, raw, _, _, err = ParseQuotaSummaryWithBuckets([]byte(`{"groups":[{"displayName":"Claude models","buckets":[{"bucketId":"3p-5h","window":"5h"}]}]}`))
+	if err != nil {
+		t.Fatalf("ParseQuotaSummaryWithBuckets failed on missing fraction: %v", err)
+	}
+	if len(raw) != 1 || raw[0].RemainingFraction != -1 {
+		t.Errorf("expected raw bucket with -1 fraction, got %+v", raw)
+	}
+	if c.FiveHourFraction != -1 || c.RemainingFraction != -1 {
+		t.Errorf("expected -1 fraction for missing fraction bucket, got c5=%f, rem=%f", c.FiveHourFraction, c.RemainingFraction)
+	}
+
+	// 3. Legacy cache unmarshals with FiveHourFraction = -1 and WeeklyFraction = -1
+	var bucket ModelQuotaBucket
+	if err := json.Unmarshal([]byte(`{"remaining_fraction":0.2}`), &bucket); err != nil {
+		t.Fatalf("unmarshal legacy bucket failed: %v", err)
+	}
+	if bucket.RemainingFraction != 0.2 {
+		t.Errorf("expected remaining fraction 0.2, got %f", bucket.RemainingFraction)
+	}
+	if bucket.FiveHourFraction != -1 || bucket.WeeklyFraction != -1 {
+		t.Errorf("expected legacy bucket to have -1 for cycle fractions, got 5h=%f, week=%f", bucket.FiveHourFraction, bucket.WeeklyFraction)
 	}
 }
 

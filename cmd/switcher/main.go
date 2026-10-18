@@ -303,16 +303,13 @@ func renderQuotaTable(w io.Writer, mgr *manager.AccountManager, cache *telemetry
 				if q.Gemini.RemainingFraction >= 0 {
 					geminiStr = fmt.Sprintf("%.1f%%", q.Gemini.RemainingFraction*100)
 				}
-				if q.GPT.RemainingFraction >= 0 {
-					gptStr = fmt.Sprintf("%.1f%%", q.GPT.RemainingFraction*100)
-				}
 
 				if !q.ResetTime.IsZero() {
 					resetStr = q.ResetTime.UTC().Format("15:04:05 UTC")
 				}
 
 				if q.Status == telemetry.StatusDepleted || strings.HasPrefix(q.Status, "Low") ||
-					q.Claude.RemainingFraction < 0.15 || q.Gemini.RemainingFraction < 0.15 || q.GPT.RemainingFraction < 0.15 {
+					q.Claude.RemainingFraction < 0.15 || q.Gemini.RemainingFraction < 0.15 {
 					isLowQuota = true
 				}
 			}

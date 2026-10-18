@@ -172,11 +172,6 @@ func (a *App) setupLayout() {
 	scrollList := container.NewVScroll(container.NewPadded(container.NewVBox(a.accountListContainer)))
 	a.accountScroll = scrollList
 
-	// In-memory labels for backward-compatibility with tests & background workers
-	a.headerBg = canvas.NewRectangle(palette.Card)
-	a.statusBarLabel = widget.NewLabelWithStyle("Sẵn sàng", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
-	a.activeStatusLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	a.activeQuotaLabel = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 
 	// Main Layout: No footer status bar, no legend bar, no bulky header card
 	mainLayout := container.NewBorder(
