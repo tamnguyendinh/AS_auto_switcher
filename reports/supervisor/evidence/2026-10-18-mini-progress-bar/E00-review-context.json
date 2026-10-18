@@ -1,0 +1,12 @@
+{
+  "reviewed_commit": "4da49ab2073ee1920d3dce47085342ccc7901acf",
+  "initial_head": "4da49ab2073ee1920d3dce47085342ccc7901acf",
+  "initial_status": [
+    "?? reports/supervisor/evidence/2026-10-18-mini-progress-bar/"
+  ],
+  "spec_difference_from_e551fa7_lines": 0,
+  "go": "go version go1.26.3 windows/amd64",
+  "staticcheck": "staticcheck.exe 2026.2.2 (0.8.2)",
+  "gcc": "gcc.exe (Rev2, Built by MSYS2 project) 16.1.0",
+  "rules": "AGENTS.md absent from repo and G:\\ parent; direct CEO contract governs. working-rules, repo supervisor and debugging read. Anvien prohibited."
+}
