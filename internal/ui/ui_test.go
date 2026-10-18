@@ -1491,3 +1491,143 @@ func TestOwnerRedesign_F6_MonogramRecolorsOnThemeChange(t *testing.T) {
 	app.SetTheme(ThemeDark)
 	assertColorMatches(t, "Switch Dark", "monogramBg", app.monogramBg.FillColor, DarkPalette.Primary)
 }
+
+// TestF1_ExtractDualCycleQuota_BothCyclesZero_NoRaw_NoReset verifies that when both 5h and weekly cycles
+// are 0.0 for Claude and Gemini without raw buckets or reset time:
+// 1. ExtractDualCycleQuota returns Claude5h=0.0, ClaudeWeek=0.0, Gemini5h=0.0, GeminiWeek=0.0, HasData=true.
+// 2. NewAccountCardWithQuota renders "0%" for all cycles, never "--%".
+// 3. Asymmetric zero cases (one family 0.0, other missing) preserve zero and unknown independently.
+func TestF1_ExtractDualCycleQuota_BothCyclesZero_NoRaw_NoReset(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	// Case 1: Both Claude and Gemini have both cycles 0.0 without raw buckets and without reset times
+	bothZeroQuota := &telemetry.AccountQuotaData{
+		Email: "bothzero@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: 0.0,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: 0.0,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Status: telemetry.StatusDepleted,
+	}
+
+	dq := ExtractDualCycleQuota(bothZeroQuota)
+	if !dq.HasData {
+		t.Errorf("expected HasData=true for both cycles zero")
+	}
+	if dq.Claude5h != 0.0 || dq.ClaudeWeek != 0.0 {
+		t.Errorf("expected Claude (0.0, 0.0), got 5h=%f, week=%f", dq.Claude5h, dq.ClaudeWeek)
+	}
+	if dq.Gemini5h != 0.0 || dq.GeminiWeek != 0.0 {
+		t.Errorf("expected Gemini (0.0, 0.0), got 5h=%f, week=%f", dq.Gemini5h, dq.GeminiWeek)
+	}
+
+	// Verify card UI rendering
+	card := NewAccountCardWithQuota(
+		manager.AccountDisplayItem{Email: bothZeroQuota.Email},
+		bothZeroQuota,
+		LightPalette,
+		nil,
+		nil,
+		nil,
+	)
+	var cardTexts []string
+	var walk func(fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if txt, ok := o.(*canvas.Text); ok {
+			cardTexts = append(cardTexts, txt.Text)
+		}
+		if c, ok := o.(*fyne.Container); ok {
+			for _, child := range c.Objects {
+				walk(child)
+			}
+		}
+	}
+	walk(card)
+
+	hasClaude5h0 := false
+	hasClaudeWeek0 := false
+	hasGemini5h0 := false
+	hasGeminiWeek0 := false
+	for _, text := range cardTexts {
+		if strings.Contains(text, "Claude 0%") {
+			if !hasClaude5h0 {
+				hasClaude5h0 = true
+			} else {
+				hasClaudeWeek0 = true
+			}
+		}
+		if strings.Contains(text, "Gemini 0%") {
+			if !hasGemini5h0 {
+				hasGemini5h0 = true
+			} else {
+				hasGeminiWeek0 = true
+			}
+		}
+		if strings.Contains(text, "--%") {
+			t.Errorf("unexpected placeholder --%%%% on zero-cycle card, text: %s", text)
+		}
+	}
+	if !hasClaude5h0 || !hasClaudeWeek0 {
+		t.Errorf("expected Claude 5h and week both 0%%, got texts: %v", cardTexts)
+	}
+	if !hasGemini5h0 || !hasGeminiWeek0 {
+		t.Errorf("expected Gemini 5h and week both 0%%, got texts: %v", cardTexts)
+	}
+
+	// Case 2: Claude both zero, Gemini missing
+	claudeOnlyZero := &telemetry.AccountQuotaData{
+		Email: "claudezero@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: 0.0,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: -1,
+			FiveHourFraction:  -1,
+			WeeklyFraction:    -1,
+		},
+	}
+	dqClaude := ExtractDualCycleQuota(claudeOnlyZero)
+	if dqClaude.Claude5h != 0.0 || dqClaude.ClaudeWeek != 0.0 {
+		t.Errorf("expected Claude (0.0, 0.0), got 5h=%f, week=%f", dqClaude.Claude5h, dqClaude.ClaudeWeek)
+	}
+	if dqClaude.Gemini5h != -1.0 || dqClaude.GeminiWeek != -1.0 {
+		t.Errorf("expected Gemini (-1.0, -1.0), got 5h=%f, week=%f", dqClaude.Gemini5h, dqClaude.GeminiWeek)
+	}
+
+	// Case 3: Gemini both zero, Claude missing
+	geminiOnlyZero := &telemetry.AccountQuotaData{
+		Email: "geminizero@example.com",
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: -1,
+			FiveHourFraction:  -1,
+			WeeklyFraction:    -1,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: 0.0,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+	}
+	dqGemini := ExtractDualCycleQuota(geminiOnlyZero)
+	if dqGemini.Claude5h != -1.0 || dqGemini.ClaudeWeek != -1.0 {
+		t.Errorf("expected Claude (-1.0, -1.0), got 5h=%f, week=%f", dqGemini.Claude5h, dqGemini.ClaudeWeek)
+	}
+	if dqGemini.Gemini5h != 0.0 || dqGemini.GeminiWeek != 0.0 {
+		t.Errorf("expected Gemini (0.0, 0.0), got 5h=%f, week=%f", dqGemini.Gemini5h, dqGemini.GeminiWeek)
+	}
+}

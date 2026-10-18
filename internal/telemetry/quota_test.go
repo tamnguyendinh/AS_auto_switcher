@@ -451,3 +451,92 @@ func TestF1_CachePersistence_ClaudeObjectWithoutRemainingFraction(t *testing.T) 
 		t.Errorf("expected Claude cycle fractions -1, got 5h=%f, week=%f", acc.Claude.FiveHourFraction, acc.Claude.WeeklyFraction)
 	}
 }
+
+// TestF1_BothCyclesZero_ClaudeAndGemini_NoRaw_NoReset verifies that when both 5h and weekly cycles
+// are explicitly 0.0 for Claude and Gemini without raw buckets or reset time:
+// 1. ParseQuotaSummary extracts 5h=0.0 and weekly=0.0 for both families.
+// 2. QuotaCache SaveToDisk and LoadFromDisk preserves both cycle fractions at 0.0.
+// 3. Absence of cycle remains cleanly represented by -1.0 sentinel.
+func TestF1_BothCyclesZero_ClaudeAndGemini_NoRaw_NoReset(t *testing.T) {
+	summaryPayload := []byte(`{
+		"groups": [
+			{
+				"displayName": "Claude models",
+				"buckets": [
+					{"bucketId": "claude-5h", "window": "5h", "remainingFraction": 0.0},
+					{"bucketId": "claude-weekly", "window": "weekly", "remainingFraction": 0.0}
+				]
+			},
+			{
+				"displayName": "Gemini models",
+				"buckets": [
+					{"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.0},
+					{"bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.0}
+				]
+			}
+		]
+	}`)
+
+	claude, gemini, _, _, _, err := ParseQuotaSummary(summaryPayload)
+	if err != nil {
+		t.Fatalf("ParseQuotaSummary failed: %v", err)
+	}
+
+	if claude.FiveHourFraction != 0.0 || claude.WeeklyFraction != 0.0 {
+		t.Errorf("expected Claude cycles (0.0, 0.0), got 5h=%f, week=%f", claude.FiveHourFraction, claude.WeeklyFraction)
+	}
+	if gemini.FiveHourFraction != 0.0 || gemini.WeeklyFraction != 0.0 {
+		t.Errorf("expected Gemini cycles (0.0, 0.0), got 5h=%f, week=%f", gemini.FiveHourFraction, gemini.WeeklyFraction)
+	}
+
+	// Test cache round-trip with zero raw buckets and zero resets
+	tempDir := t.TempDir()
+	cachePath := filepath.Join(tempDir, "zero_cycle_cache.json")
+	cache := NewQuotaCache(cachePath)
+
+	data := &AccountQuotaData{
+		Email: "bothzero@example.com",
+		Claude: ModelQuotaBucket{
+			ModelID:           "claude-4-6",
+			RemainingFraction: 0.0,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Gemini: ModelQuotaBucket{
+			ModelID:           "gemini-2-5",
+			RemainingFraction: 0.0,
+			FiveHourFraction:  0.0,
+			WeeklyFraction:    0.0,
+		},
+		Status:      StatusDepleted,
+		LastUpdated: time.Now().UTC(),
+	}
+
+	cache.Update(data)
+	if err := cache.SaveToDisk(); err != nil {
+		t.Fatalf("SaveToDisk failed: %v", err)
+	}
+
+	// Reload into fresh cache instance
+	reloadedCache := NewQuotaCache(cachePath)
+	if err := reloadedCache.LoadFromDisk(); err != nil {
+		t.Fatalf("LoadFromDisk failed: %v", err)
+	}
+
+	reloaded, ok := reloadedCache.Get("bothzero@example.com")
+	if !ok || reloaded == nil {
+		t.Fatalf("expected account loaded from cache")
+	}
+
+	if reloaded.Claude.FiveHourFraction != 0.0 || reloaded.Claude.WeeklyFraction != 0.0 {
+		t.Errorf("expected reloaded Claude cycles (0.0, 0.0), got 5h=%f, week=%f",
+			reloaded.Claude.FiveHourFraction, reloaded.Claude.WeeklyFraction)
+	}
+	if reloaded.Gemini.FiveHourFraction != 0.0 || reloaded.Gemini.WeeklyFraction != 0.0 {
+		t.Errorf("expected reloaded Gemini cycles (0.0, 0.0), got 5h=%f, week=%f",
+			reloaded.Gemini.FiveHourFraction, reloaded.Gemini.WeeklyFraction)
+	}
+	if len(reloaded.RawBuckets) != 0 {
+		t.Errorf("expected 0 raw buckets, got %d", len(reloaded.RawBuckets))
+	}
+}
