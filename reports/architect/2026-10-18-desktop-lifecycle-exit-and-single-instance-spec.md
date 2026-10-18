@@ -4,7 +4,18 @@
 - **Ngày lập:** 2026-10-18
 - **Làn thực hiện:** Senior System Architect
 - **Cơ quan chỉ đạo:** Human Owner trực tiếp thảo luận và chỉ đạo
-- **Trạng thái:** DRAFT UPDATED WITH EXACT CODE — CHỜ HUMAN OWNER XEM LẠI & PHÊ DUYỆT (CHƯA GỬI CEO)
+- **Trạng thái:** SPECIFICATION APPROVED BY OWNER — READY FOR CODER DISPATCH (CHƯA GỬI CEO)
+
+---
+
+## ⚠️ ĐIỀU KHOẢN KỶ LUẬT SẮT BẮT BUỘC DÀNH CHO CODER (MANDATORY IRON RULE)
+
+> **CHỈ THỊ TRỰC TIẾP TỪ HUMAN OWNER:**  
+> **"KHI CODER CODE XONG, CODER PHẢI CHẠY FULL BUILD BẰNG SCRIPT CỦA REPO, CODER KHÔNG ĐƯỢC SỬA SCRIPT FULL BUILD."**  
+>
+> - Script full build bắt buộc của repo: `powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Mode all`
+> - Coder **TUYỆT ĐỐI KHÔNG ĐƯỢC PHÉP CHỈNH SỬA BẤT KỲ DÒNG NÀO** trong tệp script `scripts/build_windows.ps1`.
+> - Toàn bộ quá trình build phải biên dịch sạch cả CLI lẫn GUI, chạy 100% test suite đạt PASS, và kết thúc với Exit Code 0. Bất kỳ hành vi sửa script build để "lách lỗi" đều bị coi là vi phạm nghiêm trọng và bị từ chối nghiệm thu lập tức.
 
 ---
 
@@ -16,10 +27,6 @@
 2. **Vấn đề 2 — Khóa đơn bản sao ứng dụng (Single Instance):**
    - Khi tool đã đang chạy, nếu người dùng click đúp file `.exe` lần nữa thì **tuyệt đối không mở thêm cửa sổ thứ 2**, không sinh thêm icon trùng lặp ở khay hệ thống.
    - Bản sao mới tự động tìm cửa sổ cũ, **phục hồi và đưa cửa sổ cũ lên trên cùng màn hình (Bring to Front)**, sau đó bản sao mới tự động thoát ngay lập tức trong tích tắc (0.1ms).
-3. **KỶ LUẬT THI CÔNG SẮT TỪ HUMAN OWNER (STRICT IRON RULE):**
-   - **Code xong bắt buộc phải chạy full build bằng script của repo:**  
-     `powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Mode all`
-   - **TUYỆT ĐỐI CẤM SỬA SCRIPT FULL BUILD NÀY.**
 
 ---
 
@@ -27,7 +34,7 @@
 
 ### 2.1 BƯỚC 1: Sửa Nút `[X]` Thoát Hẳn (Sửa 1 Tệp Duy Nhất)
 
-**Tệp:** `internal/ui/tray.go` (tại khối `setupTray`, quanh dòng 50–54)
+**Tệp:** `internal/ui/tray.go` (tại khối `setupTray`, dòng 50–54)
 
 - **Đoạn mã cũ cần xóa bỏ:**
   ```go
@@ -135,7 +142,7 @@ func (l *SingleInstanceLock) Release() {}
 ```
 
 #### Tệp 3: `cmd/switcher/app_gui.go` (Chèn kiểm tra trước khi khởi chạy GUI)
-Chèn 7 dòng kiểm tra ngay đầu hàm `launchGUI`:
+Chèn đoạn kiểm tra ngay đầu hàm `launchGUI`:
 
 ```go
 //go:build gui
@@ -176,26 +183,22 @@ func launchGUI(mgr *manager.AccountManager, showStatus, showList, doCapture bool
 
 ## 3. Quy Trình Xác Thực Bắt Buộc & Tiêu Chuẩn Nghiệm Thu
 
-Sau khi thi công xong, Coder **BẮT BUỘC** phải thực hiện các bước kiểm tra sau:
-
-1. **Quy Định Full Build Bắt Buộc:**
-   - Chạy lệnh:
+1. **Thực Thi Kỷ Luật Full Build:**
+   - **KHI CODER CODE XONG, CODER PHẢI CHẠY FULL BUILD BẰNG SCRIPT CỦA REPO, CODER KHÔNG ĐƯỢC SỬA SCRIPT FULL BUILD.**
+   - Lệnh bắt buộc:
      ```powershell
      powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Mode all
      ```
-   - **ĐIỀU KHOẢN CẤM:** Tuyệt đối **CẤM sửa** tệp `scripts/build_windows.ps1`.
-   - Kết quả bắt buộc: Phải build thành công cả CLI lẫn GUI, kiểm thử tự động đạt 100% PASS, thoát với Exit Code 0.
-2. **Nghiệm Thu Thủ Công Nút `[X]`:**
-   - Chạy ứng dụng $\rightarrow$ Bấm nút `[X]` ở góc trên bên phải.
-   - Kiểm tra: Cửa sổ đóng lập tức, khay hệ thống mất icon, Task Manager không còn tiến trình `switcher.exe` nào.
-3. **Nghiệm Thu Thủ Công Khóa Đơn Bản Sao:**
-   - Chạy ứng dụng lần 1 $\rightarrow$ Cửa sổ xuất hiện.
-   - Chạy tiếp file `.exe` lần 2 $\rightarrow$ Không mở thêm cửa sổ mới, không sinh thêm icon tray, cửa sổ lần 1 lập tức nổi lên trên cùng màn hình (Focused).
+   - Cấm mọi hành vi sửa đổi `scripts/build_windows.ps1`.
+2. **Nghiệm Thu Nút `[X]`:**
+   - Bấm `[X]` trên cửa sổ $\rightarrow$ App đóng ngay, Task Manager không còn tiến trình `switcher.exe` nào.
+3. **Nghiệm Thu Khóa Đơn Bản Sao:**
+   - Đang mở app $\rightarrow$ Chạy file `.exe` lần 2 $\rightarrow$ Không mở thêm cửa sổ, cửa sổ lần 1 nhảy lên trên cùng màn hình.
 
 ---
 
 ## 4. Trạng Thái Bàn Giao
 
-Tài liệu này đã cập nhật đầy đủ mã nguồn cụ thể và điều khoản cấm sửa build script, lưu tại:  
+Tài liệu đã cập nhật chuẩn xác từng chữ theo chỉ đạo của Human Owner:  
 `reports/architect/2026-10-18-desktop-lifecycle-exit-and-single-instance-spec.md`  
 **TRẠNG THÁI: CHỜ HUMAN OWNER XEM LẠI VÀ RA LỆNH — CHƯA GỬI CEO.**
