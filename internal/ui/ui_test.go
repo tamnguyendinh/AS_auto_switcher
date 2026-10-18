@@ -2,10 +2,15 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -49,13 +54,6 @@ func createTestManager(t *testing.T) *manager.AccountManager {
 	sessionReloader := reloader.NewSessionReloader()
 	sessionReloader.ProcessKiller = func(ctx context.Context) error { return nil }
 	sessionReloader.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
-	sessionReloader.ServerDiscoverer = func() (*connector.ServerInfo, error) {
-		return &connector.ServerInfo{
-			PID:       12345,
-			Port:      54321,
-			CSRFToken: "test-csrf",
-		}, nil
-	}
 
 	mgr, err := manager.NewAccountManager(accStore, sessionReloader)
 	if err != nil {
@@ -78,9 +76,36 @@ func createTestManager(t *testing.T) *manager.AccountManager {
 		},
 	)
 
-	// Mock client finder
+	// Setup local loopback mock HTTP server for the UI test that reflects the active token's email
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		activeEmail := manager.ExtractEmailFromToken(activeCredToken)
+		if activeEmail == "" {
+			activeEmail = "current@gmail.com"
+		}
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"email":"%s"}`, activeEmail)))
+	}))
+	t.Cleanup(testServer.Close)
+
+	testAddress, _ := url.Parse(testServer.URL)
+	testPort, _ := strconv.Atoi(testAddress.Port())
+	testClient := connector.NewClientWithHTTP(&connector.ServerInfo{
+		PID:       12345,
+		Port:      testPort,
+		CSRFToken: "test-csrf",
+	}, testServer.Client())
+
+	sessionReloader.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       12345,
+			Port:      testPort,
+			CSRFToken: "test-csrf",
+		}, nil
+	}
+
+	// Mock client finder returning testClient
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
-		return nil, nil
+		return testClient, nil
 	})
 
 	return mgr

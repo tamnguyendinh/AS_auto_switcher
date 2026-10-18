@@ -6,11 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -517,24 +513,6 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		newInfo, clientErr = connector.DiscoverLanguageServer()
 		if clientErr == nil && newInfo != nil {
 			newClient = connector.NewClient(newInfo)
-		}
-	}
-
-	// Support legacy UI test harness where createTestManager mocks ServerDiscoverer (PID 12345, Port 54321)
-	// without spinning up a live loopback HTTP server
-	if newClient == nil && clientErr == nil && rel != nil && rel.ServerDiscoverer != nil {
-		if sInfo, sErr := rel.ServerDiscoverer(); sErr == nil && sInfo != nil && sInfo.PID == 12345 && sInfo.Port == 54321 {
-			testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"email":"%s"}`, normTarget)))
-			}))
-			testAddress, _ := url.Parse(testServer.URL)
-			testPort, _ := strconv.Atoi(testAddress.Port())
-			newClient = connector.NewClientWithHTTP(&connector.ServerInfo{
-				PID:       12345,
-				Port:      testPort,
-				CSRFToken: "test-csrf",
-			}, testServer.Client())
 		}
 	}
 
