@@ -1,15 +1,13 @@
 package ui
 
 import (
-	"fmt"
 	"image/color"
-	"time"
 	"unsafe"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
 	"golang.org/x/sys/windows"
@@ -81,7 +79,7 @@ func (a *App) setupLayout() {
 	palette := GetThemePalette(a.currentTheme)
 
 	// -------------------------------------------------------------------------
-	// TopSection Row 1 (Header): Monogram [AS] + App Title
+	// TopSection Row 1 (Header): Monogram [AS] + App Title + Drag Area + Window Controls (_ |_| X)
 	// -------------------------------------------------------------------------
 	a.monogramBg = canvas.NewRectangle(palette.Primary)
 	a.monogramBg.CornerRadius = 6
@@ -90,49 +88,67 @@ func (a *App) setupLayout() {
 	monogramText.TextSize = 13
 	monogramText.Alignment = fyne.TextAlignCenter
 	monogramStack := container.NewStack(a.monogramBg, container.NewCenter(monogramText))
-	monogramWrap := container.NewGridWrap(fyne.NewSize(28, 28), monogramStack)
+	monogramWrap := container.NewGridWrap(fyne.NewSize(26, 26), monogramStack)
 
 	titleLabel := widget.NewLabelWithStyle("Antigravity Multi-Account Switcher", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	row1Header := container.NewHBox(monogramWrap, titleLabel)
+	titleLeft := container.NewHBox(monogramWrap, titleLabel)
+
+	// Bộ 3 nút điều khiển cửa sổ
+	btnMin := container.NewGridWrap(fyne.NewSize(32, 26), newCustomTitleBtn("—", func() {
+		MinimizeNativeWindow()
+	}))
+	btnMax := container.NewGridWrap(fyne.NewSize(32, 26), newCustomTitleBtn("口", func() {
+		ToggleMaximizeNativeWindow()
+	}))
+	btnClose := container.NewGridWrap(fyne.NewSize(32, 26), newCustomCloseBtn(func() {
+		a.Close()
+		a.app.Quit()
+	}))
+	windowControls := container.NewHBox(btnMin, btnMax, btnClose)
+
+	dragArea := &windowDragArea{}
+	dragArea.ExtendBaseWidget(dragArea)
+
+	row1Header := container.NewBorder(nil, nil, titleLeft, windowControls, dragArea)
 
 	// -------------------------------------------------------------------------
-	// TopSection Row 2 (Sub-header): Language Server info (left) + Theme Select (right)
+	// TopSection Row 2 (Sub-header): Status đưa lên đầu (trái) + Theme Select mini (phải)
 	// -------------------------------------------------------------------------
-	a.serverStatusLabel = widget.NewLabelWithStyle("Language Server : Đang kiểm tra...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	a.serverStatusLabel = widget.NewLabelWithStyle("Hoạt động  | Đang kết nối...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
-	themeOptions := []string{"🌙 Tối", "☀️ Sáng", "☕ Ấm"}
+	// Theme Select chỉ gồm 3 icon, thu hẹp bề ngang tối đa
+	themeOptions := []string{"🌙", "☀️", "☕"}
 	a.themeSelect = widget.NewSelect(themeOptions, func(selected string) {
 		switch selected {
-		case "🌙 Tối":
+		case "🌙":
 			a.SetTheme(ThemeDark)
-		case "☀️ Sáng":
+		case "☀️":
 			a.SetTheme(ThemeLight)
-		case "☕ Ấm":
+		case "☕":
 			a.SetTheme(ThemeWarm)
 		}
 	})
 
 	switch a.currentTheme {
 	case ThemeLight:
-		a.themeSelect.SetSelected("☀️ Sáng")
+		a.themeSelect.SetSelected("☀️")
 	case ThemeWarm:
-		a.themeSelect.SetSelected("☕ Ấm")
+		a.themeSelect.SetSelected("☕")
 	default:
-		a.themeSelect.SetSelected("🌙 Tối")
+		a.themeSelect.SetSelected("🌙")
 	}
 
-	themeLabel := widget.NewLabel("Theme")
-	themeBox := container.NewHBox(themeLabel, a.themeSelect)
-	row2SubHeader := container.NewBorder(nil, nil, a.serverStatusLabel, themeBox)
+	themeSelectWrap := container.NewGridWrap(fyne.NewSize(58, 32), a.themeSelect)
+	row2SubHeader := container.NewBorder(nil, nil, a.serverStatusLabel, themeSelectWrap)
 
 	// -------------------------------------------------------------------------
-	// TopSection Row 3 (Toolbar): Action buttons (left) + Timestamp (right)
+	// TopSection Row 3 (Toolbar): Nút phẳng (trái) + Bỏ sạch timestamp
 	// -------------------------------------------------------------------------
-	a.refreshBtn = widget.NewButtonWithIcon("🔄 Làm mới Chrome", theme.ViewRefreshIcon(), func() {
+	a.refreshBtn = widget.NewButton("Danh sách tài khoản", func() {
 		a.Refresh()
 	})
 
-	a.quotaRefreshAllBtn = widget.NewButtonWithIcon("🔄 Làm mới Quota", theme.ViewRefreshIcon(), func() {
+	a.quotaRefreshAllBtn = widget.NewButton("Làm mới Quota", func() {
 		a.RefreshAllQuota()
 	})
 	a.quotaRefreshAllBtn.Importance = widget.HighImportance
@@ -148,14 +164,10 @@ func (a *App) setupLayout() {
 	})
 	a.alwaysOnTopBtn.Importance = pinImportance
 
-	nowStr := time.Now().Format("15:04:05")
-	a.lastUpdatedLabel = widget.NewLabelWithStyle(fmt.Sprintf("Cập nhật : %s", nowStr), fyne.TextAlignTrailing, fyne.TextStyle{Italic: true})
-	a.autoRefreshLabel = a.lastUpdatedLabel
-
 	toolbarLeft := container.NewHBox(a.refreshBtn, a.quotaRefreshAllBtn, a.alwaysOnTopBtn)
-	row3Toolbar := container.NewBorder(nil, nil, toolbarLeft, a.lastUpdatedLabel)
+	row3Toolbar := toolbarLeft // Phía bên phải để trống hoàn toàn thoáng đãng
 
-	// Separator dividing header controls from accounts grid
+	// Separator chia phần điều khiển với lưới tài khoản
 	sep := widget.NewSeparator()
 
 	topSection := container.NewVBox(
@@ -172,7 +184,6 @@ func (a *App) setupLayout() {
 	scrollList := container.NewVScroll(container.NewPadded(container.NewVBox(a.accountListContainer)))
 	a.accountScroll = scrollList
 
-
 	// Main Layout: No footer status bar, no legend bar, no bulky header card
 	mainLayout := container.NewBorder(
 		topSection,
@@ -187,3 +198,103 @@ func (a *App) setupLayout() {
 	a.win.SetContent(rootContainer)
 }
 
+// customTitleBtn: Widget nút thu nhỏ/phóng to có hover sáng
+type customTitleBtn struct {
+	widget.BaseWidget
+	bg       *canvas.Rectangle
+	text     *canvas.Text
+	onTapped func()
+}
+
+func newCustomTitleBtn(label string, onTapped func()) *customTitleBtn {
+	b := &customTitleBtn{onTapped: onTapped}
+	b.bg = canvas.NewRectangle(color.Transparent)
+	b.bg.CornerRadius = 3
+	b.text = canvas.NewText(label, color.NRGBA{R: 0xcd, G: 0xd6, B: 0xf4, A: 0xff})
+	b.text.TextSize = 13
+	b.text.Alignment = fyne.TextAlignCenter
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+func (b *customTitleBtn) CreateRenderer() fyne.WidgetRenderer {
+	c := container.NewStack(b.bg, container.NewCenter(b.text))
+	return widget.NewSimpleRenderer(c)
+}
+
+func (b *customTitleBtn) MouseIn(*desktop.MouseEvent) {
+	b.bg.FillColor = color.NRGBA{R: 0x45, G: 0x47, B: 0x5a, A: 0xaa} // Hover sáng
+	b.Refresh()
+}
+
+func (b *customTitleBtn) MouseOut() {
+	b.bg.FillColor = color.Transparent
+	b.Refresh()
+}
+
+func (b *customTitleBtn) MouseMoved(*desktop.MouseEvent) {}
+
+func (b *customTitleBtn) Tapped(*fyne.PointEvent) {
+	if b.onTapped != nil {
+		b.onTapped()
+	}
+}
+
+// customCloseBtn: Nút X có hover màu đỏ rực (#ef4444)
+type customCloseBtn struct {
+	widget.BaseWidget
+	bg       *canvas.Rectangle
+	text     *canvas.Text
+	onTapped func()
+}
+
+func newCustomCloseBtn(onTapped func()) *customCloseBtn {
+	b := &customCloseBtn{onTapped: onTapped}
+	b.bg = canvas.NewRectangle(color.Transparent)
+	b.bg.CornerRadius = 3
+	b.text = canvas.NewText("✕", color.NRGBA{R: 0xcd, G: 0xd6, B: 0xf4, A: 0xff})
+	b.text.TextSize = 13
+	b.text.Alignment = fyne.TextAlignCenter
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+func (b *customCloseBtn) CreateRenderer() fyne.WidgetRenderer {
+	c := container.NewStack(b.bg, container.NewCenter(b.text))
+	return widget.NewSimpleRenderer(c)
+}
+
+func (b *customCloseBtn) MouseIn(*desktop.MouseEvent) {
+	b.bg.FillColor = color.NRGBA{R: 0xef, G: 0x44, B: 0x44, A: 0xff} // Đỏ rực khi hover
+	b.text.Color = color.White
+	b.Refresh()
+}
+
+func (b *customCloseBtn) MouseOut() {
+	b.bg.FillColor = color.Transparent
+	b.text.Color = color.NRGBA{R: 0xcd, G: 0xd6, B: 0xf4, A: 0xff}
+	b.Refresh()
+}
+
+func (b *customCloseBtn) MouseMoved(*desktop.MouseEvent) {}
+
+func (b *customCloseBtn) Tapped(*fyne.PointEvent) {
+	if b.onTapped != nil {
+		b.onTapped()
+	}
+}
+
+// windowDragArea: Vùng kéo thả cửa sổ native khi bấm giữ chuột
+type windowDragArea struct {
+	widget.BaseWidget
+}
+
+func (d *windowDragArea) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(canvas.NewRectangle(color.Transparent))
+}
+
+func (d *windowDragArea) Dragged(e *fyne.DragEvent) {
+	DragNativeWindow()
+}
+
+func (d *windowDragArea) DragEnd() {}

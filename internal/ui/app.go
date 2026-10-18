@@ -201,6 +201,11 @@ func (a *App) Init() {
 	a.win.Resize(fyne.NewSize(1008, 630))
 	a.win.SetFixedSize(false)
 
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		MakeWindowFrameless(windowTitle)
+	}()
+
 	a.setupLayout()
 	a.setupTray()
 
@@ -292,7 +297,7 @@ func (a *App) RefreshAllQuota() {
 			if !completed {
 				fyne.Do(func() {
 					if a.quotaRefreshAllBtn != nil {
-						a.quotaRefreshAllBtn.SetText("🔄 Làm mới Quota")
+						a.quotaRefreshAllBtn.SetText("Làm mới Quota")
 						a.quotaRefreshAllBtn.Enable()
 					}
 					a.isQuotaRefreshing.Store(false)
@@ -334,7 +339,7 @@ func (a *App) RefreshAllQuota() {
 			}
 
 			if a.quotaRefreshAllBtn != nil {
-				a.quotaRefreshAllBtn.SetText("🔄 Làm mới Quota")
+				a.quotaRefreshAllBtn.SetText("Làm mới Quota")
 				a.quotaRefreshAllBtn.Enable()
 			}
 			a.isQuotaRefreshing.Store(false)
@@ -440,7 +445,7 @@ func (a *App) Refresh() {
 		defer func() {
 			fyne.Do(func() {
 				if a.refreshBtn != nil {
-					a.refreshBtn.SetText("🔄 Làm mới Chrome")
+					a.refreshBtn.SetText("Danh sách tài khoản")
 				}
 				a.mu.Lock()
 				a.isBusy = false
@@ -635,9 +640,9 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 	// 1. Language Server status in TopSection Row 2
 	if a.serverStatusLabel != nil {
 		if overview.LanguageServerRunning && overview.ServerInfo != nil {
-			a.serverStatusLabel.SetText(fmt.Sprintf("Language Server : PID %d | Port %d | Hoạt động", overview.ServerInfo.PID, overview.ServerInfo.Port))
+			a.serverStatusLabel.SetText(fmt.Sprintf("Hoạt động  | PID %d | Port %d", overview.ServerInfo.PID, overview.ServerInfo.Port))
 		} else {
-			a.serverStatusLabel.SetText("Language Server : Không phát hiện (Chế độ dự phòng WinCred)")
+			a.serverStatusLabel.SetText("Không hoạt động  | Dự phòng WinCred")
 		}
 	}
 

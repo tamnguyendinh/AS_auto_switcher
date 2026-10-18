@@ -281,8 +281,8 @@ func TestUpdateUI_Empty(t *testing.T) {
 	if app.overview.ActiveEmail != "" {
 		t.Errorf("expected empty active email, got: %s", app.overview.ActiveEmail)
 	}
-	if !strings.Contains(app.serverStatusLabel.Text, "Language Server : Không phát hiện") {
-		t.Errorf("expected server status 'Language Server : Không phát hiện', got: %s", app.serverStatusLabel.Text)
+	if !strings.Contains(app.serverStatusLabel.Text, "Không hoạt động") {
+		t.Errorf("expected server status to contain 'Không hoạt động', got: %s", app.serverStatusLabel.Text)
 	}
 	if len(app.accountListContainer.Objects) != 1 {
 		t.Errorf("expected 1 container object (empty label), got %d", len(app.accountListContainer.Objects))
@@ -750,17 +750,17 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	if app.quotaRefreshAllBtn == nil {
 		t.Fatalf("expected quotaRefreshAllBtn to be initialized")
 	}
-	if app.quotaRefreshAllBtn.Text != "🔄 Làm mới Quota" {
+	if app.quotaRefreshAllBtn.Text != "Làm mới Quota" {
 		t.Errorf("unexpected button label: %s", app.quotaRefreshAllBtn.Text)
 	}
 
-	// UI-TR-03 check: Auto-refresh label initialized
-	if app.autoRefreshLabel == nil {
-		t.Fatalf("expected autoRefreshLabel to be initialized")
-	}
-	if !strings.Contains(app.autoRefreshLabel.Text, "Cập nhật :") {
-		t.Errorf("expected auto-refresh label to contain 'Cập nhật :', got: %s", app.autoRefreshLabel.Text)
-	}
+	// UI-TR-03 check: Auto-refresh timestamp label eliminated for clean 3-row layout
+	// Timestamp label removed from toolbar per CSD refactor spec
+	//
+	//
+	//
+	//
+	//
 
 	// Trigger RefreshAllQuota
 	app.RefreshAllQuota()
@@ -769,14 +769,14 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	waitForIdle(app, 3*time.Second)
 
 	// Verify button returned to standard label
-	if app.quotaRefreshAllBtn.Text != "🔄 Làm mới Quota" {
+	if app.quotaRefreshAllBtn.Text != "Làm mới Quota" {
 		t.Errorf("expected button restored to standard label, got: %s", app.quotaRefreshAllBtn.Text)
 	}
 
-	// Verify autoRefreshLabel has updated timestamp
-	if strings.Contains(app.autoRefreshLabel.Text, "--:--:--") {
-		t.Errorf("expected timestamp to be updated, got: %s", app.autoRefreshLabel.Text)
-	}
+	// Timestamp label eliminated
+	//
+	//
+	//
 
 	// Trigger RefreshSingleAccountQuota
 	app.RefreshSingleAccountQuota("acc1@gmail.com")
@@ -821,7 +821,7 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	waitForIdle(app, 3*time.Second)
 
 	// UI-TR-01: Global Quota Refresh Button in Header Toolbar
-	if app.quotaRefreshAllBtn == nil || app.quotaRefreshAllBtn.Text != "🔄 Làm mới Quota" {
+	if app.quotaRefreshAllBtn == nil || app.quotaRefreshAllBtn.Text != "Làm mới Quota" {
 		t.Errorf("UI-TR-01 FAILED: global quota refresh button missing or invalid")
 	}
 
@@ -842,10 +842,10 @@ func TestUITraceabilityChecklist(t *testing.T) {
 		t.Errorf("UI-TR-02 FAILED: refresh button not found in account card")
 	}
 
-	// UI-TR-03: Auto-Refresh 60s Indicator
-	if app.autoRefreshLabel == nil || !strings.Contains(app.autoRefreshLabel.Text, "Cập nhật :") {
-		t.Errorf("UI-TR-03 FAILED: 60s auto-refresh indicator missing")
-	}
+	// UI-TR-03: Auto-Refresh 60s timestamp label eliminated for clean 3-row layout
+	//
+	//
+	//
 
 	// UI-TR-04: Mini Quota Progress Badges (>50% Green, 15-50% Amber, <15% Red)
 	if GetQuotaTierColor(0.8) != ColorQuotaGreen || GetQuotaTierColor(0.3) != ColorQuotaAmber || GetQuotaTierColor(0.05) != ColorQuotaRed {
@@ -855,7 +855,7 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	// UI-TR-05: Quota Recovery Countdown eliminated for clean 3-row layout
 
 	// UI-TR-06: Multi-Theme Switcher Control
-	if app.themeSelect == nil || len(app.themeSelect.Options) != 3 {
+	if app.themeSelect == nil || len(app.themeSelect.Options) != 3 || app.themeSelect.Options[0] != "🌙" || app.themeSelect.Options[1] != "☀️" || app.themeSelect.Options[2] != "☕" {
 		t.Errorf("UI-TR-06 FAILED: theme selector control missing or has invalid options")
 	}
 
@@ -1295,7 +1295,7 @@ func TestOwnerRedesign_ThreeColumnGrid(t *testing.T) {
 		t.Fatalf("expected 6 account cards in container, got %d", len(app.accountListContainer.Objects))
 	}
 
-	expectedStatus := "Language Server : PID 7768 | Port 52704 | Hoạt động"
+	expectedStatus := "Hoạt động  | PID 7768 | Port 52704"
 	if app.serverStatusLabel.Text != expectedStatus {
 		t.Errorf("expected '%s', got '%s'", expectedStatus, app.serverStatusLabel.Text)
 	}
