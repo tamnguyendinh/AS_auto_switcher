@@ -17,8 +17,84 @@ var (
 	ColorQuotaGreen = color.NRGBA{R: 0x22, G: 0xc5, B: 0x5e, A: 0xff} // #22c55e (> 50%)
 	ColorQuotaAmber = color.NRGBA{R: 0xf5, G: 0x9e, B: 0x0b, A: 0xff} // #f59e0b (15% - 50%)
 	ColorQuotaRed   = color.NRGBA{R: 0xef, G: 0x44, B: 0x44, A: 0xff} // #ef4444 (< 15%)
-	ColorQuotaMuted = color.NRGBA{R: 0x88, G: 0x88, B: 0x99, A: 0xff}
+	ColorQuotaMuted = color.NRGBA{R: 0x88, G: 0x88, B: 0x99, A: 0xff} // Muted gray for missing data/errors
+
+	// ColorQuotaTrack defines the subtle background track color for mini progress bars per architect spec.
+	ColorQuotaTrack = color.NRGBA{R: 0x44, G: 0x44, B: 0x55, A: 0x66}
 )
+
+// DefaultMiniBarWidth defines the standard 50px width for quota mini progress bars.
+const DefaultMiniBarWidth float32 = 50.0
+
+// miniProgressBarLayout lays out the background track and dynamic fill bar of a mini progress bar.
+type miniProgressBarLayout struct {
+	barWidth  float32
+	barHeight float32
+	fillWidth float32
+}
+
+func (l *miniProgressBarLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) == 0 {
+		return
+	}
+	y := float32(0)
+	if size.Height > l.barHeight {
+		y = (size.Height - l.barHeight) / 2
+	}
+	// Background track: spans full barWidth
+	objects[0].Move(fyne.NewPos(0, y))
+	objects[0].Resize(fyne.NewSize(l.barWidth, l.barHeight))
+
+	// Fill bar: spans proportional fillWidth
+	if len(objects) > 1 {
+		objects[1].Move(fyne.NewPos(0, y))
+		objects[1].Resize(fyne.NewSize(l.fillWidth, l.barHeight))
+	}
+}
+
+func (l *miniProgressBarLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(l.barWidth, l.barHeight)
+}
+
+// createMiniProgressBar creates a 6px rounded graphical progress bar that depletes proportionally with fraction.
+func createMiniProgressBar(fraction float64, barWidth float32) fyne.CanvasObject {
+	if barWidth <= 0 {
+		barWidth = DefaultMiniBarWidth
+	}
+	barHeight := float32(6.0)
+	cornerRadius := float32(3.0)
+
+	bgTrack := canvas.NewRectangle(ColorQuotaTrack)
+	bgTrack.CornerRadius = cornerRadius
+	bgTrack.Resize(fyne.NewSize(barWidth, barHeight))
+
+	var fillWidth float32
+	var fillColor color.Color
+
+	if fraction < 0 {
+		fillWidth = 0
+		fillColor = ColorQuotaMuted
+	} else {
+		clamped := fraction
+		if clamped > 1.0 {
+			clamped = 1.0
+		}
+		fillWidth = barWidth * float32(clamped)
+		fillColor = GetQuotaTierColor(fraction)
+	}
+
+	fillBar := canvas.NewRectangle(fillColor)
+	fillBar.CornerRadius = cornerRadius
+	fillBar.Resize(fyne.NewSize(fillWidth, barHeight))
+
+	layout := &miniProgressBarLayout{
+		barWidth:  barWidth,
+		barHeight: barHeight,
+		fillWidth: fillWidth,
+	}
+
+	return container.New(layout, bgTrack, fillBar)
+}
 
 // GetQuotaTierColor determines the semantic color for a given quota fraction [0.0, 1.0].
 func GetQuotaTierColor(fraction float64) color.Color {
@@ -144,27 +220,35 @@ func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
 	return dq
 }
 
-// createModelQuotaItem creates a compact status dot and percentage text label for one model (Claude or Gemini).
+// createModelQuotaItem creates a graphical mini progress bar and percentage text label for one model (Claude or Gemini).
+// Layout structure: [Model Name] [MiniProgressBar] [Percentage]
 func createModelQuotaItem(modelName string, fraction float64, hasData bool) fyne.CanvasObject {
 	if !hasData || fraction < 0 {
-		dot := canvas.NewCircle(ColorQuotaMuted)
-		dotWrap := container.NewGridWrap(fyne.NewSize(7, 7), dot)
-		txt := canvas.NewText(fmt.Sprintf("%s --%%", modelName), ColorQuotaMuted)
-		txt.TextSize = 11
-		return container.NewHBox(container.NewCenter(dotWrap), txt)
+		bar := createMiniProgressBar(-1, DefaultMiniBarWidth)
+		txtModel := canvas.NewText(modelName, ColorQuotaMuted)
+		txtModel.TextSize = 11
+		txtModel.TextStyle = fyne.TextStyle{Bold: true}
+
+		txtPct := canvas.NewText("--%", ColorQuotaMuted)
+		txtPct.TextSize = 11
+		txtPct.TextStyle = fyne.TextStyle{Bold: true}
+
+		return container.NewHBox(txtModel, bar, txtPct)
 	}
 
 	tierColor := GetQuotaTierColor(fraction)
 	pctStr := formatFraction(fraction)
+	bar := createMiniProgressBar(fraction, DefaultMiniBarWidth)
 
-	dot := canvas.NewCircle(tierColor)
-	dotWrap := container.NewGridWrap(fyne.NewSize(7, 7), dot)
+	txtModel := canvas.NewText(modelName, tierColor)
+	txtModel.TextSize = 11
+	txtModel.TextStyle = fyne.TextStyle{Bold: true}
 
-	txt := canvas.NewText(fmt.Sprintf("%s %s", modelName, pctStr), tierColor)
-	txt.TextSize = 11
-	txt.TextStyle = fyne.TextStyle{Bold: true}
+	txtPct := canvas.NewText(pctStr, tierColor)
+	txtPct.TextSize = 11
+	txtPct.TextStyle = fyne.TextStyle{Bold: true}
 
-	return container.NewHBox(container.NewCenter(dotWrap), txt)
+	return container.NewHBox(txtModel, bar, txtPct)
 }
 
 // createErrorBadge creates a compact badge indicating a connection error in muted gray.
@@ -177,7 +261,7 @@ func createErrorBadge() fyne.CanvasObject {
 	return container.NewHBox(container.NewCenter(dotWrap), txt)
 }
 
-// CreateQuotaCycleRow builds a single cycle row (e.g. "5h: Claude 100% Gemini 88%" or "week: Claude 100% Gemini 90%").
+// CreateQuotaCycleRow builds a single cycle row (e.g. "5h: Claude [██] 100% Gemini [██] 88%" or "week: Claude [██] 100% Gemini [██] 90%").
 func CreateQuotaCycleRow(prefix string, claudeFrac, geminiFrac float64, hasData bool, isError bool) fyne.CanvasObject {
 	lbl := canvas.NewText(prefix, ColorQuotaMuted)
 	lbl.TextSize = 11

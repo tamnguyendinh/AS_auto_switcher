@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"image/color"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -512,14 +513,14 @@ func TestSaveSession_NoModalPopup(t *testing.T) {
 // Slice P6A-2 Tests: Quota Badges, Countdown, Refresh & UI-TR
 // -------------------------------------------------------------
 
-func extractBadgeProperties(badgeObj fyne.CanvasObject) (*canvas.Circle, *canvas.Text) {
-	var circle *canvas.Circle
+func extractBadgeProperties(badgeObj fyne.CanvasObject) (*canvas.Rectangle, *canvas.Text) {
+	var fillRect *canvas.Rectangle
 	var text *canvas.Text
 
 	var walk func(o fyne.CanvasObject)
 	walk = func(o fyne.CanvasObject) {
-		if c, ok := o.(*canvas.Circle); ok {
-			circle = c
+		if r, ok := o.(*canvas.Rectangle); ok {
+			fillRect = r
 		}
 		if t, ok := o.(*canvas.Text); ok {
 			text = t
@@ -531,7 +532,7 @@ func extractBadgeProperties(badgeObj fyne.CanvasObject) (*canvas.Circle, *canvas
 		}
 	}
 	walk(badgeObj)
-	return circle, text
+	return fillRect, text
 }
 
 func TestQuotaBadgeGroupAndColors(t *testing.T) {
@@ -586,23 +587,23 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 		t.Fatalf("expected 5h row container with prefix, Claude, and Gemini items")
 	}
 
-	cCircle, cText := extractBadgeProperties(r5h.Objects[1])
-	if cCircle == nil || cText == nil {
+	cRect, cText := extractBadgeProperties(r5h.Objects[1])
+	if cRect == nil || cText == nil {
 		t.Fatalf("failed extracting Claude badge elements")
 	}
-	assertColorMatches(t, "ClaudeBadge", "dot", cCircle.FillColor, ColorQuotaGreen)
-	if cText.Text != "Claude 100%" {
-		t.Errorf("expected Claude text 'Claude 100%%', got '%s'", cText.Text)
+	assertColorMatches(t, "ClaudeBadge", "bar_fill", cRect.FillColor, ColorQuotaGreen)
+	if cText.Text != "100%" {
+		t.Errorf("expected Claude percentage '100%%', got '%s'", cText.Text)
 	}
 	assertColorMatches(t, "ClaudeBadge", "text", cText.Color, ColorQuotaGreen)
 
-	gCircle, gText := extractBadgeProperties(r5h.Objects[2])
-	if gCircle == nil || gText == nil {
+	gRect, gText := extractBadgeProperties(r5h.Objects[2])
+	if gRect == nil || gText == nil {
 		t.Fatalf("failed extracting Gemini badge elements")
 	}
-	assertColorMatches(t, "GeminiBadge", "dot", gCircle.FillColor, ColorQuotaAmber)
-	if gText.Text != "Gemini 23.5%" {
-		t.Errorf("expected Gemini text 'Gemini 23.5%%', got '%s'", gText.Text)
+	assertColorMatches(t, "GeminiBadge", "bar_fill", gRect.FillColor, ColorQuotaAmber)
+	if gText.Text != "23.5%" {
+		t.Errorf("expected Gemini percentage '23.5%%', got '%s'", gText.Text)
 	}
 	assertColorMatches(t, "GeminiBadge", "text", gText.Color, ColorQuotaAmber)
 
@@ -1337,14 +1338,20 @@ func TestOwnerRedesign_F1_DualCycleIndependentFractionsAndMissing(t *testing.T) 
 		t.Errorf("expected missing Gemini 5h to be -1, got %f", dqPartial.Gemini5h)
 	}
 
-	// Verify UI rendering of missing bucket renders "--%"
+	// Verify UI rendering of missing bucket renders "--%" and graphical mini progress bars are present
 	row := CreateQuotaCycleRow("week:", dqPartial.ClaudeWeek, dqPartial.GeminiWeek, dqPartial.HasData, dqPartial.IsError)
 	foundMissing := false
+	foundMiniBar := false
 	var walk func(fyne.CanvasObject)
 	walk = func(o fyne.CanvasObject) {
 		if txt, ok := o.(*canvas.Text); ok {
 			if strings.Contains(txt.Text, "--%") {
 				foundMissing = true
+			}
+		}
+		if rect, ok := o.(*canvas.Rectangle); ok {
+			if rect.CornerRadius == 3 && rect.Size().Height == 6 {
+				foundMiniBar = true
 			}
 		}
 		if c, ok := o.(*fyne.Container); ok {
@@ -1356,6 +1363,9 @@ func TestOwnerRedesign_F1_DualCycleIndependentFractionsAndMissing(t *testing.T) 
 	walk(row)
 	if !foundMissing {
 		t.Errorf("expected missing bucket to render '--%%' label")
+	}
+	if !foundMiniBar {
+		t.Errorf("expected MiniProgressBar (CornerRadius: 3, Height: 6) in quota row")
 	}
 }
 
@@ -1557,34 +1567,25 @@ func TestF1_ExtractDualCycleQuota_BothCyclesZero_NoRaw_NoReset(t *testing.T) {
 	}
 	walk(card)
 
-	hasClaude5h0 := false
-	hasClaudeWeek0 := false
-	hasGemini5h0 := false
-	hasGeminiWeek0 := false
+	claudeCount := 0
+	geminiCount := 0
+	zeroCount := 0
 	for _, text := range cardTexts {
-		if strings.Contains(text, "Claude 0%") {
-			if !hasClaude5h0 {
-				hasClaude5h0 = true
-			} else {
-				hasClaudeWeek0 = true
-			}
+		if text == "Claude" {
+			claudeCount++
 		}
-		if strings.Contains(text, "Gemini 0%") {
-			if !hasGemini5h0 {
-				hasGemini5h0 = true
-			} else {
-				hasGeminiWeek0 = true
-			}
+		if text == "Gemini" {
+			geminiCount++
+		}
+		if text == "0%" {
+			zeroCount++
 		}
 		if strings.Contains(text, "--%") {
 			t.Errorf("unexpected placeholder --%%%% on zero-cycle card, text: %s", text)
 		}
 	}
-	if !hasClaude5h0 || !hasClaudeWeek0 {
-		t.Errorf("expected Claude 5h and week both 0%%, got texts: %v", cardTexts)
-	}
-	if !hasGemini5h0 || !hasGeminiWeek0 {
-		t.Errorf("expected Gemini 5h and week both 0%%, got texts: %v", cardTexts)
+	if claudeCount != 2 || geminiCount != 2 || zeroCount != 4 {
+		t.Errorf("expected Claude (2), Gemini (2), and 0%% (4) on zero-cycle card, got texts: %v", cardTexts)
 	}
 
 	// Case 2: Claude both zero, Gemini missing
@@ -1701,24 +1702,18 @@ func TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero(t *t
 	card := NewAccountCardWithQuota(item, bothPosLegacyBothZeroCycles, DarkPalette, nil, nil, nil)
 	texts := extractTexts(card)
 
-	hasClaude5h0 := false
-	hasClaudeWk0 := false
-	hasGemini5h0 := false
-	hasGeminiWk0 := false
+	claudeCount := 0
+	geminiCount := 0
+	zeroCount := 0
 	for _, txt := range texts {
-		if strings.Contains(txt, "Claude 0%") {
-			if !hasClaude5h0 {
-				hasClaude5h0 = true
-			} else {
-				hasClaudeWk0 = true
-			}
+		if txt == "Claude" {
+			claudeCount++
 		}
-		if strings.Contains(txt, "Gemini 0%") {
-			if !hasGemini5h0 {
-				hasGemini5h0 = true
-			} else {
-				hasGeminiWk0 = true
-			}
+		if txt == "Gemini" {
+			geminiCount++
+		}
+		if txt == "0%" {
+			zeroCount++
 		}
 		if strings.Contains(txt, "20%") || strings.Contains(txt, "80%") {
 			t.Errorf("CRITICAL VIOLATION: card displayed legacy percentage instead of 0%%: %s", txt)
@@ -1727,11 +1722,8 @@ func TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero(t *t
 			t.Errorf("CRITICAL VIOLATION: card displayed placeholder '--%%' instead of explicit 0%%: %s", txt)
 		}
 	}
-	if !hasClaude5h0 || !hasClaudeWk0 {
-		t.Errorf("expected Claude to have two 'Claude 0%%' labels (5h and week), got texts: %v", texts)
-	}
-	if !hasGemini5h0 || !hasGeminiWk0 {
-		t.Errorf("expected Gemini to have two 'Gemini 0%%' labels (5h and week), got texts: %v", texts)
+	if claudeCount != 2 || geminiCount != 2 || zeroCount != 4 {
+		t.Errorf("expected Claude to have two 'Claude' and two '0%%' labels, got texts: %v", texts)
 	}
 
 	// Case 2: Asymmetric — Claude has positive RemainingFraction with zero cycles; Gemini is unknown (-1)
@@ -1804,5 +1796,62 @@ func TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero(t *t
 	}
 	if dqLegacy.Gemini5h != 0.65 || dqLegacy.GeminiWeek != -1.0 {
 		t.Errorf("expected Gemini legacy fallback (0.65, -1.0), got 5h=%f, week=%f", dqLegacy.Gemini5h, dqLegacy.GeminiWeek)
+	}
+}
+
+
+func TestMiniProgressBar_DepletionAndGeometry(t *testing.T) {
+	testCases := []struct {
+		name          string
+		fraction      float64
+		barWidth      float32
+		expectedFillW float32
+		expectedColor color.NRGBA
+	}{
+		{"100% Green", 1.0, 50.0, 50.0, ColorQuotaGreen},
+		{"91.6% Green", 0.916, 50.0, 45.8, ColorQuotaGreen},
+		{"46% Amber", 0.46, 50.0, 23.0, ColorQuotaAmber},
+		{"12% Red", 0.12, 50.0, 6.0, ColorQuotaRed},
+		{"0% Red", 0.0, 50.0, 0.0, ColorQuotaRed},
+		{"Missing Muted", -1.0, 50.0, 0.0, ColorQuotaMuted},
+		{"Overflow Clamped", 1.5, 50.0, 50.0, ColorQuotaGreen},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bar := createMiniProgressBar(tc.fraction, tc.barWidth)
+			cont, ok := bar.(*fyne.Container)
+			if !ok || len(cont.Objects) < 2 {
+				t.Fatalf("expected container with background track and fill bar")
+			}
+
+			track, ok := cont.Objects[0].(*canvas.Rectangle)
+			if !ok {
+				t.Fatalf("expected track to be a canvas.Rectangle")
+			}
+			if track.Size().Width != tc.barWidth || track.Size().Height != 6.0 {
+				t.Errorf("unexpected track size: %v, expected %fx6", track.Size(), tc.barWidth)
+			}
+			if track.CornerRadius != 3.0 {
+				t.Errorf("expected track CornerRadius 3.0, got %f", track.CornerRadius)
+			}
+			assertColorMatches(t, tc.name, "track_color", track.FillColor, ColorQuotaTrack)
+
+			fill, ok := cont.Objects[1].(*canvas.Rectangle)
+			if !ok {
+				t.Fatalf("expected fill to be a canvas.Rectangle")
+			}
+			diff := fill.Size().Width - tc.expectedFillW
+			if diff < -0.01 || diff > 0.01 {
+				t.Errorf("expected fill width ~%f, got %f", tc.expectedFillW, fill.Size().Width)
+			}
+			if fill.Size().Height != 6.0 {
+				t.Errorf("expected fill height 6.0, got %f", fill.Size().Height)
+			}
+			if fill.CornerRadius != 3.0 {
+				t.Errorf("expected fill CornerRadius 3.0, got %f", fill.CornerRadius)
+			}
+			assertColorMatches(t, tc.name, "fill_color", fill.FillColor, tc.expectedColor)
+		})
 	}
 }
