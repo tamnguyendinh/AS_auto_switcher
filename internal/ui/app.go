@@ -418,11 +418,6 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 	}()
 }
 
-// RefreshSingleQuota delegates to RefreshSingleAccountQuota for backwards compatibility.
-func (a *App) RefreshSingleQuota(email string) {
-	a.RefreshSingleAccountQuota(email)
-}
-
 // Refresh asynchronously updates account states from Chrome and AccountStore.
 func (a *App) Refresh() {
 	a.mu.Lock()

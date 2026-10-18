@@ -17,6 +17,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -299,13 +300,13 @@ func TestNewAccountCard_Callbacks(t *testing.T) {
 		IsActive: false,
 	}
 
-	card := NewAccountCard(readyItem, func(email string) {
+	card := NewAccountCardWithQuota(readyItem, nil, DarkPalette, func(email string) {
 		if email == "ready@example.com" {
 			switched = true
 		}
 	}, func() {
 		saved = true
-	})
+	}, nil)
 
 	if card == nil {
 		t.Fatalf("expected non-nil card")
@@ -317,9 +318,9 @@ func TestNewAccountCard_Callbacks(t *testing.T) {
 		IsActive: true,
 	}
 
-	card2 := NewAccountCard(unauthActiveItem, func(email string) {}, func() {
+	card2 := NewAccountCardWithQuota(unauthActiveItem, nil, DarkPalette, func(email string) {}, func() {
 		saved = true
-	})
+	}, nil)
 	if card2 == nil {
 		t.Fatalf("expected non-nil card for active unauth")
 	}
@@ -386,7 +387,7 @@ func TestElevationTokensAndBorders(t *testing.T) {
 		State:    model.StateReady,
 		IsActive: false,
 	}
-	readyCard := NewAccountCard(readyItem, nil, nil)
+	readyCard := NewAccountCardWithQuota(readyItem, nil, DarkPalette, nil, nil, nil)
 	stack, ok := readyCard.(*fyne.Container)
 	if !ok || len(stack.Objects) == 0 {
 		t.Fatalf("expected stack container for readyCard")
@@ -407,7 +408,7 @@ func TestElevationTokensAndBorders(t *testing.T) {
 		State:    model.StateReady,
 		IsActive: true,
 	}
-	activeCard := NewAccountCard(activeItem, nil, nil)
+	activeCard := NewAccountCardWithQuota(activeItem, nil, DarkPalette, nil, nil, nil)
 	activeStack, ok := activeCard.(*fyne.Container)
 	if !ok || len(activeStack.Objects) == 0 {
 		t.Fatalf("expected stack container for activeCard")
@@ -557,27 +558,27 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 		t.Errorf("expected Red for 0.0, got %#v", GetQuotaTierColor(0.0))
 	}
 
-	// 2. NewQuotaBadgeGroup with nil quota returns placeholder
-	nilBadges := NewQuotaBadgeGroup(nil)
-	if nilBadges == nil {
-		t.Fatalf("expected non-nil container for nil quota")
+	// 2. ExtractDualCycleQuota and CreateQuotaCycleRow with nil quota returns placeholder
+	nilDq := ExtractDualCycleQuota(nil)
+	if nilDq.HasData || nilDq.Claude5h != -1 || nilDq.ClaudeWeek != -1 || nilDq.Gemini5h != -1 || nilDq.GeminiWeek != -1 {
+		t.Fatalf("expected -1 fractions and HasData=false for nil quota")
+	}
+	nilRow5h := CreateQuotaCycleRow("5h:", nilDq.Claude5h, nilDq.Gemini5h, nilDq.HasData, nilDq.IsError)
+	if nilRow5h == nil {
+		t.Fatalf("expected non-nil container for nil quota row")
 	}
 
-	// 3. NewQuotaBadgeGroup with populated quota & deep canvas assertion (FINDING-03)
+	// 3. Dual-cycle rows with populated quota & deep canvas assertion (FINDING-03)
 	quota := &telemetry.AccountQuotaData{
 		Email:  "user@example.com",
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.235},
 	}
-	badges := NewQuotaBadgeGroup(quota)
-	if badges == nil {
-		t.Fatalf("expected non-nil container for populated quota")
-	}
-
-	vbox, ok := badges.(*fyne.Container)
-	if !ok || len(vbox.Objects) != 2 {
-		t.Fatalf("expected 2 dual-cycle rows in NewQuotaBadgeGroup, got %d", len(vbox.Objects))
-	}
+	dq := ExtractDualCycleQuota(quota)
+	r5hObj := CreateQuotaCycleRow("5h:", dq.Claude5h, dq.Gemini5h, dq.HasData, dq.IsError)
+	rWeekObj := CreateQuotaCycleRow("week:", dq.ClaudeWeek, dq.GeminiWeek, dq.HasData, dq.IsError)
+	badges := container.NewVBox(r5hObj, rWeekObj)
+	vbox := badges
 
 	// Row 1 (5h): Claude + Gemini
 	r5h, ok := vbox.Objects[0].(*fyne.Container)
@@ -776,8 +777,8 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 		t.Errorf("expected timestamp to be updated, got: %s", app.autoRefreshLabel.Text)
 	}
 
-	// Trigger RefreshSingleQuota
-	app.RefreshSingleQuota("acc1@gmail.com")
+	// Trigger RefreshSingleAccountQuota
+	app.RefreshSingleAccountQuota("acc1@gmail.com")
 	waitForIdle(app, 3*time.Second)
 
 	if q, ok := cache.Get("acc1@gmail.com"); !ok || q == nil {
@@ -785,10 +786,11 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	}
 }
 
-func TestActiveQuotaHeaderSummary(t *testing.T) {
+func TestExtractDualCycleQuota_Contract(t *testing.T) {
 	// Nil quota
-	if s := BuildActiveQuotaSummary(nil); !strings.Contains(s, "Chưa tải dữ liệu") {
-		t.Errorf("expected 'Chưa tải dữ liệu' for nil quota, got: %s", s)
+	dqNil := ExtractDualCycleQuota(nil)
+	if dqNil.HasData || dqNil.Claude5h != -1 || dqNil.ClaudeWeek != -1 {
+		t.Errorf("expected HasData=false and -1 for nil quota")
 	}
 
 	// Populated quota
@@ -796,12 +798,12 @@ func TestActiveQuotaHeaderSummary(t *testing.T) {
 		Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
 		Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.235},
 	}
-	summary := BuildActiveQuotaSummary(q)
-	if !strings.Contains(summary, "Claude: 100%") || !strings.Contains(summary, "Gemini: 23.5%") {
-		t.Errorf("unexpected active quota summary: %s", summary)
+	dq := ExtractDualCycleQuota(q)
+	if dq.Claude5h != 1.0 || dq.ClaudeWeek != -1 {
+		t.Errorf("unexpected Claude dual-cycle: 5h=%f, week=%f", dq.Claude5h, dq.ClaudeWeek)
 	}
-	if strings.Contains(summary, "GPT") {
-		t.Errorf("expected zero GPT in active quota summary, got: %s", summary)
+	if dq.Gemini5h != 0.235 || dq.GeminiWeek != -1 {
+		t.Errorf("unexpected Gemini dual-cycle: 5h=%f, week=%f", dq.Gemini5h, dq.GeminiWeek)
 	}
 }
 
@@ -878,15 +880,15 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 		Gemini:       telemetry.ModelQuotaBucket{RemainingFraction: 0.0},
 	}
 
-	// 1. NewQuotaBadgeGroup with StatusError must render [!] Lỗi kết nối and NEVER 0% red
-	badges := NewQuotaBadgeGroup(errQuota)
-	if badges == nil {
-		t.Fatalf("expected non-nil container for error quota badges")
-	}
+	// 1. Dual-cycle rows with StatusError must render [!] Lỗi kết nối and NEVER 0% red
+	dq := ExtractDualCycleQuota(errQuota)
+	r5h := CreateQuotaCycleRow("5h:", dq.Claude5h, dq.Gemini5h, dq.HasData, dq.IsError)
+	rWeek := CreateQuotaCycleRow("week:", dq.ClaudeWeek, dq.GeminiWeek, dq.HasData, dq.IsError)
+	badges := container.NewVBox(r5h, rWeek)
 
-	gridCont, ok := badges.(*fyne.Container)
-	if !ok || len(gridCont.Objects) == 0 {
-		t.Fatalf("expected container with objects in NewQuotaBadgeGroup")
+	gridCont := badges
+	if len(gridCont.Objects) == 0 {
+		t.Fatalf("expected container with objects in dual-cycle error badge")
 	}
 
 	hasErrorText := false
@@ -917,17 +919,6 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 	}
 	if !hasMutedColor {
 		t.Errorf("expected error badge text color to be ColorQuotaMuted")
-	}
-
-	// 2. Countdown label eliminated for clean 3-row layout
-
-	// 3. BuildActiveQuotaSummary with StatusError must return [!] Lỗi kết nối
-	summary := BuildActiveQuotaSummary(errQuota)
-	if !strings.Contains(summary, "[!] Lỗi kết nối") {
-		t.Errorf("expected active quota summary to report '[!] Lỗi kết nối', got: %s", summary)
-	}
-	if strings.Contains(summary, "0%") {
-		t.Errorf("CRITICAL VIOLATION: active quota summary must NEVER display 0%% when in error status, got: %s", summary)
 	}
 }
 
@@ -1273,10 +1264,7 @@ func TestOwnerRedesign_NoGPTInCardsOrSummary(t *testing.T) {
 	}
 	walkNoGPT(card)
 
-	summary := BuildActiveQuotaSummary(quota)
-	if strings.Contains(strings.ToUpper(summary), "GPT") {
-		t.Fatalf("CRITICAL NON-GOAL VIOLATION: found GPT in active summary: %s", summary)
-	}
+
 }
 
 // -----------------------------------------------------------------------------

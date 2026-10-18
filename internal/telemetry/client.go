@@ -228,19 +228,22 @@ type ModelQuotaBucket struct {
 	RemainingAmount   int64     `json:"remaining_amount,omitempty"`
 	ResetTime         time.Time `json:"reset_time"`
 	TokenType         string    `json:"token_type,omitempty"`
-	FiveHourFraction  float64   `json:"five_hour_fraction,omitempty"`
-	WeeklyFraction    float64   `json:"weekly_fraction,omitempty"`
+	FiveHourFraction  float64   `json:"five_hour_fraction"`
+	WeeklyFraction    float64   `json:"weekly_fraction"`
 	FiveHourReset     time.Time `json:"five_hour_reset,omitempty"`
 	WeeklyReset       time.Time `json:"weekly_reset,omitempty"`
 }
 
-// AccountQuotaData encapsulates the parsed quota telemetry across model families for one account.
-// UnmarshalJSON custom unmarshaler ensures cycle fractions default to -1 when absent in JSON (legacy cache).
+// UnmarshalJSON custom unmarshaler ensures cycle and remaining fractions default to -1 when absent in JSON (legacy cache).
 func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
 	type Alias ModelQuotaBucket
 	aux := &struct {
-		FiveHour *float64 `json:"five_hour_fraction"`
-		Weekly   *float64 `json:"weekly_fraction"`
+		RemainingFraction      *float64 `json:"remaining_fraction"`
+		RemainingFractionCamel *float64 `json:"remainingFraction"`
+		FiveHour               *float64 `json:"five_hour_fraction"`
+		FiveHourCamel          *float64 `json:"fiveHourFraction"`
+		Weekly                 *float64 `json:"weekly_fraction"`
+		WeeklyCamel            *float64 `json:"weeklyFraction"`
 		*Alias
 	}{
 		Alias: (*Alias)(m),
@@ -248,15 +251,60 @@ func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, aux); err != nil {
 		return err
 	}
+	if aux.RemainingFraction != nil {
+		m.RemainingFraction = *aux.RemainingFraction
+	} else if aux.RemainingFractionCamel != nil {
+		m.RemainingFraction = *aux.RemainingFractionCamel
+	} else {
+		m.RemainingFraction = -1
+	}
+
 	if aux.FiveHour != nil {
 		m.FiveHourFraction = *aux.FiveHour
+	} else if aux.FiveHourCamel != nil {
+		m.FiveHourFraction = *aux.FiveHourCamel
 	} else {
 		m.FiveHourFraction = -1
 	}
+
 	if aux.Weekly != nil {
 		m.WeeklyFraction = *aux.Weekly
+	} else if aux.WeeklyCamel != nil {
+		m.WeeklyFraction = *aux.WeeklyCamel
 	} else {
 		m.WeeklyFraction = -1
+	}
+	return nil
+}
+
+// UnmarshalJSON custom unmarshaler ensures missing model families default to -1 fractions instead of zero.
+func (a *AccountQuotaData) UnmarshalJSON(data []byte) error {
+	type Alias AccountQuotaData
+	aux := &struct {
+		Claude *ModelQuotaBucket `json:"claude"`
+		Gemini *ModelQuotaBucket `json:"gemini"`
+		*Alias
+	}{
+		Alias: (*Alias)(a),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.Claude != nil {
+		a.Claude = *aux.Claude
+	} else {
+		a.Claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	}
+	if aux.Gemini != nil {
+		a.Gemini = *aux.Gemini
+	} else {
+		a.Gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	}
+	if a.Claude.ModelID == "" {
+		a.Claude.ModelID = "claude-4-6"
+	}
+	if a.Gemini.ModelID == "" {
+		a.Gemini.ModelID = "gemini-2-5"
 	}
 	return nil
 }
@@ -379,7 +427,11 @@ func parseResetTime(raw json.RawMessage) time.Time {
 }
 
 func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
-	b := ModelQuotaBucket{}
+	b := ModelQuotaBucket{
+		RemainingFraction: -1,
+		FiveHourFraction:  -1,
+		WeeklyFraction:    -1,
+	}
 
 	if r.ModelID != "" {
 		b.ModelID = r.ModelID
@@ -397,21 +449,9 @@ func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
 		b.RemainingFraction = *r.RemainingFraction
 	} else if r.RemainingFractionSnake != nil {
 		b.RemainingFraction = *r.RemainingFractionSnake
-	} else if r.RemainingAmount != nil {
-		b.RemainingAmount = *r.RemainingAmount
-		if *r.RemainingAmount == 0 {
-			b.RemainingFraction = 0.0
-		} else {
-			b.RemainingFraction = 1.0
-		}
-	} else if r.RemainingAmountSnake != nil {
-		b.RemainingAmount = *r.RemainingAmountSnake
-		if *r.RemainingAmountSnake == 0 {
-			b.RemainingFraction = 0.0
-		} else {
-			b.RemainingFraction = 1.0
-		}
 	}
+	// Note: DO NOT synthesize RemainingFraction from RemainingAmount!
+	// If remaining fraction is absent, RemainingFraction MUST remain -1 (HasData=false, "--%").
 
 	if r.RemainingAmount != nil {
 		b.RemainingAmount = *r.RemainingAmount
@@ -443,17 +483,17 @@ func AggregateBuckets(rawBuckets []ModelQuotaBucket) (claude, gemini, gpt ModelQ
 		lower := strings.ToLower(b.ModelID)
 		switch {
 		case strings.Contains(lower, "claude"):
-			if !hasClaude || (b.RemainingFraction >= 0 && b.RemainingFraction < claude.RemainingFraction) {
+			if !hasClaude || (b.RemainingFraction >= 0 && (claude.RemainingFraction < 0 || b.RemainingFraction < claude.RemainingFraction)) {
 				claude = b
 				hasClaude = true
 			}
 		case strings.Contains(lower, "gemini"):
-			if !hasGemini || (b.RemainingFraction >= 0 && b.RemainingFraction < gemini.RemainingFraction) {
+			if !hasGemini || (b.RemainingFraction >= 0 && (gemini.RemainingFraction < 0 || b.RemainingFraction < gemini.RemainingFraction)) {
 				gemini = b
 				hasGemini = true
 			}
 		case strings.Contains(lower, "gpt") || strings.Contains(lower, "oss"):
-			if !hasGPT || (b.RemainingFraction >= 0 && b.RemainingFraction < gpt.RemainingFraction) {
+			if !hasGPT || (b.RemainingFraction >= 0 && (gpt.RemainingFraction < 0 || b.RemainingFraction < gpt.RemainingFraction)) {
 				gpt = b
 				hasGPT = true
 			}
@@ -691,16 +731,24 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 			rawB := ModelQuotaBucket{
 				ModelID:           b.BucketID,
 				RemainingFraction: frac,
+				FiveHourFraction:  -1,
+				WeeklyFraction:    -1,
 				ResetTime:         resetT,
 			}
-			rawBuckets = append(rawBuckets, rawB)
 
 			lowerID := strings.ToLower(b.BucketID)
 			lowerWindow := strings.ToLower(b.Window)
 			is5h := strings.Contains(lowerID, "5h") || strings.Contains(lowerWindow, "5h")
 			isWeek := strings.Contains(lowerID, "week") || strings.Contains(lowerWindow, "week")
 
+			if is5h && hasFrac {
+				rawB.FiveHourFraction = frac
+			} else if isWeek && hasFrac {
+				rawB.WeeklyFraction = frac
+			}
+
 			if strings.Contains(lowerGroup, "gemini") || strings.Contains(lowerID, "gemini") {
+				rawB.TokenType = "gemini"
 				if is5h && hasFrac {
 					gemini.FiveHourFraction = frac
 					gemini.FiveHourReset = resetT
@@ -716,6 +764,7 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 				}
 			} else if strings.Contains(lowerGroup, "claude") || strings.Contains(lowerGroup, "gpt") || strings.Contains(lowerGroup, "3p") ||
 				strings.Contains(lowerID, "claude") || strings.Contains(lowerID, "3p") {
+				rawB.TokenType = "claude"
 				if is5h && hasFrac {
 					claude.FiveHourFraction = frac
 					claude.FiveHourReset = resetT
@@ -738,6 +787,7 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 					hasClaudeGPT = true
 				}
 			}
+			rawBuckets = append(rawBuckets, rawB)
 		}
 	}
 

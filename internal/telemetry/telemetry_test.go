@@ -149,10 +149,11 @@ func TestQuotaClient_RetrieveUserQuota_SnakeCaseAndProtobuf(t *testing.T) {
 					TokenTypeSnake:         "WTUS",
 				},
 				{
-					ModelIDSnake:         "gemini-2.5-flash",
-					RemainingAmountSnake: ptrInt64(0), // 0 amount = 0.0 fraction
-					ResetTimeSnakeRaw:    json.RawMessage(`1792056078`),
-					TokenTypeSnake:       "WTUS",
+					ModelIDSnake:           "gemini-2.5-flash",
+					RemainingFractionSnake: ptrFloat(0.0),
+					RemainingAmountSnake:   ptrInt64(0),
+					ResetTimeSnakeRaw:      json.RawMessage(`1792056078`),
+					TokenTypeSnake:         "WTUS",
 				},
 				{
 					ModelIDSnake:           "gpt-4o",
@@ -896,16 +897,22 @@ func TestCoverageBooster(t *testing.T) {
 		ResetTimeSnakeRaw: json.RawMessage(`"2026-10-17 12:00:00Z"`),
 	}
 	b1 := raw1.toModelQuotaBucket()
-	if b1.RemainingFraction != 1.0 {
-		t.Errorf("expected fraction 1.0 for amount 100, got %f", b1.RemainingFraction)
+	if b1.RemainingFraction != -1 {
+		t.Errorf("expected fraction -1 (unknown) for amount 100 without fraction, got %f", b1.RemainingFraction)
+	}
+	if b1.RemainingAmount != 100 {
+		t.Errorf("expected amount 100, got %d", b1.RemainingAmount)
 	}
 
 	raw2 := rawBucketInfo{
 		RemainingAmountSnake: ptrInt64(50),
 	}
 	b2 := raw2.toModelQuotaBucket()
-	if b2.RemainingFraction != 1.0 {
-		t.Errorf("expected fraction 1.0 for amount 50, got %f", b2.RemainingFraction)
+	if b2.RemainingFraction != -1 {
+		t.Errorf("expected fraction -1 (unknown) for amount 50 without fraction, got %f", b2.RemainingFraction)
+	}
+	if b2.RemainingAmount != 50 {
+		t.Errorf("expected amount 50, got %d", b2.RemainingAmount)
 	}
 
 	// 4. AggregateBuckets branches

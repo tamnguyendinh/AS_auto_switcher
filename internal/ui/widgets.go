@@ -93,11 +93,6 @@ func (l *emailLabelWithTooltip) MouseOut() {
 	}
 }
 
-// NewAccountCard creates an individual card row for an account item using default DarkPalette.
-func NewAccountCard(item manager.AccountDisplayItem, onSwitch func(email string), onSave func()) fyne.CanvasObject {
-	return NewAccountCardWithQuota(item, nil, DarkPalette, onSwitch, onSave, nil)
-}
-
 // NewAccountCardWithQuota creates a standardized 3-row account card matching the Owner's specification:
 // Line 1: Email (with truncation/tooltip) + Action Cluster: [✔ Dùng]/[Chuyển] + [🔄]
 // Line 2: 5h: Claude <pct>% Gemini <pct>%
