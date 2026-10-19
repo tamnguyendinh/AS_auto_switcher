@@ -2,12 +2,14 @@ package ui
 
 import (
 	"image/color"
+	"math"
 	"unsafe"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"golang.org/x/sys/windows"
@@ -184,7 +186,7 @@ func (a *App) setupLayout() {
 	// -------------------------------------------------------------------------
 	// Center Section: 280x130 Fixed Card Grid inside Vertical Scroller
 	// -------------------------------------------------------------------------
-	a.accountListContainer = container.NewGridWrap(fyne.NewSize(280, 130))
+	a.accountListContainer = newSymmetricGridWrap(fyne.NewSize(280, 130))
 	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
 	a.accountScroll = scrollList
 
@@ -313,3 +315,82 @@ func (d *windowDragArea) Dragged(e *fyne.DragEvent) {
 }
 
 func (d *windowDragArea) DragEnd() {}
+
+
+// -----------------------------------------------------------------------------
+// Symmetric GridWrap Layout (SPEC-ARCH-20261019-SYMMETRIC-GRID-WRAP-MARGINS)
+// -----------------------------------------------------------------------------
+
+var _ fyne.Layout = (*symmetricGridWrapLayout)(nil)
+
+type symmetricGridWrapLayout struct {
+	CellSize fyne.Size
+	colCount int
+	rowCount int
+}
+
+func newSymmetricGridWrap(cellSize fyne.Size, objects ...fyne.CanvasObject) *fyne.Container {
+	return container.New(&symmetricGridWrapLayout{CellSize: cellSize, colCount: 1, rowCount: 1}, objects...)
+}
+
+func (g *symmetricGridWrapLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	padding := theme.Padding()
+	g.colCount = 1
+	g.rowCount = 0
+
+	if size.Width > g.CellSize.Width {
+		g.colCount = int(math.Floor(float64(size.Width+padding) / float64(g.CellSize.Width+padding)))
+	}
+	if g.colCount < 1 {
+		g.colCount = 1
+	}
+
+	totalCardsW := float32(g.colCount) * g.CellSize.Width
+	var startX, gapX float32
+
+	if size.Width > totalCardsW && g.colCount > 0 {
+		extra := size.Width - totalCardsW
+		gapX = extra / float32(g.colCount+1)
+		if gapX < padding {
+			gapX = padding
+			startX = (size.Width - (totalCardsW + float32(g.colCount-1)*gapX)) / 2.0
+		} else {
+			startX = gapX
+		}
+	} else {
+		gapX = padding
+		startX = 0
+	}
+
+	gapY := padding
+	i, x, y := 0, startX, float32(0)
+	for _, child := range objects {
+		if !child.Visible() {
+			continue
+		}
+
+		if i%g.colCount == 0 {
+			g.rowCount++
+		}
+
+		child.Move(fyne.NewPos(x, y))
+		child.Resize(g.CellSize)
+
+		if (i+1)%g.colCount == 0 {
+			x = startX
+			y += g.CellSize.Height + gapY
+		} else {
+			x += g.CellSize.Width + gapX
+		}
+		i++
+	}
+}
+
+func (g *symmetricGridWrapLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	rows := g.rowCount
+	if rows < 1 {
+		rows = 1
+	}
+	return fyne.NewSize(g.CellSize.Width,
+		(g.CellSize.Height*float32(rows))+(float32(rows-1)*theme.Padding()))
+}

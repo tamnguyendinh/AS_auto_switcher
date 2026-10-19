@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -3021,5 +3022,99 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 	app.themeSelect.SetSelected("🌙")
 	if app.currentTheme != ThemeDark {
 		t.Errorf("expected currentTheme ThemeDark, got %s", app.currentTheme)
+	}
+}
+
+
+// -----------------------------------------------------------------------------
+// Test for SPEC-ARCH-20261019-SYMMETRIC-GRID-WRAP-MARGINS
+// -----------------------------------------------------------------------------
+
+func TestSymmetricGridWrapLayout_ExactSymmetry(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	cellSize := fyne.NewSize(280, 130)
+	objects := make([]fyne.CanvasObject, 6)
+	for i := 0; i < 6; i++ {
+		item := manager.AccountDisplayItem{Email: fmt.Sprintf("card%d@example.com", i+1)}
+		card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil, nil)
+		objects[i] = card
+	}
+
+	c := newSymmetricGridWrap(cellSize, objects...)
+
+	// Container size for testing: 888x400 (available scroller width for 920px window)
+	targetSize := fyne.NewSize(888, 400)
+	c.Resize(targetSize)
+
+	// AC-1: Symmetric Margins (left margin == right margin, delta <= 1.0px)
+	col0 := objects[0].Position().X
+	rightMargin := targetSize.Width - (objects[2].Position().X + objects[2].Size().Width)
+	marginDiff := math.Abs(float64(col0 - rightMargin))
+	if marginDiff > 1.0 {
+		t.Fatalf("AC-1 VIOLATION: expected symmetric margins (left=%f, right=%f, diff=%f > 1.0px)", col0, rightMargin, marginDiff)
+	}
+
+	// Verify equal gap distribution: gap between col 0 and col 1 equals gap between col 1 and col 2
+	gap1 := objects[1].Position().X - (objects[0].Position().X + objects[0].Size().Width)
+	gap2 := objects[2].Position().X - (objects[1].Position().X + objects[1].Size().Width)
+	if math.Abs(float64(gap1-gap2)) > 1.0 {
+		t.Fatalf("AC-1 VIOLATION: expected equal gaps between columns (gap1=%f, gap2=%f)", gap1, gap2)
+	}
+	if math.Abs(float64(col0-gap1)) > 1.0 {
+		t.Fatalf("AC-1 VIOLATION: expected side margin to equal inner gaps (col0=%f, gap1=%f)", col0, gap1)
+	}
+
+	// AC-2: Aligned Follower Rows (row 2 cards vertically align with row 1 columns)
+	if math.Abs(float64(objects[0].Position().X - objects[3].Position().X)) > 0.001 {
+		t.Fatalf("AC-2 VIOLATION: row 2 col 0 (x=%f) does not align with row 1 col 0 (x=%f)", objects[3].Position().X, objects[0].Position().X)
+	}
+	if math.Abs(float64(objects[1].Position().X - objects[4].Position().X)) > 0.001 {
+		t.Fatalf("AC-2 VIOLATION: row 2 col 1 (x=%f) does not align with row 1 col 1 (x=%f)", objects[4].Position().X, objects[1].Position().X)
+	}
+	if math.Abs(float64(objects[2].Position().X - objects[5].Position().X)) > 0.001 {
+		t.Fatalf("AC-2 VIOLATION: row 2 col 2 (x=%f) does not align with row 1 col 2 (x=%f)", objects[5].Position().X, objects[2].Position().X)
+	}
+
+	// Row 2 Y-position has gapY separation
+	expectedY2 := cellSize.Height + theme.Padding()
+	if objects[3].Position().Y != expectedY2 {
+		t.Fatalf("expected row 2 Y to be %f, got %f", expectedY2, objects[3].Position().Y)
+	}
+
+	// AC-3: Dimension Stability (each card is exactly 280x130, no stretching)
+	for i, obj := range objects {
+		sz := obj.Size()
+		if sz.Width != 280 || sz.Height != 130 {
+			t.Fatalf("AC-3 VIOLATION: card %d size stretched to %fx%f (expected 280x130)", i, sz.Width, sz.Height)
+		}
+	}
+
+	// Tight width test (gapX < padding fallback branch)
+	tightSize := fyne.NewSize(850, 400)
+	c.Resize(tightSize)
+	tightLeft := objects[0].Position().X
+	tightRight := tightSize.Width - (objects[2].Position().X + objects[2].Size().Width)
+	if math.Abs(float64(tightLeft-tightRight)) > 1.0 {
+		t.Fatalf("AC-1 VIOLATION (tight width): expected symmetric margins (left=%f, right=%f)", tightLeft, tightRight)
+	}
+
+	// Verify app.accountListContainer layout type in Init()
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	if app.accountListContainer == nil {
+		t.Fatal("expected non-nil app.accountListContainer")
+	}
+	gridLayout, ok := app.accountListContainer.Layout.(*symmetricGridWrapLayout)
+	if !ok || gridLayout == nil {
+		t.Fatalf("expected accountListContainer layout to be *symmetricGridWrapLayout, got %T", app.accountListContainer.Layout)
+	}
+	if gridLayout.CellSize.Width != 280 || gridLayout.CellSize.Height != 130 {
+		t.Fatalf("expected CellSize 280x130, got %fx%f", gridLayout.CellSize.Width, gridLayout.CellSize.Height)
 	}
 }
