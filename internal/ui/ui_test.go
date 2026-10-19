@@ -2154,9 +2154,9 @@ func TestArchitectSpec_INV03_WindowGeometryPersistence(t *testing.T) {
 	tempDir := t.TempDir()
 	prefPath := filepath.Join(tempDir, ".ui_preferences.json")
 
-	// 1. Save custom window dimensions
-	customW := float32(768.0)
-	customH := float32(490.0)
+	// 1. Save custom window dimensions (>= 800x500)
+	customW := float32(1100.0)
+	customH := float32(700.0)
 
 	mgr := createTestManager(t)
 	app1 := NewAppWithFyne(testApp, mgr)
@@ -2200,9 +2200,20 @@ func TestArchitectSpec_INV03_WindowGeometryPersistence(t *testing.T) {
 	if curW != customW || curH != customH {
 		t.Errorf("INV-03 VIOLATION: expected restored size %fx%f, got %fx%f", customW, customH, curW, curH)
 	}
+
+	// 3. Verify corrupted dimensions (< 800x500) reset to DefaultWindowWidth/Height
+	app3 := NewAppWithFyne(testApp, mgr)
+	app3.SetPreferencesPath(prefPath)
+	_ = app3.SaveWindowGeometryNow(490.0, 387.0) // Corrupted small size from old bug
+	app3.Init()
+	defer app3.Close()
+	resetW, resetH := app3.WindowSize()
+	if resetW != DefaultWindowWidth || resetH != DefaultWindowHeight {
+		t.Errorf("expected reset to %fx%f for corrupted size, got %fx%f", DefaultWindowWidth, DefaultWindowHeight, resetW, resetH)
+	}
 }
 
-func TestArchitectSpec_INV04_ElasticMatrixQuotaTableLayout(t *testing.T) {
+func TestArchitectSpec_INV04_FixedMatrixQuotaTableLayout(t *testing.T) {
 	dq := DualCycleQuota{
 		Gemini5h:   0.80,
 		GeminiWeek: 0.60,
@@ -2217,11 +2228,15 @@ func TestArchitectSpec_INV04_ElasticMatrixQuotaTableLayout(t *testing.T) {
 		t.Fatalf("expected 5 objects in table container")
 	}
 
+	colModel := cont.Objects[0]
 	col5h := cont.Objects[2]
 	colWeek := cont.Objects[4]
 
-	// Case 1: Standard/narrow size (236px) -> colCycleW stays at 88.0
+	// Case 1: Standard/narrow size (236px) -> All columns strictly fixed
 	cont.Resize(fyne.NewSize(236.0, 49.0))
+	if colModel.Size().Width != 50.0 {
+		t.Errorf("expected colModel width 50.0 at 236px, got %f", colModel.Size().Width)
+	}
 	if col5h.Size().Width != 88.0 {
 		t.Errorf("expected col5h width 88.0 at 236px, got %f", col5h.Size().Width)
 	}
@@ -2229,21 +2244,103 @@ func TestArchitectSpec_INV04_ElasticMatrixQuotaTableLayout(t *testing.T) {
 		t.Errorf("expected colWeek width 88.0 at 236px, got %f", colWeek.Size().Width)
 	}
 
-	// Case 2: Expanded width (300px) -> remainW = 300 - 68 = 232px > 176px -> colCycleW = min(232/2, 125) = 116.0
+	// Case 2: Expanded width (300px) -> Columns MUST NOT stretch, strictly fixed at 50, 88, 88
 	cont.Resize(fyne.NewSize(300.0, 49.0))
-	if col5h.Size().Width != 116.0 {
-		t.Errorf("expected elastic col5h width 116.0 at 300px, got %f", col5h.Size().Width)
+	if colModel.Size().Width != 50.0 {
+		t.Errorf("expected colModel width 50.0 at 300px, got %f", colModel.Size().Width)
 	}
-	if colWeek.Size().Width != 116.0 {
-		t.Errorf("expected elastic colWeek width 116.0 at 300px, got %f", colWeek.Size().Width)
+	if col5h.Size().Width != 88.0 {
+		t.Errorf("expected col5h width 88.0 at 300px, got %f", col5h.Size().Width)
+	}
+	if colWeek.Size().Width != 88.0 {
+		t.Errorf("expected colWeek width 88.0 at 300px, got %f", colWeek.Size().Width)
 	}
 
-	// Case 3: Ultra-wide (400px) -> remainW = 400 - 68 = 332px -> colCycleW capped at 125.0 to preserve typography
+	// Case 3: Ultra-wide (400px) -> Columns MUST NOT stretch, strictly fixed at 50, 88, 88
 	cont.Resize(fyne.NewSize(400.0, 49.0))
-	if col5h.Size().Width != 125.0 {
-		t.Errorf("expected capped col5h width 125.0 at 400px, got %f", col5h.Size().Width)
+	if colModel.Size().Width != 50.0 {
+		t.Errorf("expected colModel width 50.0 at 400px, got %f", colModel.Size().Width)
 	}
-	if colWeek.Size().Width != 125.0 {
-		t.Errorf("expected capped colWeek width 125.0 at 400px, got %f", colWeek.Size().Width)
+	if col5h.Size().Width != 88.0 {
+		t.Errorf("expected col5h width 88.0 at 400px, got %f", col5h.Size().Width)
+	}
+	if colWeek.Size().Width != 88.0 {
+		t.Errorf("expected colWeek width 88.0 at 400px, got %f", colWeek.Size().Width)
+	}
+}
+
+func TestArchitectSpec_INV05_IsUIReadyProtectsWindowResize(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	tempDir := t.TempDir()
+	prefPath := filepath.Join(tempDir, ".ui_preferences.json")
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	app.SetPreferencesPath(prefPath)
+	app.Init()
+	defer app.Close()
+
+	// Initially, isUIReady is false (before ShowAndRun 300ms timer)
+	if app.IsUIReady() {
+		t.Errorf("expected IsUIReady to be false initially")
+	}
+
+	// Calling OnWindowResized while not ready must NOT update windowWidth or save
+	app.OnWindowResized(1200.0, 800.0)
+	time.Sleep(500 * time.Millisecond)
+
+	curW, curH := app.WindowSize()
+	if curW == 1200.0 || curH == 800.0 {
+		t.Errorf("OnWindowResized updated dimensions while isUIReady was false")
+	}
+
+	// Now mark UI as ready
+	app.SetUIReady(true)
+	if !app.IsUIReady() {
+		t.Errorf("expected IsUIReady to be true after SetUIReady(true)")
+	}
+
+	app.OnWindowResized(1200.0, 800.0)
+	time.Sleep(500 * time.Millisecond)
+
+	curW, curH = app.WindowSize()
+	if curW != 1200.0 || curH != 800.0 {
+		t.Errorf("expected dimensions 1200x800 after ready resize, got %fx%f", curW, curH)
+	}
+}
+
+func TestArchitectSpec_INV06_OnlyMinibarExpandsOnQuotaUpdate(t *testing.T) {
+	cell := newMatrixQuotaCell(0.5, true, DarkPalette)
+	if cell == nil {
+		t.Fatal("expected non-nil cell")
+	}
+
+	// Initial fill width at 50% = 40.0 * 0.5 = 20.0
+	if cell.fillBar.Size().Width != 20.0 {
+		t.Errorf("expected initial fillBar width 20.0, got %f", cell.fillBar.Size().Width)
+	}
+	if cell.bgTrack.Size().Width != 40.0 {
+		t.Errorf("expected bgTrack width 40.0, got %f", cell.bgTrack.Size().Width)
+	}
+
+	// Update to 80%
+	cell.update(0.80, true)
+	if cell.fillBar.Size().Width != 32.0 {
+		t.Errorf("expected fillBar width 32.0 at 80%%, got %f", cell.fillBar.Size().Width)
+	}
+	// bgTrack must remain 40.0
+	if cell.bgTrack.Size().Width != 40.0 {
+		t.Errorf("expected bgTrack width 40.0 to stay fixed, got %f", cell.bgTrack.Size().Width)
+	}
+
+	// Update to missing data
+	cell.update(-1, false)
+	if cell.fillBar.Size().Width != 0 {
+		t.Errorf("expected fillBar width 0 on missing data, got %f", cell.fillBar.Size().Width)
+	}
+	if cell.pctText.Text != "--%" {
+		t.Errorf("expected pctText '--%%', got '%s'", cell.pctText.Text)
 	}
 }

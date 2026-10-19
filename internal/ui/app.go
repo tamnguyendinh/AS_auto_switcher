@@ -54,6 +54,7 @@ type App struct {
 	accountScroll        *container.Scroll
 
 	// Window size & in-place update state
+	isUIReady    atomic.Bool
 	windowWidth  float32
 	windowHeight float32
 	resizeTimer  *time.Timer
@@ -100,7 +101,7 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 		if prefs.Theme != "" {
 			a.currentTheme = prefs.Theme
 		}
-		if prefs.WindowWidth >= MinWindowWidth && prefs.WindowHeight >= MinWindowHeight {
+		if prefs.WindowWidth >= 800.0 && prefs.WindowHeight >= 500.0 {
 			a.windowWidth = prefs.WindowWidth
 			a.windowHeight = prefs.WindowHeight
 		}
@@ -224,10 +225,11 @@ func (a *App) Init() {
 		a.win = a.app.NewWindow(windowTitle)
 	a.win.SetIcon(AppLogoResource)
 
-	initW := DefaultWindowWidth
-	initH := DefaultWindowHeight
+	initW := DefaultWindowWidth  // 1008.0
+	initH := DefaultWindowHeight // 630.0
+
 	a.resizeMu.Lock()
-	if a.windowWidth >= MinWindowWidth && a.windowHeight >= MinWindowHeight {
+	if a.windowWidth >= 800.0 && a.windowHeight >= 500.0 {
 		initW = a.windowWidth
 		initH = a.windowHeight
 	} else {
@@ -303,8 +305,12 @@ func (a *App) AccountCards() []*AccountCardWidget {
 }
 
 // OnWindowResized handles resize events from minSizeLayout.
-// It debounces disk writes by 300ms to avoid flooding disk I/O while dragging.
+// It debounces disk writes by 400ms to avoid flooding disk I/O while dragging.
 func (a *App) OnWindowResized(w, h float32) {
+	// CẤM GHI KÍCH THƯỚC KHI APP ĐANG KHỞI TẠO HOẶC CHƯA READY
+	if !a.isUIReady.Load() {
+		return
+	}
 	if w < MinWindowWidth || h < MinWindowHeight {
 		return
 	}
@@ -322,7 +328,7 @@ func (a *App) OnWindowResized(w, h float32) {
 		a.resizeTimer.Stop()
 	}
 
-	a.resizeTimer = time.AfterFunc(300*time.Millisecond, func() {
+	a.resizeTimer = time.AfterFunc(400*time.Millisecond, func() {
 		a.saveWindowGeometry(w, h)
 	})
 }
@@ -373,19 +379,34 @@ func (a *App) ShowAndRun() {
 	}
 	defer a.Close()
 
-	// 1. Ép GLFW tạo HWND và hiển thị cửa sổ lên Windows ngay lập tức
+	// 1. Ép GLFW tạo HWND và hiển thị cửa sổ lên Windows
 	a.win.Show()
 
-	// 2. NGAY TẠI ĐÂY, cửa sổ đã chắc chắn tồn tại 100% trên hệ điều hành:
-	// Gọi gỡ bỏ thanh Windows ĐỒNG BỘ tại chỗ, không chờ đợi, không dò tìm
+	// 2. Gỡ bỏ thanh Windows đồng bộ
 	MakeWindowFrameless(windowTitle)
 
 	if a.alwaysOnTop {
 		setWindowAlwaysOnTop(windowTitle, true)
 	}
 
-	// 3. Chạy vòng lặp nhận sự kiện của Fyne
+	// 3. Đánh dấu UI đã sẵn sàng sau khi mọi pha layout khởi tạo hoàn tất
+	// Chờ 300ms để bỏ qua các xung resize ban đầu của OS
+	time.AfterFunc(300*time.Millisecond, func() {
+		a.isUIReady.Store(true)
+	})
+
+	// 4. Chạy vòng lặp nhận sự kiện của Fyne
 	a.app.Run()
+}
+
+// SetUIReady explicitly sets the isUIReady flag (useful for testing and window lifecycle management).
+func (a *App) SetUIReady(ready bool) {
+	a.isUIReady.Store(ready)
+}
+
+// IsUIReady returns whether the UI is ready for window resize persistence.
+func (a *App) IsUIReady() bool {
+	return a.isUIReady.Load()
 }
 
 // Window returns the main application window (useful for headless testing).

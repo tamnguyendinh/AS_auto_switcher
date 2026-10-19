@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"image/color"
-	"math"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -502,6 +501,11 @@ func (c *matrixQuotaCell) update(fraction float64, hasData bool) {
 	if c == nil {
 		return
 	}
+	barWidth := float32(MatrixMiniBarWidth) // 40.0 px cố định
+	if barWidth <= 0 {
+		barWidth = 40.0
+	}
+
 	if !hasData || fraction < 0 {
 		c.pctText.Text = "--%"
 		c.pctText.Color = ColorQuotaMuted
@@ -520,18 +524,17 @@ func (c *matrixQuotaCell) update(fraction float64, hasData bool) {
 		c.pctText.Text = formatFraction(fraction)
 		c.pctText.Color = tierColor
 		c.layout.fraction = fraction
-		bw := c.layout.barWidth
-		if bw <= 0 {
-			bw = MatrixMiniBarWidth
-		}
-		fw := bw * float32(clamped)
+
+		// DUY NHẤT fillWidth CO GIÃN THEO FRACTION
+		fw := barWidth * float32(clamped)
 		c.layout.fillWidth = fw
 		c.fillBar.FillColor = tierColor
 		c.fillBar.Resize(fyne.NewSize(fw, c.layout.barHeight))
 	}
+
 	c.fillBar.Refresh()
 	c.pctText.Refresh()
-	c.container.Refresh()
+	// KHÔNG GỌI c.container.Refresh() để tránh kích hoạt layout cascade của Fyne
 }
 
 // createMatrixQuotaCell creates a graphical mini progress bar (40px) and percentage text label.
@@ -575,22 +578,11 @@ func (l *matrixColumnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 type matrixTableLayout struct{}
 
 func (l *matrixTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	if len(objects) < 5 {
-		return fyne.NewSize(236.0, 49.0)
-	}
-	col1W := objects[0].MinSize().Width
-	if col1W < 50.0 {
-		col1W = 50.0
-	}
-	col2W := objects[2].MinSize().Width
-	if col2W < 85.0 {
-		col2W = 85.0
-	}
-	col3W := objects[4].MinSize().Width
-	if col3W < 85.0 {
-		col3W = 85.0
-	}
-	totalW := col1W + 1.0 + col2W + 1.0 + col3W + 16.0
+	col1W := float32(50.0)
+	sepW := float32(1.0)
+	colCycleW := float32(88.0)
+	colGap := float32(4.0)
+	totalW := col1W + sepW + colCycleW + sepW + colCycleW + 4*colGap
 	return fyne.NewSize(totalW, 49.0)
 }
 
@@ -605,16 +597,10 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	colWeek := objects[4]
 
 	h := size.Height
-	col1W := float32(50.0)
-	sepW := float32(1.0)
-	colGap := float32(4.0)
-
-	fixedW := col1W + 2*sepW + 4*colGap
-	remainW := size.Width - fixedW
-	colCycleW := float32(88.0)
-	if remainW > 176.0 {
-		colCycleW = float32(math.Min(float64(remainW/2.0), 125.0))
-	}
+	col1W := float32(50.0)    // Cột Model: CỐ ĐỊNH 50px
+	sepW := float32(1.0)     // Vách ngăn: CỐ ĐỊNH 1px
+	colGap := float32(4.0)   // Khoảng cách: CỐ ĐỊNH 4px
+	colCycleW := float32(88.0) // Cột 5h và Week: KHÓA CỨNG 88px TUYỆT ĐỐI, CẤM CO GIÃN ĐỘNG!
 
 	x := float32(0)
 	// Col 1: Model

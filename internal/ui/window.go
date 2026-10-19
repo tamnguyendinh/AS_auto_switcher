@@ -67,7 +67,7 @@ func (m *minSizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 		o.Resize(size)
 		o.Move(fyne.NewPos(0, 0))
 	}
-	if m.app != nil {
+	if m.app != nil && m.app.isUIReady.Load() {
 		actualW := size.Width
 		actualH := size.Height
 		if m.app.win != nil && m.app.win.Canvas() != nil {
