@@ -53,12 +53,7 @@ type App struct {
 	monogramBg           *canvas.Rectangle
 	accountScroll        *container.Scroll
 
-	// Window size & in-place update state
-	isUIReady    atomic.Bool
-	windowWidth  float32
-	windowHeight float32
-	resizeTimer  *time.Timer
-	resizeMu     sync.Mutex
+	// In-place update state
 	accountCards []*AccountCardWidget
 }
 
@@ -96,14 +91,10 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	a.quotaCache = telemetry.NewQuotaCache(cachePath)
 	_ = a.quotaCache.LoadFromDisk()
 
-		// 2. Load UI Preferences (Theme & Window Geometry)
+	// 2. Load UI Preferences (Theme)
 	if prefs, err := LoadUIPreferences(a.preferencesPath); err == nil && prefs != nil {
 		if prefs.Theme != "" {
 			a.currentTheme = prefs.Theme
-		}
-		if prefs.WindowWidth >= 800.0 && prefs.WindowHeight >= 500.0 {
-			a.windowWidth = prefs.WindowWidth
-			a.windowHeight = prefs.WindowHeight
 		}
 	}
 
@@ -181,20 +172,11 @@ func (a *App) SetTheme(themeName string) {
 	path := a.preferencesPath
 	a.mu.Unlock()
 
-	a.resizeMu.Lock()
-	w := a.windowWidth
-	h := a.windowHeight
-	a.resizeMu.Unlock()
-
 	prefs, err := LoadUIPreferences(path)
 	if err != nil || prefs == nil {
 		prefs = &UIPreferences{Theme: themeName}
 	}
 	prefs.Theme = themeName
-	if w >= MinWindowWidth && h >= MinWindowHeight {
-		prefs.WindowWidth = w
-		prefs.WindowHeight = h
-	}
 	_ = SaveUIPreferences(path, prefs)
 
 	if a.app != nil {
@@ -222,24 +204,12 @@ func (a *App) Init() {
 	a.app.Settings().SetTheme(NewThemeInstance(a.currentTheme))
 	a.app.SetIcon(AppLogoResource)
 
-		a.win = a.app.NewWindow(windowTitle)
+	a.win = a.app.NewWindow(windowTitle)
 	a.win.SetIcon(AppLogoResource)
 
-	initW := DefaultWindowWidth  // 1008.0
-	initH := DefaultWindowHeight // 630.0
-
-	a.resizeMu.Lock()
-	if a.windowWidth >= 800.0 && a.windowHeight >= 500.0 {
-		initW = a.windowWidth
-		initH = a.windowHeight
-	} else {
-		a.windowWidth = initW
-		a.windowHeight = initH
-	}
-	a.resizeMu.Unlock()
-
-	a.win.Resize(fyne.NewSize(initW, initH))
-	a.win.SetFixedSize(false)
+	// Khởi tạo kích thước chuẩn 1008x630 px
+	a.win.Resize(fyne.NewSize(1008, 630))
+	a.win.SetFixedSize(false) // User được tự do chỉnh kích thước cửa sổ nếu muốn
 
 	a.setupLayout()
 	a.setupTray()
@@ -248,7 +218,7 @@ func (a *App) Init() {
 		setWindowAlwaysOnTop(windowTitle, true)
 	}
 
-	// Start 60s background auto-telemetry loop if configured
+	// 60s background auto-telemetry loop
 	if a.autoLoop != nil {
 		a.autoLoop.SetUpdateCallback(func(results []*telemetry.AccountQuotaData) {
 			fyne.Do(func() {
@@ -270,13 +240,11 @@ func (a *App) Init() {
 				if a.autoRefreshLabel != nil {
 					a.autoRefreshLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
 				}
-
 			})
 		})
 		_ = a.autoLoop.Start(context.Background())
 	}
 
-	// Initial data sync
 	a.Refresh()
 }
 
@@ -285,91 +253,11 @@ func (a *App) Close() {
 	if a.autoLoop != nil {
 		a.autoLoop.Stop()
 	}
-	a.resizeMu.Lock()
-	if a.resizeTimer != nil {
-		a.resizeTimer.Stop()
-	}
-	a.resizeMu.Unlock()
-}
-
-// WindowSize returns current recorded window dimensions.
-func (a *App) WindowSize() (float32, float32) {
-	a.resizeMu.Lock()
-	defer a.resizeMu.Unlock()
-	return a.windowWidth, a.windowHeight
 }
 
 // AccountCards returns current AccountCardWidgets (useful for testing in-place updates).
 func (a *App) AccountCards() []*AccountCardWidget {
 	return a.accountCards
-}
-
-// OnWindowResized handles resize events from minSizeLayout.
-// It debounces disk writes by 400ms to avoid flooding disk I/O while dragging.
-func (a *App) OnWindowResized(w, h float32) {
-	// CẤM GHI KÍCH THƯỚC KHI APP ĐANG KHỞI TẠO HOẶC CHƯA READY
-	if !a.isUIReady.Load() {
-		return
-	}
-	if w < MinWindowWidth || h < MinWindowHeight {
-		return
-	}
-
-	a.resizeMu.Lock()
-	defer a.resizeMu.Unlock()
-
-	if a.windowWidth == w && a.windowHeight == h {
-		return
-	}
-	a.windowWidth = w
-	a.windowHeight = h
-
-	if a.resizeTimer != nil {
-		a.resizeTimer.Stop()
-	}
-
-	a.resizeTimer = time.AfterFunc(400*time.Millisecond, func() {
-		a.saveWindowGeometry(w, h)
-	})
-}
-
-func (a *App) saveWindowGeometry(w, h float32) {
-	a.mu.RLock()
-	path := a.preferencesPath
-	theme := a.currentTheme
-	a.mu.RUnlock()
-
-	prefs, err := LoadUIPreferences(path)
-	if err != nil || prefs == nil {
-		prefs = &UIPreferences{Theme: theme}
-	}
-	prefs.WindowWidth = w
-	prefs.WindowHeight = h
-	_ = SaveUIPreferences(path, prefs)
-}
-
-// SaveWindowGeometryNow synchronously writes the specified window dimensions to preferences.
-func (a *App) SaveWindowGeometryNow(w, h float32) error {
-	a.resizeMu.Lock()
-	a.windowWidth = w
-	a.windowHeight = h
-	if a.resizeTimer != nil {
-		a.resizeTimer.Stop()
-	}
-	a.resizeMu.Unlock()
-
-	a.mu.RLock()
-	path := a.preferencesPath
-	theme := a.currentTheme
-	a.mu.RUnlock()
-
-	prefs, err := LoadUIPreferences(path)
-	if err != nil || prefs == nil {
-		prefs = &UIPreferences{Theme: theme}
-	}
-	prefs.WindowWidth = w
-	prefs.WindowHeight = h
-	return SaveUIPreferences(path, prefs)
 }
 
 // ShowAndRun displays the window and runs the Fyne event loop.
@@ -389,24 +277,8 @@ func (a *App) ShowAndRun() {
 		setWindowAlwaysOnTop(windowTitle, true)
 	}
 
-	// 3. Đánh dấu UI đã sẵn sàng sau khi mọi pha layout khởi tạo hoàn tất
-	// Chờ 300ms để bỏ qua các xung resize ban đầu của OS
-	time.AfterFunc(300*time.Millisecond, func() {
-		a.isUIReady.Store(true)
-	})
-
-	// 4. Chạy vòng lặp nhận sự kiện của Fyne
+	// 3. Chạy vòng lặp nhận sự kiện của Fyne
 	a.app.Run()
-}
-
-// SetUIReady explicitly sets the isUIReady flag (useful for testing and window lifecycle management).
-func (a *App) SetUIReady(ready bool) {
-	a.isUIReady.Store(ready)
-}
-
-// IsUIReady returns whether the UI is ready for window resize persistence.
-func (a *App) IsUIReady() bool {
-	return a.isUIReady.Load()
 }
 
 // Window returns the main application window (useful for headless testing).

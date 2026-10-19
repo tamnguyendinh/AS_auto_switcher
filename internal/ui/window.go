@@ -52,37 +52,6 @@ const (
 	MinWindowHeight     float32 = 360.0
 )
 
-// minSizeLayout enforces a minimum size (480x360) while allowing responsive expansion and reporting resize events.
-type minSizeLayout struct {
-	min fyne.Size
-	app *App
-}
-
-func (m *minSizeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	return m.min
-}
-
-func (m *minSizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	for _, o := range objects {
-		o.Resize(size)
-		o.Move(fyne.NewPos(0, 0))
-	}
-	if m.app != nil && m.app.isUIReady.Load() {
-		actualW := size.Width
-		actualH := size.Height
-		if m.app.win != nil && m.app.win.Canvas() != nil {
-			cs := m.app.win.Canvas().Size()
-			if cs.Width > 0 && cs.Height > 0 {
-				actualW = cs.Width
-				actualH = cs.Height
-			}
-		}
-		if actualW >= MinWindowWidth && actualH >= MinWindowHeight {
-			m.app.OnWindowResized(actualW, actualH)
-		}
-	}
-}
-
 // setupLayout builds the standard 1008x630 desktop layout with 3-row TopSection and 3-column account grid.
 func (a *App) setupLayout() {
 	palette := GetThemePalette(a.currentTheme)
@@ -190,7 +159,7 @@ func (a *App) setupLayout() {
 	// Center Section: 3-Column Account Grid inside Vertical Scroller
 	// -------------------------------------------------------------------------
 	a.accountListContainer = container.NewGridWithColumns(3)
-	scrollList := container.NewVScroll(container.NewPadded(container.NewVBox(a.accountListContainer)))
+	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
 	a.accountScroll = scrollList
 
 	// Main Layout: No footer status bar, no legend bar, no bulky header card
@@ -202,9 +171,7 @@ func (a *App) setupLayout() {
 		scrollList,
 	)
 
-	// Root wrapped with minSizeLayout to ensure window min size is at least 840x525
-	rootContainer := container.New(&minSizeLayout{min: fyne.NewSize(MinWindowWidth, MinWindowHeight), app: a}, mainLayout)
-	a.win.SetContent(rootContainer)
+	a.win.SetContent(mainLayout)
 }
 
 // customTitleBtn: Widget nút thu nhỏ/phóng to có hover sáng

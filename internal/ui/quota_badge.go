@@ -501,16 +501,11 @@ func (c *matrixQuotaCell) update(fraction float64, hasData bool) {
 	if c == nil {
 		return
 	}
-	barWidth := float32(MatrixMiniBarWidth) // 40.0 px cố định
-	if barWidth <= 0 {
-		barWidth = 40.0
-	}
+	const barWidth = float32(MatrixMiniBarWidth) // Ray tiến trình CỐ ĐỊNH 40.0 px
 
 	if !hasData || fraction < 0 {
 		c.pctText.Text = "--%"
 		c.pctText.Color = ColorQuotaMuted
-		c.layout.fraction = -1
-		c.layout.fillWidth = 0
 		c.fillBar.FillColor = ColorQuotaMuted
 		c.fillBar.Resize(fyne.NewSize(0, c.layout.barHeight))
 	} else {
@@ -523,18 +518,16 @@ func (c *matrixQuotaCell) update(fraction float64, hasData bool) {
 		tierColor := GetQuotaTierColor(fraction)
 		c.pctText.Text = formatFraction(fraction)
 		c.pctText.Color = tierColor
-		c.layout.fraction = fraction
 
-		// DUY NHẤT fillWidth CO GIÃN THEO FRACTION
+		// CHỈ DUY NHẤT fillBar THAY ĐỔI CHIỀU DÀI THEO % QUOTA (TỤT DẦN)
 		fw := barWidth * float32(clamped)
-		c.layout.fillWidth = fw
 		c.fillBar.FillColor = tierColor
 		c.fillBar.Resize(fyne.NewSize(fw, c.layout.barHeight))
 	}
 
 	c.fillBar.Refresh()
 	c.pctText.Refresh()
-	// KHÔNG GỌI c.container.Refresh() để tránh kích hoạt layout cascade của Fyne
+	// TUYỆT ĐỐI KHÔNG GỌI c.container.Refresh()
 }
 
 // createMatrixQuotaCell creates a graphical mini progress bar (40px) and percentage text label.
@@ -578,11 +571,7 @@ func (l *matrixColumnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 type matrixTableLayout struct{}
 
 func (l *matrixTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	col1W := float32(50.0)
-	sepW := float32(1.0)
-	colCycleW := float32(88.0)
-	colGap := float32(4.0)
-	totalW := col1W + sepW + colCycleW + sepW + colCycleW + 4*colGap
+	const totalW = float32(50.0 + 1.0 + 88.0 + 1.0 + 88.0 + 16.0) // 244.0 px
 	return fyne.NewSize(totalW, 49.0)
 }
 
@@ -597,13 +586,14 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	colWeek := objects[4]
 
 	h := size.Height
-	col1W := float32(50.0)    // Cột Model: CỐ ĐỊNH 50px
-	sepW := float32(1.0)     // Vách ngăn: CỐ ĐỊNH 1px
-	colGap := float32(4.0)   // Khoảng cách: CỐ ĐỊNH 4px
-	colCycleW := float32(88.0) // Cột 5h và Week: KHÓA CỨNG 88px TUYỆT ĐỐI, CẤM CO GIÃN ĐỘNG!
+	// CHỈ SỐ CỐ ĐỊNH CHUẨN NGÀNH - TUYỆT ĐỐI KHÔNG CO GIÃN
+	const col1W = float32(50.0)     // Cột Model: CỐ ĐỊNH 50px
+	const sepW = float32(1.0)      // Vách ngăn đứng: CỐ ĐỊNH 1px
+	const colGap = float32(4.0)    // Khoảng cách giữa các cột: CỐ ĐỊNH 4px
+	const colCycleW = float32(88.0) // Cột 5h và Week: CỐ ĐỊNH 88px
 
 	x := float32(0)
-	// Col 1: Model
+	// Col 1: Model (Gemini / Claude)
 	colModel.Move(fyne.NewPos(x, 0))
 	colModel.Resize(fyne.NewSize(col1W, h))
 	x += col1W + colGap

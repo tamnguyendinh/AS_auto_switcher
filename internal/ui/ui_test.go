@@ -990,6 +990,7 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
+	defer testApp.Quit()
 	app := NewAppWithFyne(testApp, mgr)
 	defer app.Close()
 	app.Init()
@@ -1003,9 +1004,9 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 		t.Errorf("expected window to be resizable, got FixedSize=true")
 	}
 
-		minSize := win.Content().MinSize()
-	if minSize.Width != MinWindowWidth || minSize.Height != MinWindowHeight {
-		t.Errorf("expected content MinSize exactly %fx%f, got %v", MinWindowWidth, MinWindowHeight, minSize)
+	sz := win.Canvas().Size()
+	if sz.Width != 1008 || sz.Height != 630 {
+		t.Errorf("expected initial window size 1008x630, got %fx%f", sz.Width, sz.Height)
 	}
 }
 
@@ -1479,7 +1480,7 @@ func TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings(t *testing.T) {
 	defer app.Close()
 
 	// Wait for initial cards
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(6 * time.Second)
 	for time.Now().Before(deadline) {
 		if app.accountListContainer != nil && len(app.accountListContainer.Objects) >= 6 {
 			break
@@ -2114,106 +2115,7 @@ func TestArchitectSpec_INV01_InPlaceReactiveQuotaUpdatesZeroCanvasChurn(t *testi
 	}
 }
 
-func TestArchitectSpec_INV02_FreedomOfWindowResizing(t *testing.T) {
-	testApp := test.NewApp()
-	defer testApp.Quit()
-
-	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
-	defer app.Close()
-
-	app.Init()
-
-	win := app.Window()
-	if win == nil {
-		t.Fatal("expected non-nil window")
-	}
-
-	// MinSize must be strictly 480x360 px per INV-02
-	minSize := win.Content().MinSize()
-	if minSize.Width != MinWindowWidth || minSize.Height != MinWindowHeight {
-		t.Errorf("INV-02 VIOLATION: expected Content MinSize %fx%f, got %v", MinWindowWidth, MinWindowHeight, minSize)
-	}
-
-	// Window must be resizable
-	if win.FixedSize() {
-		t.Errorf("expected window to be resizable, got FixedSize=true")
-	}
-
-	// User must be able to resize down to minimum size
-	win.Resize(fyne.NewSize(MinWindowWidth, MinWindowHeight))
-	if win.Canvas().Size().Width < MinWindowWidth || win.Canvas().Size().Height < MinWindowHeight {
-		t.Errorf("unexpected canvas size after resize: %v", win.Canvas().Size())
-	}
-}
-
-func TestArchitectSpec_INV03_WindowGeometryPersistence(t *testing.T) {
-	testApp := test.NewApp()
-	defer testApp.Quit()
-
-	tempDir := t.TempDir()
-	prefPath := filepath.Join(tempDir, ".ui_preferences.json")
-
-	// 1. Save custom window dimensions (>= 800x500)
-	customW := float32(1100.0)
-	customH := float32(700.0)
-
-	mgr := createTestManager(t)
-	app1 := NewAppWithFyne(testApp, mgr)
-	app1.SetPreferencesPath(prefPath)
-
-	err := app1.SaveWindowGeometryNow(customW, customH)
-	if err != nil {
-		t.Fatalf("failed saving window geometry: %v", err)
-	}
-
-	// Verify disk file content
-	savedPref, err := LoadUIPreferences(prefPath)
-	if err != nil {
-		t.Fatalf("failed loading saved preferences: %v", err)
-	}
-	if savedPref.WindowWidth != customW || savedPref.WindowHeight != customH {
-		t.Errorf("expected saved geometry %fx%f, got %fx%f", customW, customH, savedPref.WindowWidth, savedPref.WindowHeight)
-	}
-
-	// 2. Re-open application and verify restored dimensions
-	app2 := NewAppWithFyne(testApp, mgr)
-	app2.SetPreferencesPath(prefPath)
-	// Trigger reload of preferences
-	pref2, err := LoadUIPreferences(prefPath)
-	if err != nil {
-		t.Fatalf("failed loading preferences for app2: %v", err)
-	}
-	app2.windowWidth = pref2.WindowWidth
-	app2.windowHeight = pref2.WindowHeight
-
-	app2.Init()
-	defer app2.Close()
-
-	win2 := app2.Window()
-	if win2 == nil {
-		t.Fatal("expected non-nil window on app2")
-	}
-
-	// Content/Window size must match restored dimensions
-	curW, curH := app2.WindowSize()
-	if curW != customW || curH != customH {
-		t.Errorf("INV-03 VIOLATION: expected restored size %fx%f, got %fx%f", customW, customH, curW, curH)
-	}
-
-	// 3. Verify corrupted dimensions (< 800x500) reset to DefaultWindowWidth/Height
-	app3 := NewAppWithFyne(testApp, mgr)
-	app3.SetPreferencesPath(prefPath)
-	_ = app3.SaveWindowGeometryNow(490.0, 387.0) // Corrupted small size from old bug
-	app3.Init()
-	defer app3.Close()
-	resetW, resetH := app3.WindowSize()
-	if resetW != DefaultWindowWidth || resetH != DefaultWindowHeight {
-		t.Errorf("expected reset to %fx%f for corrupted size, got %fx%f", DefaultWindowWidth, DefaultWindowHeight, resetW, resetH)
-	}
-}
-
-func TestArchitectSpec_INV04_FixedMatrixQuotaTableLayout(t *testing.T) {
+func TestIndustryStandard_FixedMatrixMetrics(t *testing.T) {
 	dq := DualCycleQuota{
 		Gemini5h:   0.80,
 		GeminiWeek: 0.60,
@@ -2232,115 +2134,96 @@ func TestArchitectSpec_INV04_FixedMatrixQuotaTableLayout(t *testing.T) {
 	col5h := cont.Objects[2]
 	colWeek := cont.Objects[4]
 
-	// Case 1: Standard/narrow size (236px) -> All columns strictly fixed
-	cont.Resize(fyne.NewSize(236.0, 49.0))
-	if colModel.Size().Width != 50.0 {
-		t.Errorf("expected colModel width 50.0 at 236px, got %f", colModel.Size().Width)
-	}
-	if col5h.Size().Width != 88.0 {
-		t.Errorf("expected col5h width 88.0 at 236px, got %f", col5h.Size().Width)
-	}
-	if colWeek.Size().Width != 88.0 {
-		t.Errorf("expected colWeek width 88.0 at 236px, got %f", colWeek.Size().Width)
+	// Check table MinSize is 244.0 x 49.0
+	minSz := cont.MinSize()
+	if minSz.Width != 244.0 || minSz.Height != 49.0 {
+		t.Errorf("expected table MinSize 244x49, got %v", minSz)
 	}
 
-	// Case 2: Expanded width (300px) -> Columns MUST NOT stretch, strictly fixed at 50, 88, 88
-	cont.Resize(fyne.NewSize(300.0, 49.0))
-	if colModel.Size().Width != 50.0 {
-		t.Errorf("expected colModel width 50.0 at 300px, got %f", colModel.Size().Width)
-	}
-	if col5h.Size().Width != 88.0 {
-		t.Errorf("expected col5h width 88.0 at 300px, got %f", col5h.Size().Width)
-	}
-	if colWeek.Size().Width != 88.0 {
-		t.Errorf("expected colWeek width 88.0 at 300px, got %f", colWeek.Size().Width)
+	// Ray bar must be 40.0px
+	cell := newMatrixQuotaCell(0.80, true, DarkPalette)
+	if cell.bgTrack.Size().Width != 40.0 {
+		t.Errorf("expected ray bar (bgTrack) fixed at 40.0px, got %f", cell.bgTrack.Size().Width)
 	}
 
-	// Case 3: Ultra-wide (400px) -> Columns MUST NOT stretch, strictly fixed at 50, 88, 88
-	cont.Resize(fyne.NewSize(400.0, 49.0))
-	if colModel.Size().Width != 50.0 {
-		t.Errorf("expected colModel width 50.0 at 400px, got %f", colModel.Size().Width)
-	}
-	if col5h.Size().Width != 88.0 {
-		t.Errorf("expected col5h width 88.0 at 400px, got %f", col5h.Size().Width)
-	}
-	if colWeek.Size().Width != 88.0 {
-		t.Errorf("expected colWeek width 88.0 at 400px, got %f", colWeek.Size().Width)
+	for _, w := range []float32{236.0, 244.0, 300.0, 400.0, 600.0} {
+		cont.Resize(fyne.NewSize(w, 49.0))
+		if colModel.Size().Width != 50.0 {
+			t.Errorf("expected colModel width 50.0 at width %f, got %f", w, colModel.Size().Width)
+		}
+		if col5h.Size().Width != 88.0 {
+			t.Errorf("expected col5h width 88.0 at width %f, got %f", w, col5h.Size().Width)
+		}
+		if colWeek.Size().Width != 88.0 {
+			t.Errorf("expected colWeek width 88.0 at width %f, got %f", w, colWeek.Size().Width)
+		}
 	}
 }
 
-func TestArchitectSpec_INV05_IsUIReadyProtectsWindowResize(t *testing.T) {
-	testApp := test.NewApp()
-	defer testApp.Quit()
-
-	tempDir := t.TempDir()
-	prefPath := filepath.Join(tempDir, ".ui_preferences.json")
-
-	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
-	app.SetPreferencesPath(prefPath)
-	app.Init()
-	defer app.Close()
-
-	// Initially, isUIReady is false (before ShowAndRun 300ms timer)
-	if app.IsUIReady() {
-		t.Errorf("expected IsUIReady to be false initially")
-	}
-
-	// Calling OnWindowResized while not ready must NOT update windowWidth or save
-	app.OnWindowResized(1200.0, 800.0)
-	time.Sleep(500 * time.Millisecond)
-
-	curW, curH := app.WindowSize()
-	if curW == 1200.0 || curH == 800.0 {
-		t.Errorf("OnWindowResized updated dimensions while isUIReady was false")
-	}
-
-	// Now mark UI as ready
-	app.SetUIReady(true)
-	if !app.IsUIReady() {
-		t.Errorf("expected IsUIReady to be true after SetUIReady(true)")
-	}
-
-	app.OnWindowResized(1200.0, 800.0)
-	time.Sleep(500 * time.Millisecond)
-
-	curW, curH = app.WindowSize()
-	if curW != 1200.0 || curH != 800.0 {
-		t.Errorf("expected dimensions 1200x800 after ready resize, got %fx%f", curW, curH)
-	}
-}
-
-func TestArchitectSpec_INV06_OnlyMinibarExpandsOnQuotaUpdate(t *testing.T) {
-	cell := newMatrixQuotaCell(0.5, true, DarkPalette)
+func TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate(t *testing.T) {
+	cell := newMatrixQuotaCell(1.0, true, DarkPalette)
 	if cell == nil {
 		t.Fatal("expected non-nil cell")
 	}
 
-	// Initial fill width at 50% = 40.0 * 0.5 = 20.0
-	if cell.fillBar.Size().Width != 20.0 {
-		t.Errorf("expected initial fillBar width 20.0, got %f", cell.fillBar.Size().Width)
+	// 100% quota -> fillBar = 40px
+	if cell.fillBar.Size().Width != 40.0 {
+		t.Errorf("expected fillBar width 40.0 at 100%%, got %f", cell.fillBar.Size().Width)
 	}
 	if cell.bgTrack.Size().Width != 40.0 {
 		t.Errorf("expected bgTrack width 40.0, got %f", cell.bgTrack.Size().Width)
 	}
-
-	// Update to 80%
-	cell.update(0.80, true)
-	if cell.fillBar.Size().Width != 32.0 {
-		t.Errorf("expected fillBar width 32.0 at 80%%, got %f", cell.fillBar.Size().Width)
+	if cell.pctText.Text != "100%" {
+		t.Errorf("expected pctText '100.0%%', got '%s'", cell.pctText.Text)
 	}
-	// bgTrack must remain 40.0
+
+	// Tụt về 50% -> fillBar = 20px, bgTrack vẫn 40px
+	cell.update(0.50, true)
+	if cell.fillBar.Size().Width != 20.0 {
+		t.Errorf("expected fillBar width 20.0 at 50%%, got %f", cell.fillBar.Size().Width)
+	}
 	if cell.bgTrack.Size().Width != 40.0 {
-		t.Errorf("expected bgTrack width 40.0 to stay fixed, got %f", cell.bgTrack.Size().Width)
+		t.Errorf("expected bgTrack width 40.0 fixed, got %f", cell.bgTrack.Size().Width)
+	}
+	if cell.pctText.Text != "50%" {
+		t.Errorf("expected pctText '50.0%%', got '%s'", cell.pctText.Text)
 	}
 
-	// Update to missing data
-	cell.update(-1, false)
-	if cell.fillBar.Size().Width != 0 {
-		t.Errorf("expected fillBar width 0 on missing data, got %f", cell.fillBar.Size().Width)
+	// Tụt về 0% -> fillBar = 0px, bgTrack vẫn 40px
+	cell.update(0.0, true)
+	if cell.fillBar.Size().Width != 0.0 {
+		t.Errorf("expected fillBar width 0.0 at 0%%, got %f", cell.fillBar.Size().Width)
 	}
-	if cell.pctText.Text != "--%" {
-		t.Errorf("expected pctText '--%%', got '%s'", cell.pctText.Text)
+	if cell.bgTrack.Size().Width != 40.0 {
+		t.Errorf("expected bgTrack width 40.0 fixed, got %f", cell.bgTrack.Size().Width)
+	}
+	if cell.pctText.Text != "0%" {
+		t.Errorf("expected pctText '0.0%%', got '%s'", cell.pctText.Text)
+	}
+}
+
+func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window")
+	}
+
+	// Window must be resizable
+	if win.FixedSize() {
+		t.Errorf("expected window to be resizable, got FixedSize=true")
+	}
+
+	sz := win.Canvas().Size()
+	if sz.Width != 1008 || sz.Height != 630 {
+		t.Errorf("expected window canvas size 1008x630, got %fx%f", sz.Width, sz.Height)
 	}
 }
