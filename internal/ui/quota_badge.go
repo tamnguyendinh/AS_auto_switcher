@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"math"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -429,25 +430,114 @@ func (l *matrixCellLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	pct.Resize(fyne.NewSize(pct.MinSize().Width, pctH))
 }
 
-// createMatrixQuotaCell creates a graphical mini progress bar (40px) and percentage text label.
-func createMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) fyne.CanvasObject {
+type matrixQuotaCell struct {
+	container *fyne.Container
+	layout    *miniProgressBarLayout
+	bgTrack   *canvas.Rectangle
+	fillBar   *canvas.Rectangle
+	pctText   *canvas.Text
+}
+
+func newMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) *matrixQuotaCell {
+	barWidth := MatrixMiniBarWidth
+	barHeight := float32(6.0)
+	cornerRadius := float32(3.0)
+
+	bgTrack := canvas.NewRectangle(ColorQuotaTrack)
+	bgTrack.CornerRadius = cornerRadius
+	bgTrack.Resize(fyne.NewSize(barWidth, barHeight))
+
+	var fillWidth float32
+	var fillColor color.Color
+	var pctStr string
+	var pctColor color.Color
+
 	if !hasData || fraction < 0 {
-		bar := createMiniProgressBar(-1, MatrixMiniBarWidth)
-		pct := canvas.NewText("--%", ColorQuotaMuted)
-		pct.TextSize = 11
-		pct.TextStyle = fyne.TextStyle{Bold: true}
-		return container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, bar, pct)
+		fillWidth = 0
+		fillColor = ColorQuotaMuted
+		pctStr = "--%"
+		pctColor = ColorQuotaMuted
+	} else {
+		clamped := fraction
+		if clamped > 1.0 {
+			clamped = 1.0
+		} else if clamped < 0 {
+			clamped = 0
+		}
+		fillWidth = barWidth * float32(clamped)
+		fillColor = GetQuotaTierColor(fraction)
+		pctStr = formatFraction(fraction)
+		pctColor = fillColor
 	}
 
-	tierColor := GetQuotaTierColor(fraction)
-	pctStr := formatFraction(fraction)
-	bar := createMiniProgressBar(fraction, MatrixMiniBarWidth)
+	fillBar := canvas.NewRectangle(fillColor)
+	fillBar.CornerRadius = cornerRadius
+	fillBar.Resize(fyne.NewSize(fillWidth, barHeight))
 
-	pct := canvas.NewText(pctStr, tierColor)
+	pbLayout := &miniProgressBarLayout{
+		fraction:  fraction,
+		barWidth:  barWidth,
+		barHeight: barHeight,
+		fillWidth: fillWidth,
+	}
+
+	barContainer := container.New(pbLayout, bgTrack, fillBar)
+
+	pct := canvas.NewText(pctStr, pctColor)
 	pct.TextSize = 11
 	pct.TextStyle = fyne.TextStyle{Bold: true}
 
-	return container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, bar, pct)
+	cellContainer := container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, barContainer, pct)
+
+	return &matrixQuotaCell{
+		container: cellContainer,
+		layout:    pbLayout,
+		bgTrack:   bgTrack,
+		fillBar:   fillBar,
+		pctText:   pct,
+	}
+}
+
+func (c *matrixQuotaCell) update(fraction float64, hasData bool) {
+	if c == nil {
+		return
+	}
+	if !hasData || fraction < 0 {
+		c.pctText.Text = "--%"
+		c.pctText.Color = ColorQuotaMuted
+		c.layout.fraction = -1
+		c.layout.fillWidth = 0
+		c.fillBar.FillColor = ColorQuotaMuted
+		c.fillBar.Resize(fyne.NewSize(0, c.layout.barHeight))
+	} else {
+		clamped := fraction
+		if clamped > 1.0 {
+			clamped = 1.0
+		} else if clamped < 0 {
+			clamped = 0
+		}
+		tierColor := GetQuotaTierColor(fraction)
+		c.pctText.Text = formatFraction(fraction)
+		c.pctText.Color = tierColor
+		c.layout.fraction = fraction
+		bw := c.layout.barWidth
+		if bw <= 0 {
+			bw = MatrixMiniBarWidth
+		}
+		fw := bw * float32(clamped)
+		c.layout.fillWidth = fw
+		c.fillBar.FillColor = tierColor
+		c.fillBar.Resize(fyne.NewSize(fw, c.layout.barHeight))
+	}
+	c.fillBar.Refresh()
+	c.pctText.Refresh()
+	c.container.Refresh()
+}
+
+// createMatrixQuotaCell creates a graphical mini progress bar (40px) and percentage text label.
+func createMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) fyne.CanvasObject {
+	cell := newMatrixQuotaCell(fraction, hasData, palette)
+	return cell.container
 }
 
 // matrixColumnLayout lays out 3 rows in a column with fixed row heights and subtle spacing.
@@ -519,7 +609,12 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	sepW := float32(1.0)
 	colGap := float32(4.0)
 
+	fixedW := col1W + 2*sepW + 4*colGap
+	remainW := size.Width - fixedW
 	colCycleW := float32(88.0)
+	if remainW > 176.0 {
+		colCycleW = float32(math.Min(float64(remainW/2.0), 125.0))
+	}
 
 	x := float32(0)
 	// Col 1: Model
@@ -547,11 +642,7 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	colWeek.Resize(fyne.NewSize(colCycleW, h))
 }
 
-// CreateMatrixQuotaTable builds a 3x3 matrix table for model quota display per architect spec:
-// Row 0: Quota  | 5h           | Week
-// Row 1: Gemini | [bar] <pct>% | [bar] <pct>%
-// Row 2: Claude | [bar] <pct>% | [bar] <pct>%
-func CreateMatrixQuotaTable(dq DualCycleQuota, palette ThemePalette) fyne.CanvasObject {
+func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (fyne.CanvasObject, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell) {
 	// Col 1: Model Labels
 	txtQuota := canvas.NewText("Quota", palette.TextMuted)
 	txtQuota.TextSize = 11
@@ -576,12 +667,12 @@ func CreateMatrixQuotaTable(dq DualCycleQuota, palette ThemePalette) fyne.Canvas
 	txt5h.TextStyle = fyne.TextStyle{Bold: true}
 
 	hasGemini5h := !dq.IsError && dq.HasData && dq.Gemini5h >= 0
-	cellGemini5h := createMatrixQuotaCell(dq.Gemini5h, hasGemini5h, palette)
+	cellGemini5h := newMatrixQuotaCell(dq.Gemini5h, hasGemini5h, palette)
 
 	hasClaude5h := !dq.IsError && dq.HasData && dq.Claude5h >= 0
-	cellClaude5h := createMatrixQuotaCell(dq.Claude5h, hasClaude5h, palette)
+	cellClaude5h := newMatrixQuotaCell(dq.Claude5h, hasClaude5h, palette)
 
-	col5h := container.New(&matrixColumnLayout{}, txt5h, cellGemini5h, cellClaude5h)
+	col5h := container.New(&matrixColumnLayout{}, txt5h, cellGemini5h.container, cellClaude5h.container)
 
 	// Vertical Separator 2 (1px)
 	sep2 := canvas.NewRectangle(palette.BorderSubtle)
@@ -592,12 +683,22 @@ func CreateMatrixQuotaTable(dq DualCycleQuota, palette ThemePalette) fyne.Canvas
 	txtWeek.TextStyle = fyne.TextStyle{Bold: true}
 
 	hasGeminiWeek := !dq.IsError && dq.HasData && dq.GeminiWeek >= 0
-	cellGeminiWeek := createMatrixQuotaCell(dq.GeminiWeek, hasGeminiWeek, palette)
+	cellGeminiWeek := newMatrixQuotaCell(dq.GeminiWeek, hasGeminiWeek, palette)
 
 	hasClaudeWeek := !dq.IsError && dq.HasData && dq.ClaudeWeek >= 0
-	cellClaudeWeek := createMatrixQuotaCell(dq.ClaudeWeek, hasClaudeWeek, palette)
+	cellClaudeWeek := newMatrixQuotaCell(dq.ClaudeWeek, hasClaudeWeek, palette)
 
-	colWeek := container.New(&matrixColumnLayout{}, txtWeek, cellGeminiWeek, cellClaudeWeek)
+	colWeek := container.New(&matrixColumnLayout{}, txtWeek, cellGeminiWeek.container, cellClaudeWeek.container)
 
-	return container.New(&matrixTableLayout{}, colModel, sep1, col5h, sep2, colWeek)
+	table := container.New(&matrixTableLayout{}, colModel, sep1, col5h, sep2, colWeek)
+	return table, cellGemini5h, cellGeminiWeek, cellClaude5h, cellClaudeWeek
+}
+
+// CreateMatrixQuotaTable builds a 3x3 matrix table for model quota display per architect spec:
+// Row 0: Quota  | 5h           | Week
+// Row 1: Gemini | [bar] <pct>% | [bar] <pct>%
+// Row 2: Claude | [bar] <pct>% | [bar] <pct>%
+func CreateMatrixQuotaTable(dq DualCycleQuota, palette ThemePalette) fyne.CanvasObject {
+	table, _, _, _, _ := createMatrixQuotaTableWithCells(dq, palette)
+	return table
 }

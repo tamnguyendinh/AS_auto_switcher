@@ -45,9 +45,17 @@ func setWindowAlwaysOnTop(title string, isTop bool) {
 	_, _, _ = procSetWindowPos.Call(hwnd, insertAfter, 0, 0, 0, 0, flags)
 }
 
-// minSizeLayout enforces a minimum size (840x525) while allowing responsive expansion.
+const (
+	DefaultWindowWidth  float32 = 1008.0
+	DefaultWindowHeight float32 = 630.0
+	MinWindowWidth      float32 = 480.0
+	MinWindowHeight     float32 = 360.0
+)
+
+// minSizeLayout enforces a minimum size (480x360) while allowing responsive expansion and reporting resize events.
 type minSizeLayout struct {
 	min fyne.Size
+	app *App
 }
 
 func (m *minSizeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
@@ -58,6 +66,20 @@ func (m *minSizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	for _, o := range objects {
 		o.Resize(size)
 		o.Move(fyne.NewPos(0, 0))
+	}
+	if m.app != nil {
+		actualW := size.Width
+		actualH := size.Height
+		if m.app.win != nil && m.app.win.Canvas() != nil {
+			cs := m.app.win.Canvas().Size()
+			if cs.Width > 0 && cs.Height > 0 {
+				actualW = cs.Width
+				actualH = cs.Height
+			}
+		}
+		if actualW >= MinWindowWidth && actualH >= MinWindowHeight {
+			m.app.OnWindowResized(actualW, actualH)
+		}
 	}
 }
 
@@ -181,7 +203,7 @@ func (a *App) setupLayout() {
 	)
 
 	// Root wrapped with minSizeLayout to ensure window min size is at least 840x525
-	rootContainer := container.New(&minSizeLayout{min: fyne.NewSize(840, 525)}, mainLayout)
+	rootContainer := container.New(&minSizeLayout{min: fyne.NewSize(MinWindowWidth, MinWindowHeight), app: a}, mainLayout)
 	a.win.SetContent(rootContainer)
 }
 

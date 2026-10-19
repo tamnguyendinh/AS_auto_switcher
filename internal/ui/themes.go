@@ -24,7 +24,9 @@ const (
 
 // UIPreferences stores persistent user interface settings.
 type UIPreferences struct {
-	Theme string `json:"theme"`
+	Theme        string  `json:"theme"`
+	WindowWidth  float32 `json:"window_width,omitempty"`
+	WindowHeight float32 `json:"window_height,omitempty"`
 }
 
 // ThemePalette defines semantic color tokens for custom Canvas rendering across themes.

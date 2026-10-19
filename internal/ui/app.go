@@ -52,6 +52,13 @@ type App struct {
 	themeSelect          *widget.Select
 	monogramBg           *canvas.Rectangle
 	accountScroll        *container.Scroll
+
+	// Window size & in-place update state
+	windowWidth  float32
+	windowHeight float32
+	resizeTimer  *time.Timer
+	resizeMu     sync.Mutex
+	accountCards []*AccountCardWidget
 }
 
 // NewApp creates a new GUI Application with default Fyne runtime and AccountManager.
@@ -88,9 +95,15 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	a.quotaCache = telemetry.NewQuotaCache(cachePath)
 	_ = a.quotaCache.LoadFromDisk()
 
-	// 2. Load UI Preferences (Theme)
-	if prefs, err := LoadUIPreferences(a.preferencesPath); err == nil && prefs != nil && prefs.Theme != "" {
-		a.currentTheme = prefs.Theme
+		// 2. Load UI Preferences (Theme & Window Geometry)
+	if prefs, err := LoadUIPreferences(a.preferencesPath); err == nil && prefs != nil {
+		if prefs.Theme != "" {
+			a.currentTheme = prefs.Theme
+		}
+		if prefs.WindowWidth >= MinWindowWidth && prefs.WindowHeight >= MinWindowHeight {
+			a.windowWidth = prefs.WindowWidth
+			a.windowHeight = prefs.WindowHeight
+		}
 	}
 
 	// 3. Initialize Telemetry Pool & Auto-Loop if manager and store exist
@@ -167,7 +180,21 @@ func (a *App) SetTheme(themeName string) {
 	path := a.preferencesPath
 	a.mu.Unlock()
 
-	_ = SaveUIPreferences(path, &UIPreferences{Theme: themeName})
+	a.resizeMu.Lock()
+	w := a.windowWidth
+	h := a.windowHeight
+	a.resizeMu.Unlock()
+
+	prefs, err := LoadUIPreferences(path)
+	if err != nil || prefs == nil {
+		prefs = &UIPreferences{Theme: themeName}
+	}
+	prefs.Theme = themeName
+	if w >= MinWindowWidth && h >= MinWindowHeight {
+		prefs.WindowWidth = w
+		prefs.WindowHeight = h
+	}
+	_ = SaveUIPreferences(path, prefs)
 
 	if a.app != nil {
 		a.app.Settings().SetTheme(NewThemeInstance(themeName))
@@ -179,7 +206,6 @@ func (a *App) SetTheme(themeName string) {
 		a.monogramBg.FillColor = palette.Primary
 		a.monogramBg.Refresh()
 	}
-
 
 	a.mu.RLock()
 	overview := a.overview
@@ -195,10 +221,22 @@ func (a *App) Init() {
 	a.app.Settings().SetTheme(NewThemeInstance(a.currentTheme))
 	a.app.SetIcon(AppLogoResource)
 
-	a.win = a.app.NewWindow(windowTitle)
+		a.win = a.app.NewWindow(windowTitle)
 	a.win.SetIcon(AppLogoResource)
-	// Standard desktop size 1008x630 px (~70% scaling), resizable (min size 840x525 px handled by layout)
-	a.win.Resize(fyne.NewSize(1008, 630))
+
+	initW := DefaultWindowWidth
+	initH := DefaultWindowHeight
+	a.resizeMu.Lock()
+	if a.windowWidth >= MinWindowWidth && a.windowHeight >= MinWindowHeight {
+		initW = a.windowWidth
+		initH = a.windowHeight
+	} else {
+		a.windowWidth = initW
+		a.windowHeight = initH
+	}
+	a.resizeMu.Unlock()
+
+	a.win.Resize(fyne.NewSize(initW, initH))
 	a.win.SetFixedSize(false)
 
 	a.setupLayout()
@@ -245,6 +283,87 @@ func (a *App) Close() {
 	if a.autoLoop != nil {
 		a.autoLoop.Stop()
 	}
+	a.resizeMu.Lock()
+	if a.resizeTimer != nil {
+		a.resizeTimer.Stop()
+	}
+	a.resizeMu.Unlock()
+}
+
+// WindowSize returns current recorded window dimensions.
+func (a *App) WindowSize() (float32, float32) {
+	a.resizeMu.Lock()
+	defer a.resizeMu.Unlock()
+	return a.windowWidth, a.windowHeight
+}
+
+// AccountCards returns current AccountCardWidgets (useful for testing in-place updates).
+func (a *App) AccountCards() []*AccountCardWidget {
+	return a.accountCards
+}
+
+// OnWindowResized handles resize events from minSizeLayout.
+// It debounces disk writes by 300ms to avoid flooding disk I/O while dragging.
+func (a *App) OnWindowResized(w, h float32) {
+	if w < MinWindowWidth || h < MinWindowHeight {
+		return
+	}
+
+	a.resizeMu.Lock()
+	defer a.resizeMu.Unlock()
+
+	if a.windowWidth == w && a.windowHeight == h {
+		return
+	}
+	a.windowWidth = w
+	a.windowHeight = h
+
+	if a.resizeTimer != nil {
+		a.resizeTimer.Stop()
+	}
+
+	a.resizeTimer = time.AfterFunc(300*time.Millisecond, func() {
+		a.saveWindowGeometry(w, h)
+	})
+}
+
+func (a *App) saveWindowGeometry(w, h float32) {
+	a.mu.RLock()
+	path := a.preferencesPath
+	theme := a.currentTheme
+	a.mu.RUnlock()
+
+	prefs, err := LoadUIPreferences(path)
+	if err != nil || prefs == nil {
+		prefs = &UIPreferences{Theme: theme}
+	}
+	prefs.WindowWidth = w
+	prefs.WindowHeight = h
+	_ = SaveUIPreferences(path, prefs)
+}
+
+// SaveWindowGeometryNow synchronously writes the specified window dimensions to preferences.
+func (a *App) SaveWindowGeometryNow(w, h float32) error {
+	a.resizeMu.Lock()
+	a.windowWidth = w
+	a.windowHeight = h
+	if a.resizeTimer != nil {
+		a.resizeTimer.Stop()
+	}
+	a.resizeMu.Unlock()
+
+	a.mu.RLock()
+	path := a.preferencesPath
+	theme := a.currentTheme
+	a.mu.RUnlock()
+
+	prefs, err := LoadUIPreferences(path)
+	if err != nil || prefs == nil {
+		prefs = &UIPreferences{Theme: theme}
+	}
+	prefs.WindowWidth = w
+	prefs.WindowHeight = h
+	return SaveUIPreferences(path, prefs)
 }
 
 // ShowAndRun displays the window and runs the Fyne event loop.
@@ -397,7 +516,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 					}
 				}
 
-				if targetIdx >= 0 && targetIdx < len(a.accountListContainer.Objects) {
+								if targetIdx >= 0 && targetIdx < len(a.accountCards) && a.accountCards[targetIdx] != nil && a.accountCards[targetIdx].Email == email {
 					var quotaData *telemetry.AccountQuotaData
 					if a.quotaCache != nil {
 						quotaData, _ = a.quotaCache.Get(email)
@@ -405,7 +524,16 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 					if quotaData == nil {
 						quotaData = data
 					}
-					newCard := NewAccountCardWithQuota(
+					a.accountCards[targetIdx].UpdateQuota(quotaData, palette)
+				} else if targetIdx >= 0 && targetIdx < len(a.accountListContainer.Objects) {
+					var quotaData *telemetry.AccountQuotaData
+					if a.quotaCache != nil {
+						quotaData, _ = a.quotaCache.Get(email)
+					}
+					if quotaData == nil {
+						quotaData = data
+					}
+					cardWidget := NewAccountCardWidgetWithQuota(
 						targetItem,
 						quotaData,
 						palette,
@@ -413,7 +541,10 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 						a.SaveSession,
 						a.RefreshSingleAccountQuota,
 					)
-					a.accountListContainer.Objects[targetIdx] = newCard
+					if targetIdx < len(a.accountCards) {
+						a.accountCards[targetIdx] = cardWidget
+					}
+					a.accountListContainer.Objects[targetIdx] = cardWidget.Root
 					a.accountListContainer.Refresh()
 				}
 			}
@@ -663,25 +794,49 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 		}
 	}
 
-	// 3. 3-Column Account Grid with standardized 3-row cards
+		// 3. 3-Column Account Grid with in-place reactive quota updates
 	if a.accountListContainer != nil {
-		a.accountListContainer.Objects = nil
-		if len(overview.Accounts) == 0 {
-			emptyLabel := widget.NewLabelWithStyle("Không tìm thấy tài khoản Google nào trên Chrome.", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
-			a.accountListContainer.Add(container.NewPadded(emptyLabel))
-		} else {
-			for _, acc := range overview.Accounts {
+		canUpdateInPlace := false
+		if len(a.accountCards) == len(overview.Accounts) && len(overview.Accounts) > 0 {
+			canUpdateInPlace = true
+			for i, acc := range overview.Accounts {
+				if a.accountCards[i] == nil || a.accountCards[i].Email != acc.Email || a.accountCards[i].IsActive != acc.IsActive {
+					canUpdateInPlace = false
+					break
+				}
+			}
+		}
+
+		if canUpdateInPlace {
+			// In-place reactive quota updates: Canvas tree is untouched, no layout jank or window resizing
+			for i, acc := range overview.Accounts {
 				var quotaData *telemetry.AccountQuotaData
 				if a.quotaCache != nil {
 					quotaData, _ = a.quotaCache.Get(acc.Email)
 				}
-				card := NewAccountCardWithQuota(acc, quotaData, palette, a.SwitchAccount, a.SaveSession, a.RefreshSingleAccountQuota)
-				a.accountListContainer.Add(card)
+				a.accountCards[i].UpdateQuota(quotaData, palette)
 			}
-		}
-		a.accountListContainer.Refresh()
-		if a.accountScroll != nil {
-			a.accountScroll.Refresh()
+		} else {
+			a.accountListContainer.Objects = nil
+			a.accountCards = nil
+			if len(overview.Accounts) == 0 {
+				emptyLabel := widget.NewLabelWithStyle("Không tìm thấy tài khoản Google nào trên Chrome.", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
+				a.accountListContainer.Add(container.NewPadded(emptyLabel))
+			} else {
+				for _, acc := range overview.Accounts {
+					var quotaData *telemetry.AccountQuotaData
+					if a.quotaCache != nil {
+						quotaData, _ = a.quotaCache.Get(acc.Email)
+					}
+					cardWidget := NewAccountCardWidgetWithQuota(acc, quotaData, palette, a.SwitchAccount, a.SaveSession, a.RefreshSingleAccountQuota)
+					a.accountCards = append(a.accountCards, cardWidget)
+					a.accountListContainer.Add(cardWidget.Root)
+				}
+			}
+			a.accountListContainer.Refresh()
+			if a.accountScroll != nil {
+				a.accountScroll.Refresh()
+			}
 		}
 	}
 

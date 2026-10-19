@@ -93,17 +93,76 @@ func (l *emailLabelWithTooltip) MouseOut() {
 	}
 }
 
-// NewAccountCardWithQuota creates a standardized account card matching the Owner's specification:
-// Line 1: Email (with truncation/tooltip) + Action Cluster: [✔ Dùng]/[Chuyển] + [🔄]
-// Line 2: 3x3 Matrix Table: Quota | 5h | Week with Gemini and Claude rows separated by 1px vertical borders.
-func NewAccountCardWithQuota(
+// AccountCardWidget represents an account card with direct references to child widgets for in-place reactive updates.
+type AccountCardWidget struct {
+	Email         string
+	IsActive      bool
+	Root          *fyne.Container
+	cardBg        *canvas.Rectangle
+	emailLabel    *emailLabelWithTooltip
+	actionCluster fyne.CanvasObject
+
+	gemini5hPct   *canvas.Text
+	gemini5hBar   *canvas.Rectangle
+	geminiWeekPct *canvas.Text
+	geminiWeekBar *canvas.Rectangle
+	claude5hPct   *canvas.Text
+	claude5hBar   *canvas.Rectangle
+	claudeWeekPct *canvas.Text
+	claudeWeekBar *canvas.Rectangle
+
+	gemini5hCell   *matrixQuotaCell
+	geminiWeekCell *matrixQuotaCell
+	claude5hCell   *matrixQuotaCell
+	claudeWeekCell *matrixQuotaCell
+}
+
+// CanvasObject returns the root CanvasObject for this account card widget.
+func (w *AccountCardWidget) CanvasObject() fyne.CanvasObject {
+	if w == nil {
+		return nil
+	}
+	return w.Root
+}
+
+// UpdateQuota performs in-place reactive updates of Quota percentage labels and progress bars
+// without rebuilding or destroying Canvas tree objects, preventing layout jank and window resizing.
+func (w *AccountCardWidget) UpdateQuota(quota *telemetry.AccountQuotaData, palette ThemePalette) {
+	if w == nil {
+		return
+	}
+	dq := ExtractDualCycleQuota(quota)
+
+	hasGemini5h := !dq.IsError && dq.HasData && dq.Gemini5h >= 0
+	if w.gemini5hCell != nil {
+		w.gemini5hCell.update(dq.Gemini5h, hasGemini5h)
+	}
+
+	hasGeminiWeek := !dq.IsError && dq.HasData && dq.GeminiWeek >= 0
+	if w.geminiWeekCell != nil {
+		w.geminiWeekCell.update(dq.GeminiWeek, hasGeminiWeek)
+	}
+
+	hasClaude5h := !dq.IsError && dq.HasData && dq.Claude5h >= 0
+	if w.claude5hCell != nil {
+		w.claude5hCell.update(dq.Claude5h, hasClaude5h)
+	}
+
+	hasClaudeWeek := !dq.IsError && dq.HasData && dq.ClaudeWeek >= 0
+	if w.claudeWeekCell != nil {
+		w.claudeWeekCell.update(dq.ClaudeWeek, hasClaudeWeek)
+	}
+}
+
+// NewAccountCardWidgetWithQuota creates an AccountCardWidget with direct widget references for in-place reactive updates.
+func NewAccountCardWidgetWithQuota(
 	item manager.AccountDisplayItem,
 	quota *telemetry.AccountQuotaData,
 	palette ThemePalette,
 	onSwitch func(email string),
 	onSave func(),
 	onRefreshSingle func(email string),
-) fyne.CanvasObject {
+) *AccountCardWidget {
 	// Line 1: Email label with anti-break truncation and hover tooltip
 	emailLabel := newEmailLabelWithTooltip(item.Email, item.IsActive)
 
@@ -135,8 +194,8 @@ func NewAccountCardWithQuota(
 	// Extract Dual Cycle Quota (Claude and Gemini only, no GPT)
 	dq := ExtractDualCycleQuota(quota)
 
-	// 3x3 Matrix Quota Table (Gemini & Claude rows, 5h & Week cycles)
-	matrixTable := CreateMatrixQuotaTable(dq, palette)
+	// 3x3 Matrix Quota Table with direct cell references
+	matrixTable, cGemini5h, cGeminiWeek, cClaude5h, cClaudeWeek := createMatrixQuotaTableWithCells(dq, palette)
 
 	cardVBox := container.NewVBox(
 		topRow,
@@ -156,5 +215,43 @@ func NewAccountCardWithQuota(
 		cardBg.StrokeWidth = 1.8
 	}
 
-	return container.NewStack(cardBg, container.NewPadded(cardVBox))
+	root := container.NewStack(cardBg, container.NewPadded(cardVBox))
+
+	return &AccountCardWidget{
+		Email:         item.Email,
+		IsActive:      item.IsActive,
+		Root:          root,
+		cardBg:        cardBg,
+		emailLabel:    emailLabel,
+		actionCluster: actionCluster,
+
+		gemini5hPct:   cGemini5h.pctText,
+		gemini5hBar:   cGemini5h.fillBar,
+		geminiWeekPct: cGeminiWeek.pctText,
+		geminiWeekBar: cGeminiWeek.fillBar,
+		claude5hPct:   cClaude5h.pctText,
+		claude5hBar:   cClaude5h.fillBar,
+		claudeWeekPct: cClaudeWeek.pctText,
+		claudeWeekBar: cClaudeWeek.fillBar,
+
+		gemini5hCell:   cGemini5h,
+		geminiWeekCell: cGeminiWeek,
+		claude5hCell:   cClaude5h,
+		claudeWeekCell: cClaudeWeek,
+	}
+}
+
+// NewAccountCardWithQuota creates a standardized account card matching the Owner's specification:
+// Line 1: Email (with truncation/tooltip) + Action Cluster: [✔ Dùng]/[Chuyển] + [🔄]
+// Line 2: 3x3 Matrix Table: Quota | 5h | Week with Gemini and Claude rows separated by 1px vertical borders.
+func NewAccountCardWithQuota(
+	item manager.AccountDisplayItem,
+	quota *telemetry.AccountQuotaData,
+	palette ThemePalette,
+	onSwitch func(email string),
+	onSave func(),
+	onRefreshSingle func(email string),
+) fyne.CanvasObject {
+	w := NewAccountCardWidgetWithQuota(item, quota, palette, onSwitch, onSave, onRefreshSingle)
+	return w.Root
 }

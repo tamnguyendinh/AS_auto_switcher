@@ -1003,9 +1003,9 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 		t.Errorf("expected window to be resizable, got FixedSize=true")
 	}
 
-	minSize := win.Content().MinSize()
-	if minSize.Width != 840 || minSize.Height != 525 {
-		t.Errorf("expected content MinSize exactly 840x525, got %v", minSize)
+		minSize := win.Content().MinSize()
+	if minSize.Width != MinWindowWidth || minSize.Height != MinWindowHeight {
+		t.Errorf("expected content MinSize exactly %fx%f, got %v", MinWindowWidth, MinWindowHeight, minSize)
 	}
 }
 
@@ -1504,21 +1504,21 @@ func TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings(t *testing.T) {
 	app.RefreshSingleAccountQuota(targetEmail)
 	waitForIdle(app, 3*time.Second)
 
-	// Target card must be replaced
-	if grid.Objects[0] == initialCards[0] {
-		t.Errorf("expected target card 0 to be refreshed/updated")
+		// In-place reactive update (INV-01): target card container is preserved in-place (zero re-creations, no canvas churn)
+	if grid.Objects[0] != initialCards[0] {
+		t.Errorf("expected target card 0 to be updated in-place without replacing container object")
 	}
 
-	// All other siblings must remain EXACTLY identical objects (0 re-creations)
+	// All cards remain EXACTLY identical objects (0 re-creations)
 	unchanged := 0
-	for i := 1; i < len(initialCards); i++ {
+	for i := 0; i < len(initialCards); i++ {
 		if grid.Objects[i] == initialCards[i] {
 			unchanged++
 		}
 	}
-	expectedUnchanged := len(initialCards) - 1
+	expectedUnchanged := len(initialCards)
 	if unchanged != expectedUnchanged {
-		t.Fatalf("F3 VIOLATION: expected %d unchanged sibling cards, but got %d", expectedUnchanged, unchanged)
+		t.Fatalf("F3 VIOLATION: expected %d unchanged card objects (in-place updates), but got %d", expectedUnchanged, unchanged)
 	}
 }
 func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
@@ -2032,5 +2032,218 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 	}
 	if minSize.Height > 60.0 {
 		t.Errorf("expected matrix MinSize.Height <= 60, got %f", minSize.Height)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Tests for Architect Spec SPEC-ARCH-20261019-UI-RESIZE-STABILITY
+// -----------------------------------------------------------------------------
+
+func TestArchitectSpec_INV01_InPlaceReactiveQuotaUpdatesZeroCanvasChurn(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	if app.accountListContainer == nil || len(app.accountListContainer.Objects) == 0 {
+		t.Fatalf("expected populated account cards in accountListContainer")
+	}
+
+	// Snapshot initial Canvas Object pointers
+	initialObjects := make([]fyne.CanvasObject, len(app.accountListContainer.Objects))
+	copy(initialObjects, app.accountListContainer.Objects)
+
+	initialCards := app.AccountCards()
+	if len(initialCards) != len(initialObjects) {
+		t.Fatalf("expected %d account cards, got %d", len(initialObjects), len(initialCards))
+	}
+
+	// Simulate Quota cache update for first account
+	firstEmail := initialCards[0].Email
+	newQuota := &telemetry.AccountQuotaData{
+		Email: firstEmail,
+		Gemini: telemetry.ModelQuotaBucket{
+			ModelID:          "gemini-2.5",
+			FiveHourFraction: 0.95,
+			WeeklyFraction:   0.85,
+		},
+		Claude: telemetry.ModelQuotaBucket{
+			ModelID:          "claude-3.7",
+			FiveHourFraction: 0.45,
+			WeeklyFraction:   0.10,
+		},
+	}
+	app.quotaCache.Update(newQuota)
+
+	// Trigger updateUI (identical overview)
+	app.mu.RLock()
+	overview := app.overview
+	app.mu.RUnlock()
+
+	app.updateUI(overview)
+
+	// Verify ZERO Canvas churn: Every single object pointer in Objects MUST be identical
+	if len(app.accountListContainer.Objects) != len(initialObjects) {
+		t.Fatalf("Objects count changed from %d to %d", len(initialObjects), len(app.accountListContainer.Objects))
+	}
+
+	for i, obj := range app.accountListContainer.Objects {
+		if obj != initialObjects[i] {
+			t.Errorf("INV-01 VIOLATION: Canvas object %d was replaced! Expected pointer %p, got %p", i, initialObjects[i], obj)
+		}
+	}
+
+	// Verify in-place data update on the first card
+	card0 := initialCards[0]
+	if card0.gemini5hPct.Text != "95%" {
+		t.Errorf("expected Gemini 5h text '95%%', got '%s'", card0.gemini5hPct.Text)
+	}
+	if card0.geminiWeekPct.Text != "85%" {
+		t.Errorf("expected Gemini Week text '85%%', got '%s'", card0.geminiWeekPct.Text)
+	}
+	if card0.claude5hPct.Text != "45%" {
+		t.Errorf("expected Claude 5h text '45%%', got '%s'", card0.claude5hPct.Text)
+	}
+	if card0.claudeWeekPct.Text != "10%" {
+		t.Errorf("expected Claude Week text '10%%', got '%s'", card0.claudeWeekPct.Text)
+	}
+}
+
+func TestArchitectSpec_INV02_FreedomOfWindowResizing(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window")
+	}
+
+	// MinSize must be strictly 480x360 px per INV-02
+	minSize := win.Content().MinSize()
+	if minSize.Width != MinWindowWidth || minSize.Height != MinWindowHeight {
+		t.Errorf("INV-02 VIOLATION: expected Content MinSize %fx%f, got %v", MinWindowWidth, MinWindowHeight, minSize)
+	}
+
+	// Window must be resizable
+	if win.FixedSize() {
+		t.Errorf("expected window to be resizable, got FixedSize=true")
+	}
+
+	// User must be able to resize down to minimum size
+	win.Resize(fyne.NewSize(MinWindowWidth, MinWindowHeight))
+	if win.Canvas().Size().Width < MinWindowWidth || win.Canvas().Size().Height < MinWindowHeight {
+		t.Errorf("unexpected canvas size after resize: %v", win.Canvas().Size())
+	}
+}
+
+func TestArchitectSpec_INV03_WindowGeometryPersistence(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	tempDir := t.TempDir()
+	prefPath := filepath.Join(tempDir, ".ui_preferences.json")
+
+	// 1. Save custom window dimensions
+	customW := float32(768.0)
+	customH := float32(490.0)
+
+	mgr := createTestManager(t)
+	app1 := NewAppWithFyne(testApp, mgr)
+	app1.SetPreferencesPath(prefPath)
+
+	err := app1.SaveWindowGeometryNow(customW, customH)
+	if err != nil {
+		t.Fatalf("failed saving window geometry: %v", err)
+	}
+
+	// Verify disk file content
+	savedPref, err := LoadUIPreferences(prefPath)
+	if err != nil {
+		t.Fatalf("failed loading saved preferences: %v", err)
+	}
+	if savedPref.WindowWidth != customW || savedPref.WindowHeight != customH {
+		t.Errorf("expected saved geometry %fx%f, got %fx%f", customW, customH, savedPref.WindowWidth, savedPref.WindowHeight)
+	}
+
+	// 2. Re-open application and verify restored dimensions
+	app2 := NewAppWithFyne(testApp, mgr)
+	app2.SetPreferencesPath(prefPath)
+	// Trigger reload of preferences
+	pref2, err := LoadUIPreferences(prefPath)
+	if err != nil {
+		t.Fatalf("failed loading preferences for app2: %v", err)
+	}
+	app2.windowWidth = pref2.WindowWidth
+	app2.windowHeight = pref2.WindowHeight
+
+	app2.Init()
+	defer app2.Close()
+
+	win2 := app2.Window()
+	if win2 == nil {
+		t.Fatal("expected non-nil window on app2")
+	}
+
+	// Content/Window size must match restored dimensions
+	curW, curH := app2.WindowSize()
+	if curW != customW || curH != customH {
+		t.Errorf("INV-03 VIOLATION: expected restored size %fx%f, got %fx%f", customW, customH, curW, curH)
+	}
+}
+
+func TestArchitectSpec_INV04_ElasticMatrixQuotaTableLayout(t *testing.T) {
+	dq := DualCycleQuota{
+		Gemini5h:   0.80,
+		GeminiWeek: 0.60,
+		Claude5h:   0.50,
+		ClaudeWeek: 0.30,
+		HasData:    true,
+	}
+
+	table := CreateMatrixQuotaTable(dq, DarkPalette)
+	cont, ok := table.(*fyne.Container)
+	if !ok || len(cont.Objects) < 5 {
+		t.Fatalf("expected 5 objects in table container")
+	}
+
+	col5h := cont.Objects[2]
+	colWeek := cont.Objects[4]
+
+	// Case 1: Standard/narrow size (236px) -> colCycleW stays at 88.0
+	cont.Resize(fyne.NewSize(236.0, 49.0))
+	if col5h.Size().Width != 88.0 {
+		t.Errorf("expected col5h width 88.0 at 236px, got %f", col5h.Size().Width)
+	}
+	if colWeek.Size().Width != 88.0 {
+		t.Errorf("expected colWeek width 88.0 at 236px, got %f", colWeek.Size().Width)
+	}
+
+	// Case 2: Expanded width (300px) -> remainW = 300 - 68 = 232px > 176px -> colCycleW = min(232/2, 125) = 116.0
+	cont.Resize(fyne.NewSize(300.0, 49.0))
+	if col5h.Size().Width != 116.0 {
+		t.Errorf("expected elastic col5h width 116.0 at 300px, got %f", col5h.Size().Width)
+	}
+	if colWeek.Size().Width != 116.0 {
+		t.Errorf("expected elastic colWeek width 116.0 at 300px, got %f", colWeek.Size().Width)
+	}
+
+	// Case 3: Ultra-wide (400px) -> remainW = 400 - 68 = 332px -> colCycleW capped at 125.0 to preserve typography
+	cont.Resize(fyne.NewSize(400.0, 49.0))
+	if col5h.Size().Width != 125.0 {
+		t.Errorf("expected capped col5h width 125.0 at 400px, got %f", col5h.Size().Width)
+	}
+	if colWeek.Size().Width != 125.0 {
+		t.Errorf("expected capped colWeek width 125.0 at 400px, got %f", colWeek.Size().Width)
 	}
 }
