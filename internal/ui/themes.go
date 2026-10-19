@@ -14,7 +14,7 @@ import (
 
 const (
 	// Compact typography shared by all themes and directly drawn quota labels.
-	BodyTextSize      float32            = 5
+	BodyTextSize      float32            = 8
 	TitleTextSize     float32            = 9
 	titleTextSizeName fyne.ThemeSizeName = "appTitleText"
 
