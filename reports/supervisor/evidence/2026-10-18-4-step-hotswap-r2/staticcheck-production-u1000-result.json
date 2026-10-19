@@ -1,6 +1,0 @@
-{
-  "command": "go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -tests=false -checks=U1000 ./internal/reloader/... ./internal/manager/...",
-  "exit_code": 1,
-  "reviewed_commit": "1c9e560e1bc004da7fa6eabbc33870d63f12c0b2",
-  "note": "Production-only symbol liveness; test-only callers excluded."
-}

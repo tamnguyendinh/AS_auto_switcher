@@ -1,9 +1,0 @@
-{
-  "command": "go test -v -count=1 -overlay <generated-overlay.json> -run '^(TestR2|TestR3|TestSupervisorPurge)' ./internal/reloader ./internal/manager ./internal/connector ./internal/ui",
-  "exit_code": 0,
-  "passed_events": 21,
-  "failed_events": 0,
-  "skipped_events": 0,
-  "reviewed_commit": "0289a73242d60039433273b3093f492cb955e76e",
-  "note": "15 prior hot-swap leaf scenarios retained; new UI deadline/partial-summary test and real Win32 listener discovery checks; virtual sleepers, synthetic credentials and SQLite."
-}

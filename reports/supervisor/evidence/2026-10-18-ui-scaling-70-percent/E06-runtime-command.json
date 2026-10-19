@@ -1,7 +1,0 @@
-{
-  "command": "go run reports/supervisor/evidence/2026-10-18-ui-scaling-70-percent/runtime_probe.go",
-  "reviewed_commit": "92b324542302f2fe311b886650d89ffbfef78d1b",
-  "started_at_bangkok": "2026-10-18T18:38:33.3108761+07:00",
-  "exit": 0,
-  "elapsed_ms": 15281
-}

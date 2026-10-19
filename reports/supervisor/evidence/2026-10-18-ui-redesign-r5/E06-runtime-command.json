@@ -1,7 +1,0 @@
-{
-  "command": "go run reports/supervisor/evidence/2026-10-18-ui-redesign-r5/runtime_probe.go reports/supervisor/evidence/2026-10-18-ui-redesign-r5/quota_matrix.go reports/supervisor/evidence/2026-10-18-ui-redesign-r5/explicit_cycles.go",
-  "reviewed_commit": "28a7e3e4594550c394885b8502293d52a765d167",
-  "started_at_bangkok": "2026-10-18T17:24:21.1112480+07:00",
-  "exit": 1,
-  "elapsed_ms": 13397
-}

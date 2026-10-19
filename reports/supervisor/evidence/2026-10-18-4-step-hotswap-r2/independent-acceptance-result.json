@@ -1,9 +1,0 @@
-{
-  "command": "go test -v -count=1 -overlay <generated-overlay.json> -run '^TestR2' ./internal/reloader ./internal/manager",
-  "exit_code": 1,
-  "passed_events": 12,
-  "failed_events": 2,
-  "skipped_events": 0,
-  "reviewed_commit": "1c9e560e1bc004da7fa6eabbc33870d63f12c0b2",
-  "note": "Original reloader assertions reused; new RAM outcome matrix and WAL fixture; virtual Go tests only; no production edits."
-}

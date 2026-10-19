@@ -1,3 +1,0 @@
-go run reports/supervisor/evidence/2026-10-18-ui-redesign-r2/runtime_probe.go
-Exit: 0
-Elapsed ms: 35689

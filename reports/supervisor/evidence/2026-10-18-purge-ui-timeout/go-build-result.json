@@ -1,5 +1,0 @@
-{
-  "command": "go build ./...",
-  "exit_code": 0,
-  "reviewed_commit": "0289a73242d60039433273b3093f492cb955e76e"
-}

@@ -6,9 +6,10 @@ accounts_store/
 .idea/
 .vscode/
 .agents/
-reports/problem/images/
 bin/
 *.exe
 *.syso
 .tmp/
 .playwright-mcp/
+docs/
+reports/

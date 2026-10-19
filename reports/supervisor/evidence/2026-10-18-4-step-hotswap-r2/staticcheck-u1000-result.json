@@ -1,5 +1,0 @@
-{
-  "command": "go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -checks=U1000 ./...",
-  "exit_code": 1,
-  "reviewed_commit": "1c9e560e1bc004da7fa6eabbc33870d63f12c0b2"
-}

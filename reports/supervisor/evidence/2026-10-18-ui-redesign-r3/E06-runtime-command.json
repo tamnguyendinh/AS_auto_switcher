@@ -1,5 +1,0 @@
-{
-  "command": "go run reports/supervisor/evidence/2026-10-18-ui-redesign-r3/runtime_probe.go reports/supervisor/evidence/2026-10-18-ui-redesign-r3/quota_matrix.go",
-  "exit": 1,
-  "elapsed_ms": 14718
-}

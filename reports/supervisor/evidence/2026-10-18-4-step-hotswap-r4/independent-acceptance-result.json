@@ -1,9 +1,0 @@
-{
-  "command": "go test -v -count=1 -overlay <generated-overlay.json> -run '^(TestR2|TestR3)' ./internal/reloader ./internal/manager",
-  "exit_code": 0,
-  "passed_events": 17,
-  "failed_events": 0,
-  "skipped_events": 0,
-  "reviewed_commit": "93308c5e912d68c77843a2d35ed1780346206068",
-  "note": "All 15 leaf scenarios from R3 reused unchanged through virtual Go test files; historical reports and logs preserved."
-}
