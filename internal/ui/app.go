@@ -41,17 +41,16 @@ type App struct {
 	accountRefreshing sync.Map
 
 	// Dynamic UI Widgets
-	activeDotContainer   *fyne.Container
 	serverStatusLabel    *widget.Label
 	accountListContainer *fyne.Container
 	refreshBtn           *widget.Button
 	quotaRefreshAllBtn   *widget.Button
-	autoRefreshLabel     *widget.Label
-	lastUpdatedLabel     *widget.Label
 	alwaysOnTopBtn       *widget.Button
 	themeSelect          *widget.Select
 	monogramBg           *canvas.Rectangle
 	accountScroll        *container.Scroll
+	statusBar            *widget.Label
+	statusBarHideTimer   *time.Timer
 
 	// In-place update state
 	accountCards []*AccountCardWidget
@@ -195,7 +194,7 @@ func (a *App) SetTheme(themeName string) {
 	a.mu.RUnlock()
 
 	if overview != nil {
-		a.updateUI(overview)
+		a.forceRebuildCards(overview)
 	}
 }
 
@@ -204,11 +203,11 @@ func (a *App) Init() {
 	a.app.Settings().SetTheme(NewThemeInstance(a.currentTheme))
 	a.app.SetIcon(AppLogoResource)
 
-	a.win = a.app.NewWindow(windowTitle)
+	a.win = newMainWindow(a.app)
 	a.win.SetIcon(AppLogoResource)
 
 	// Khởi tạo kích thước chuẩn 1008x630 px và khóa cứng
-	a.win.Resize(fyne.NewSize(1008, 630))
+	a.win.Resize(fyne.NewSize(DefaultWindowWidth, DefaultWindowHeight))
 	a.win.SetFixedSize(true)
 
 	a.setupLayout()
@@ -233,13 +232,7 @@ func (a *App) Init() {
 					a.updateUI(overview)
 				}
 
-				nowStr := time.Now().Format("15:04:05")
-				if a.lastUpdatedLabel != nil {
-					a.lastUpdatedLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-				}
-				if a.autoRefreshLabel != nil {
-					a.autoRefreshLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-				}
+
 			})
 		})
 		_ = a.autoLoop.Start(context.Background())
@@ -270,14 +263,15 @@ func (a *App) ShowAndRun() {
 	// 1. Ép GLFW tạo HWND và hiển thị cửa sổ lên Windows
 	a.win.Show()
 
-	// 2. Gỡ bỏ thanh Windows đồng bộ
-	MakeWindowFrameless(windowTitle)
+	// The driver created the window without decorations. Only retain its native
+	// handle for the custom drag and minimize controls; never rewrite its style.
+	bindMainWindowHandle(a.win)
 
 	if a.alwaysOnTop {
 		setWindowAlwaysOnTop(windowTitle, true)
 	}
 
-	// 3. Chạy vòng lặp nhận sự kiện của Fyne
+	// Chạy vòng lặp nhận sự kiện của Fyne
 	a.app.Run()
 }
 
@@ -346,13 +340,7 @@ func (a *App) RefreshAllQuota() {
 				a.updateUI(overview)
 			}
 
-			nowStr := time.Now().Format("15:04:05")
-			if a.lastUpdatedLabel != nil {
-				a.lastUpdatedLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-			}
-			if a.autoRefreshLabel != nil {
-				a.autoRefreshLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-			}
+
 
 			if a.quotaRefreshAllBtn != nil {
 				a.quotaRefreshAllBtn.SetText("Làm mới Quota")
@@ -442,10 +430,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 				}
 			}
 
-			nowStr := time.Now().Format("15:04:05")
-			if a.lastUpdatedLabel != nil {
-				a.lastUpdatedLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-			}
+
 
 		})
 	}()
@@ -500,13 +485,7 @@ func (a *App) Refresh() {
 
 		fyne.Do(func() {
 			a.updateUI(overview)
-			nowStr := time.Now().Format("15:04:05")
-			if a.lastUpdatedLabel != nil {
-				a.lastUpdatedLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-			}
-			if a.autoRefreshLabel != nil {
-				a.autoRefreshLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-			}
+
 		})
 	}()
 }
@@ -521,7 +500,9 @@ func (a *App) SwitchAccount(targetEmail string) {
 	a.isBusy = true
 	a.mu.Unlock()
 
-
+	fyne.Do(func() {
+		a.showStatusBar(fmt.Sprintf("⏳ Đang chuyển sang %s...", targetEmail))
+	})
 
 	go func() {
 		defer func() {
@@ -541,6 +522,7 @@ func (a *App) SwitchAccount(targetEmail string) {
 				if a.win != nil {
 					dialog.ShowError(err, a.win)
 				}
+				a.clearStatusBar()
 			})
 			return
 		}
@@ -553,6 +535,8 @@ func (a *App) SwitchAccount(targetEmail string) {
 
 		fyne.Do(func() {
 			a.updateUI(overview)
+			a.showStatusBar(fmt.Sprintf("✅ Đã chuyển sang %s", targetEmail))
+			a.autoHideStatusBar(3 * time.Second)
 		})
 	}()
 }
@@ -567,7 +551,9 @@ func (a *App) SaveSession() {
 	a.isBusy = true
 	a.mu.Unlock()
 
-
+	fyne.Do(func() {
+		a.showStatusBar("⏳ Đang lưu phiên...")
+	})
 
 	go func() {
 		defer func() {
@@ -586,6 +572,7 @@ func (a *App) SaveSession() {
 				if a.win != nil {
 					dialog.ShowError(err, a.win)
 				}
+				a.clearStatusBar()
 			})
 			return
 		}
@@ -600,6 +587,8 @@ func (a *App) SaveSession() {
 
 		fyne.Do(func() {
 			a.updateUI(overview)
+			a.showStatusBar("✅ Đã lưu phiên thành công")
+			a.autoHideStatusBar(3 * time.Second)
 		})
 	}()
 }
@@ -612,19 +601,22 @@ func (a *App) ToggleAlwaysOnTop() {
 	a.mu.Unlock()
 
 	setWindowAlwaysOnTop(windowTitle, enabled)
+	a.syncAlwaysOnTopBtn(enabled)
+}
 
-	if a.alwaysOnTopBtn != nil {
-		if enabled {
-			a.alwaysOnTopBtn.SetText("📌 Ghim : Bật")
-			a.alwaysOnTopBtn.Importance = widget.HighImportance
-		} else {
-			a.alwaysOnTopBtn.SetText("📌 Ghim : Tắt")
-			a.alwaysOnTopBtn.Importance = widget.MediumImportance
-		}
-		a.alwaysOnTopBtn.Refresh()
+// syncAlwaysOnTopBtn updates the pin button text and importance to match the given state.
+func (a *App) syncAlwaysOnTopBtn(enabled bool) {
+	if a.alwaysOnTopBtn == nil {
+		return
 	}
-
-
+	if enabled {
+		a.alwaysOnTopBtn.SetText("📌 Ghim : Bật")
+		a.alwaysOnTopBtn.Importance = widget.HighImportance
+	} else {
+		a.alwaysOnTopBtn.SetText("📌 Ghim : Tắt")
+		a.alwaysOnTopBtn.Importance = widget.MediumImportance
+	}
+	a.alwaysOnTopBtn.Refresh()
 }
 
 // SetAlwaysOnTop explicitly sets the Always-on-Top state.
@@ -634,17 +626,7 @@ func (a *App) SetAlwaysOnTop(enabled bool) {
 	a.mu.Unlock()
 
 	setWindowAlwaysOnTop(windowTitle, enabled)
-
-	if a.alwaysOnTopBtn != nil {
-		if enabled {
-			a.alwaysOnTopBtn.SetText("📌 Ghim : Bật")
-			a.alwaysOnTopBtn.Importance = widget.HighImportance
-		} else {
-			a.alwaysOnTopBtn.SetText("📌 Ghim : Tắt")
-			a.alwaysOnTopBtn.Importance = widget.MediumImportance
-		}
-		a.alwaysOnTopBtn.Refresh()
-	}
+	a.syncAlwaysOnTopBtn(enabled)
 }
 
 // IsAlwaysOnTop returns whether Always-on-Top is currently enabled.
@@ -674,18 +656,6 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 		}
 	}
 
-	// 2. Active Account info in-memory tracking
-	if overview.ActiveEmail != "" {
-		if a.activeDotContainer != nil {
-			a.activeDotContainer.Objects = []fyne.CanvasObject{NewStatusDot(palette.Success, 12)}
-			a.activeDotContainer.Refresh()
-		}
-	} else {
-		if a.activeDotContainer != nil {
-			a.activeDotContainer.Objects = []fyne.CanvasObject{NewStatusDot(palette.Warning, 12)}
-			a.activeDotContainer.Refresh()
-		}
-	}
 
 		// 3. 3-Column Account Grid with in-place reactive quota updates
 	if a.accountListContainer != nil {
@@ -733,16 +703,46 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 		}
 	}
 
-	// 4. Update timestamp in toolbar
-	nowStr := time.Now().Format("15:04:05")
-	if a.lastUpdatedLabel != nil {
-		a.lastUpdatedLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-	}
-	if a.autoRefreshLabel != nil {
-		a.autoRefreshLabel.SetText(fmt.Sprintf("Cập nhật : %s", nowStr))
-	}
 
 
+
+}
+
+// showStatusBar displays a transient status message in the status bar.
+func (a *App) showStatusBar(msg string) {
+	if a.statusBar == nil {
+		return
+	}
+	a.statusBar.SetText(msg)
+	a.statusBar.Show()
+}
+
+// clearStatusBar hides the status bar.
+func (a *App) clearStatusBar() {
+	if a.statusBar == nil {
+		return
+	}
+	a.statusBar.SetText("")
+	a.statusBar.Hide()
+}
+
+// autoHideStatusBar schedules the status bar to be hidden after the given duration.
+func (a *App) autoHideStatusBar(d time.Duration) {
+	if a.statusBarHideTimer != nil {
+		a.statusBarHideTimer.Stop()
+	}
+	a.statusBarHideTimer = time.AfterFunc(d, func() {
+		fyne.Do(func() {
+			a.clearStatusBar()
+		})
+	})
+}
+
+// forceRebuildCards clears the in-place update cache so updateUI fully rebuilds all cards
+// with the current theme palette. Used after theme changes.
+func (a *App) forceRebuildCards(overview *manager.AccountOverview) {
+	a.accountCards = nil
+	a.updateUI(overview)
 }
 
 // Logo returns the brand logo static resource.

@@ -2,9 +2,11 @@
 
 package ui
 
-func SetMainHWND(hwnd uintptr) {}
-func GetMainHWND() uintptr { return 0 }
-func MakeWindowFrameless(windowTitle string) uintptr { return 0 }
-func DragNativeWindow() {}
-func MinimizeNativeWindow() {}
-func ToggleMaximizeNativeWindow() {}
+import "fyne.io/fyne/v2"
+
+func SetMainHWND(hwnd uintptr)             {}
+func GetMainHWND() uintptr                 { return 0 }
+func bindMainWindowHandle(win fyne.Window) {}
+func DragNativeWindow()                    {}
+func MinimizeNativeWindow()                {}
+func ToggleMaximizeNativeWindow()          {}

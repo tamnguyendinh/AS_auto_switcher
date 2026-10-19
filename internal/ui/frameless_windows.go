@@ -4,29 +4,17 @@ package ui
 
 import (
 	"sync"
-	"time"
-	"unsafe"
 
-	"golang.org/x/sys/windows"
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/driver"
 )
 
 var (
-	procGetWindowLongW = modUser32.NewProc("GetWindowLongW")
-	procSetWindowLongW = modUser32.NewProc("SetWindowLongW")
 	procReleaseCapture = modUser32.NewProc("ReleaseCapture")
 	procSendMessageW   = modUser32.NewProc("SendMessageW")
-
-	gwlStyleVal int32 = -16 // GWL_STYLE = -16
 )
 
 const (
-	WS_CAPTION       = 0x00C00000
-	WS_THICKFRAME    = 0x00040000
-	SWP_FRAMECHANGED = 0x0020
-	SWP_NOMOVE       = 0x0002
-	SWP_NOSIZE       = 0x0001
-	SWP_NOZORDER     = 0x0004
-
 	SW_MINIMIZE = 6
 
 	WM_NCLBUTTONDOWN = 0x00A1
@@ -50,30 +38,17 @@ func GetMainHWND() uintptr {
 	return mainHWND
 }
 
-// MakeWindowFrameless loại bỏ thanh tiêu đề xám của Windows và gỡ bỏ WS_THICKFRAME để khóa cứng cửa sổ, ngăn co giãn.
-func MakeWindowFrameless(windowTitle string) uintptr {
-	titlePtr := windows.StringToUTF16Ptr(windowTitle)
-	hwnd, _, _ := procFindWindowW.Call(0, uintptr(unsafe.Pointer(titlePtr)))
-	if hwnd == 0 {
-		// Thăm dò FindWindowW mỗi 30-50ms trong tối đa 3-5 giây phòng trường hợp hệ điều hành đang ánh xạ non-client area
-		for i := 0; i < 60; i++ {
-			time.Sleep(50 * time.Millisecond)
-			hwnd, _, _ = procFindWindowW.Call(0, uintptr(unsafe.Pointer(titlePtr)))
-			if hwnd != 0 {
-				break
+// bindMainWindowHandle must run after Show, when Fyne has created the HWND.
+// Native controls use the actual window, without title lookup or style changes.
+func bindMainWindowHandle(win fyne.Window) {
+	SetMainHWND(0)
+	if native, ok := win.(driver.NativeWindow); ok {
+		native.RunNative(func(context any) {
+			if windowsContext, ok := context.(driver.WindowsWindowContext); ok {
+				SetMainHWND(windowsContext.HWND)
 			}
-		}
+		})
 	}
-	if hwnd == 0 {
-		return 0
-	}
-	SetMainHWND(hwnd)
-
-	style, _, _ := procGetWindowLongW.Call(hwnd, uintptr(gwlStyleVal))
-	newStyle := style &^ uintptr(WS_CAPTION | WS_THICKFRAME)
-	procSetWindowLongW.Call(hwnd, uintptr(gwlStyleVal), newStyle)
-	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0, uintptr(SWP_FRAMECHANGED|SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER))
-	return hwnd
 }
 
 // DragNativeWindow cho phép bấm giữ chuột vào thanh tiêu đề tự vẽ để kéo cửa sổ native.

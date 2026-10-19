@@ -52,6 +52,19 @@ const (
 	MinWindowHeight     float32 = 360.0
 )
 
+// newMainWindow lets the desktop driver own the borderless state so its client
+// size, OpenGL viewport, and pointer coordinates stay in the same coordinate space.
+func newMainWindow(app fyne.App) fyne.Window {
+	if driver, ok := app.Driver().(desktop.Driver); ok {
+		win := driver.CreateSplashWindow()
+		win.SetTitle(windowTitle)
+		win.SetPadded(true) // Preserve the normal window's content padding.
+		return win
+	}
+	// The headless Fyne test driver has no native window decorations.
+	return app.NewWindow(windowTitle)
+}
+
 // setupLayout builds the standard 1008x630 desktop layout with 3-row TopSection and 3-column account grid.
 func (a *App) setupLayout() {
 	palette := GetThemePalette(a.currentTheme)
@@ -159,10 +172,14 @@ func (a *App) setupLayout() {
 	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
 	a.accountScroll = scrollList
 
-	// Main Layout: No footer status bar, no legend bar, no bulky header card
+	// Status Bar: transient feedback for loading/success/error
+	a.statusBar = widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
+	a.statusBar.Hide()
+
+	// Main Layout
 	mainLayout := container.NewBorder(
 		topSection,
-		nil,
+		a.statusBar,
 		nil,
 		nil,
 		scrollList,
