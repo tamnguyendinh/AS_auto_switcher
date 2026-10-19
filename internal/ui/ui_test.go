@@ -1618,8 +1618,8 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	if card0Size.Height != 130 {
 		t.Fatalf("F5 VIOLATION: Card height is %f (expected 130.0)", card0Size.Height)
 	}
-	if card0Size.Width != 300 {
-		t.Fatalf("F5 VIOLATION: Card width is %f (expected 300.0)", card0Size.Width)
+	if card0Size.Width != 280 {
+		t.Fatalf("F5 VIOLATION: Card width is %f (expected 280.0)", card0Size.Width)
 	}
 	if card0Size.Height <= 0 {
 		t.Fatalf("F5 VIOLATION: Card height is non-positive: %f", card0Size.Height)
@@ -2095,10 +2095,10 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 		t.Errorf("expected 4 '--%%' labels on error matrix, got %d (texts: %v)", dashCount, errTexts)
 	}
 
-	// 3. Dimensions: MinSize width 228px, fits well inside 300px card
+	// 3. Dimensions: MinSize width 228px, fits well inside 280px card
 	minSize := matrixErr.MinSize()
-	if minSize.Width > 300.0 {
-		t.Errorf("expected matrix MinSize.Width <= 300, got %f", minSize.Width)
+	if minSize.Width > 280.0 {
+		t.Errorf("expected matrix MinSize.Width <= 280, got %f", minSize.Width)
 	}
 	if minSize.Width != 228.0 || minSize.Height != 77.0 {
 		t.Errorf("expected matrix MinSize 228x77, got %v", minSize)
@@ -2217,7 +2217,7 @@ func TestIndustryStandard_FixedMatrixMetrics(t *testing.T) {
 		t.Errorf("expected ray bar (bgTrack) fixed at 40.0px, got %f", cell.bgTrack.Size().Width)
 	}
 
-	for _, w := range []float32{228.0, 300.0, 340.0, 400.0, 600.0} {
+	for _, w := range []float32{228.0, 280.0, 300.0, 340.0, 400.0, 600.0} {
 		cont.Resize(fyne.NewSize(w, 77.0))
 		if colModel.Size().Width != 48.0 {
 			t.Errorf("expected colModel width 48.0 at width %f, got %f", w, colModel.Size().Width)
@@ -2377,16 +2377,16 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 	app.accountListContainer.Refresh()
 
 	cardSize := card.Size()
-	if cardSize.Width != 300 || cardSize.Height != 130 {
-		t.Errorf("expected card size 300x130 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
+	if cardSize.Width != 280 || cardSize.Height != 130 {
+		t.Errorf("expected card size 280x130 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
 	}
 }
 
 // -----------------------------------------------------------------------------
-// Test for SPEC-ARCH-20261019-QUOTA-STACKED-CARD-300X130
+// Test for SPEC-ARCH-20261019-COMPACT-CARD-WIDTH-280PX
 // -----------------------------------------------------------------------------
 
-func TestArchitectSpec_QuotaStackedLayoutCard300x130_FullConformance(t *testing.T) {
+func TestArchitectSpec_QuotaStackedLayoutCard280x130_FullConformance(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
@@ -2407,7 +2407,7 @@ func TestArchitectSpec_QuotaStackedLayoutCard300x130_FullConformance(t *testing.
 		t.Errorf("AC-4 VIOLATION: expected window canvas size 1008x630, got %fx%f", sz.Width, sz.Height)
 	}
 
-	// AC-3: Account card size in GridWrap is 300x130
+	// AC-3: Account card size in GridWrap is 280x130
 	item := manager.AccountDisplayItem{Email: "stacked@example.com"}
 	palette := DarkPalette
 	card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
@@ -2415,8 +2415,8 @@ func TestArchitectSpec_QuotaStackedLayoutCard300x130_FullConformance(t *testing.
 	app.accountListContainer.Refresh()
 
 	cardSize := card.Size()
-	if cardSize.Width != 300 || cardSize.Height != 130 {
-		t.Errorf("AC-3 VIOLATION: expected card size 300x130, got %fx%f", cardSize.Width, cardSize.Height)
+	if cardSize.Width != 280 || cardSize.Height != 130 {
+		t.Errorf("AC-3 VIOLATION: expected card size 280x130, got %fx%f", cardSize.Width, cardSize.Height)
 	}
 
 	// AC-1, AC-2: Stacked 2-tier Quota Table (230x77px)
@@ -2582,7 +2582,7 @@ func TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance(t *te
 		t.Errorf("AC-2 VIOLATION: expected hSep width %f, got %f", expectedW, hSep.Size().Width)
 	}
 
-	// AC-4: Card Dimensions 300x130, Window 1008x630
+	// AC-4: Card Dimensions 280x130, Window 1008x630
 	if DefaultWindowWidth != 1008.0 || DefaultWindowHeight != 630.0 {
 		t.Errorf("AC-4 VIOLATION: expected window 1008x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}

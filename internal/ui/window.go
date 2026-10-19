@@ -182,9 +182,9 @@ func (a *App) setupLayout() {
 	)
 
 	// -------------------------------------------------------------------------
-	// Center Section: 300x130 Fixed Card Grid inside Vertical Scroller
+	// Center Section: 280x130 Fixed Card Grid inside Vertical Scroller
 	// -------------------------------------------------------------------------
-	a.accountListContainer = container.NewGridWrap(fyne.NewSize(300, 130))
+	a.accountListContainer = container.NewGridWrap(fyne.NewSize(280, 130))
 	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
 	a.accountScroll = scrollList
 
