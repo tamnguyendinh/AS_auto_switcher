@@ -4,6 +4,7 @@ package ui
 
 import (
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -56,6 +57,16 @@ func GetMainHWND() uintptr {
 func MakeWindowFrameless(windowTitle string) uintptr {
 	titlePtr := windows.StringToUTF16Ptr(windowTitle)
 	hwnd, _, _ := procFindWindowW.Call(0, uintptr(unsafe.Pointer(titlePtr)))
+	if hwnd == 0 {
+		// Thăm dò FindWindowW mỗi 30-50ms trong tối đa 3-5 giây phòng trường hợp hệ điều hành đang ánh xạ non-client area
+		for i := 0; i < 60; i++ {
+			time.Sleep(50 * time.Millisecond)
+			hwnd, _, _ = procFindWindowW.Call(0, uintptr(unsafe.Pointer(titlePtr)))
+			if hwnd != 0 {
+				break
+			}
+		}
+	}
 	if hwnd == 0 {
 		return 0
 	}

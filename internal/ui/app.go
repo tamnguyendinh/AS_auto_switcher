@@ -201,11 +201,6 @@ func (a *App) Init() {
 	a.win.Resize(fyne.NewSize(1008, 630))
 	a.win.SetFixedSize(false)
 
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		MakeWindowFrameless(windowTitle)
-	}()
-
 	a.setupLayout()
 	a.setupTray()
 
@@ -259,10 +254,19 @@ func (a *App) ShowAndRun() {
 	}
 	defer a.Close()
 
+	// 1. Ép GLFW tạo HWND và hiển thị cửa sổ lên Windows ngay lập tức
+	a.win.Show()
+
+	// 2. NGAY TẠI ĐÂY, cửa sổ đã chắc chắn tồn tại 100% trên hệ điều hành:
+	// Gọi gỡ bỏ thanh Windows ĐỒNG BỘ tại chỗ, không chờ đợi, không dò tìm
+	MakeWindowFrameless(windowTitle)
+
 	if a.alwaysOnTop {
 		setWindowAlwaysOnTop(windowTitle, true)
 	}
-	a.win.ShowAndRun()
+
+	// 3. Chạy vòng lặp nhận sự kiện của Fyne
+	a.app.Run()
 }
 
 // Window returns the main application window (useful for headless testing).
