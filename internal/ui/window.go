@@ -114,9 +114,38 @@ func (a *App) setupLayout() {
 	row1Header := container.NewBorder(nil, nil, titleLeft, windowControls, dragArea)
 
 	// -------------------------------------------------------------------------
-	// TopSection Row 2 (Sub-header): Status đưa lên đầu (trái) + Theme Select mini (phải)
+	// TopSection Row 2 (Combined): Server Status + Toolbar Buttons (trái) + Theme Select (phải)
 	// -------------------------------------------------------------------------
 	a.serverStatusLabel = widget.NewLabelWithStyle("Hoạt động  | Đang kết nối...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+
+	a.refreshBtn = widget.NewButton("Danh sách tài khoản", func() {
+		a.Refresh()
+	})
+
+	a.quotaRefreshAllBtn = widget.NewButton("Làm mới Quota", func() {
+		a.RefreshAllQuota()
+	})
+	a.quotaRefreshAllBtn.Importance = widget.HighImportance
+
+	pinImportance := widget.HighImportance
+	if !a.alwaysOnTop {
+		pinImportance = widget.MediumImportance
+	}
+	a.alwaysOnTopBtn = widget.NewButton("📌", func() {
+		a.ToggleAlwaysOnTop()
+	})
+	a.alwaysOnTopBtn.Importance = pinImportance
+
+	toolbarLeft := container.NewHBox(
+		compactButton(a.refreshBtn),
+		compactButton(a.quotaRefreshAllBtn),
+		compactButton(a.alwaysOnTopBtn),
+	)
+
+	row2LeftCluster := container.NewHBox(
+		a.serverStatusLabel,
+		toolbarLeft,
+	)
 
 	// Theme Select chỉ gồm 3 icon, thu hẹp bề ngang tối đa
 	themeOptions := []string{"🌙", "☀️", "☕"}
@@ -141,43 +170,14 @@ func (a *App) setupLayout() {
 	}
 
 	themeSelectWrap := container.NewGridWrap(fyne.NewSize(58, 32), a.themeSelect)
-	row2SubHeader := container.NewBorder(nil, nil, a.serverStatusLabel, themeSelectWrap)
-
-	// -------------------------------------------------------------------------
-	// TopSection Row 3 (Toolbar): Nút phẳng (trái) + Bỏ sạch timestamp
-	// -------------------------------------------------------------------------
-	a.refreshBtn = widget.NewButton("Danh sách tài khoản", func() {
-		a.Refresh()
-	})
-
-	a.quotaRefreshAllBtn = widget.NewButton("Làm mới Quota", func() {
-		a.RefreshAllQuota()
-	})
-	a.quotaRefreshAllBtn.Importance = widget.HighImportance
-
-	pinImportance := widget.HighImportance
-	if !a.alwaysOnTop {
-		pinImportance = widget.MediumImportance
-	}
-	a.alwaysOnTopBtn = widget.NewButton("📌", func() {
-		a.ToggleAlwaysOnTop()
-	})
-	a.alwaysOnTopBtn.Importance = pinImportance
-
-	toolbarLeft := container.NewHBox(
-		compactButton(a.refreshBtn),
-		compactButton(a.quotaRefreshAllBtn),
-		compactButton(a.alwaysOnTopBtn),
-	)
-	row3Toolbar := toolbarLeft // Phía bên phải để trống hoàn toàn thoáng đãng
+	row2Combined := container.NewBorder(nil, nil, row2LeftCluster, themeSelectWrap)
 
 	// Separator chia phần điều khiển với lưới tài khoản
 	sep := widget.NewSeparator()
 
 	topSection := container.NewVBox(
 		row1Header,
-		row2SubHeader,
-		row3Toolbar,
+		row2Combined,
 		sep,
 	)
 

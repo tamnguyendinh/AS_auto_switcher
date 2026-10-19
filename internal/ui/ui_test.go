@@ -2866,3 +2866,160 @@ func TestArchitectSpec_FlatTextSwitchButton_FullConformance(t *testing.T) {
 		}
 	}
 }
+
+
+// -----------------------------------------------------------------------------
+// Test for SPEC-ARCH-20261019-MERGE-TOOLBAR-WITH-SERVER-STATUS-ROW
+// -----------------------------------------------------------------------------
+
+func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window after Init")
+	}
+
+	content := win.Content().(*fyne.Container)
+	var topSection *fyne.Container
+	for _, obj := range content.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			topSection = c
+			break
+		}
+	}
+	if topSection == nil {
+		t.Fatal("expected to find topSection container")
+	}
+
+	// AC-2: No Row 3 - topSection must contain exactly 3 objects: row1Header, row2Combined, sep
+	if len(topSection.Objects) != 3 {
+		t.Fatalf("AC-2 VIOLATION: expected topSection to have exactly 3 children (row1Header, row2Combined, sep), got %d", len(topSection.Objects))
+	}
+
+	// topSection.Objects[0] must be row1Header
+	row1Header, ok := topSection.Objects[0].(*fyne.Container)
+	if !ok || row1Header == nil {
+		t.Fatalf("expected topSection.Objects[0] to be row1Header container")
+	}
+
+	// topSection.Objects[1] must be row2Combined
+	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
+	if !ok || row2Combined == nil {
+		t.Fatalf("AC-1 VIOLATION: expected topSection.Objects[1] to be row2Combined container")
+	}
+
+	// topSection.Objects[2] must be separator
+	if _, ok := topSection.Objects[2].(*widget.Separator); !ok {
+		t.Fatalf("expected topSection.Objects[2] to be separator")
+	}
+
+	// AC-1: row2Combined layout structure: Left cluster + Right cluster (theme select)
+	var foundLeftCluster *fyne.Container
+	var foundThemeWrap *fyne.Container
+	for _, obj := range row2Combined.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			for _, inner := range c.Objects {
+				if inner == app.serverStatusLabel {
+					foundLeftCluster = c
+					break
+				}
+				if inner == app.themeSelect {
+					foundThemeWrap = c
+					break
+				}
+			}
+		}
+	}
+
+	if foundLeftCluster == nil {
+		t.Fatalf("AC-1 VIOLATION: expected to find row2LeftCluster containing serverStatusLabel in row2Combined")
+	}
+	if foundThemeWrap == nil {
+		t.Fatalf("expected to find themeSelectWrap in row2Combined")
+	}
+
+	// Verify row2LeftCluster contains serverStatusLabel and toolbarLeft
+	if len(foundLeftCluster.Objects) < 2 {
+		t.Fatalf("AC-1 VIOLATION: expected row2LeftCluster to have at least 2 children (serverStatusLabel, toolbarLeft), got %d", len(foundLeftCluster.Objects))
+	}
+	if foundLeftCluster.Objects[0] != app.serverStatusLabel {
+		t.Errorf("AC-1 VIOLATION: expected row2LeftCluster.Objects[0] to be serverStatusLabel")
+	}
+
+	toolbarLeft, ok := foundLeftCluster.Objects[1].(*fyne.Container)
+	if !ok || toolbarLeft == nil {
+		t.Fatalf("AC-1 VIOLATION: expected row2LeftCluster.Objects[1] to be toolbarLeft container")
+	}
+
+	// Verify toolbarLeft contains the 3 buttons: refreshBtn, quotaRefreshAllBtn, alwaysOnTopBtn
+	if len(toolbarLeft.Objects) != 3 {
+		t.Fatalf("AC-1 VIOLATION: expected toolbarLeft to have 3 compact button containers, got %d", len(toolbarLeft.Objects))
+	}
+
+	btn1Wrap, ok := toolbarLeft.Objects[0].(*fyne.Container)
+	if !ok || len(btn1Wrap.Objects) == 0 || btn1Wrap.Objects[0] != app.refreshBtn {
+		t.Errorf("AC-1 VIOLATION: expected first button in toolbarLeft to wrap app.refreshBtn")
+	}
+	if app.refreshBtn.Text != "Danh sách tài khoản" {
+		t.Errorf("expected refreshBtn text 'Danh sách tài khoản', got '%s'", app.refreshBtn.Text)
+	}
+
+	btn2Wrap, ok := toolbarLeft.Objects[1].(*fyne.Container)
+	if !ok || len(btn2Wrap.Objects) == 0 || btn2Wrap.Objects[0] != app.quotaRefreshAllBtn {
+		t.Errorf("AC-1 VIOLATION: expected second button in toolbarLeft to wrap app.quotaRefreshAllBtn")
+	}
+	if app.quotaRefreshAllBtn.Text != "Làm mới Quota" {
+		t.Errorf("expected quotaRefreshAllBtn text 'Làm mới Quota', got '%s'", app.quotaRefreshAllBtn.Text)
+	}
+
+	btn3Wrap, ok := toolbarLeft.Objects[2].(*fyne.Container)
+	if !ok || len(btn3Wrap.Objects) == 0 || btn3Wrap.Objects[0] != app.alwaysOnTopBtn {
+		t.Errorf("AC-1 VIOLATION: expected third button in toolbarLeft to wrap app.alwaysOnTopBtn")
+	}
+	if app.alwaysOnTopBtn.Text != "📌" {
+		t.Errorf("expected alwaysOnTopBtn text '📌', got '%s'", app.alwaysOnTopBtn.Text)
+	}
+
+	// AC-4: Dimension preservation: window 920x630, card 280x130
+	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 920 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	}
+	if app.accountListContainer == nil {
+		t.Fatal("expected non-nil accountListContainer")
+	}
+	item := manager.AccountDisplayItem{Email: "user@example.com"}
+	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil, nil)
+	cardMin := card.MinSize()
+	if cardMin.Width > 280.0 || cardMin.Height > 130.0 {
+		t.Errorf("AC-4 VIOLATION: expected card min size within 280x130, got %fx%f", cardMin.Width, cardMin.Height)
+	}
+
+	// AC-5: Button functionality verification
+	initialPin := app.alwaysOnTop
+	app.alwaysOnTopBtn.OnTapped()
+	if app.alwaysOnTop == initialPin {
+		t.Errorf("expected alwaysOnTop to toggle from %v, got %v", initialPin, app.alwaysOnTop)
+	}
+	app.alwaysOnTopBtn.OnTapped()
+	if app.alwaysOnTop != initialPin {
+		t.Errorf("expected alwaysOnTop restored to %v, got %v", initialPin, app.alwaysOnTop)
+	}
+
+	app.themeSelect.SetSelected("☀️")
+	if app.currentTheme != ThemeLight {
+		t.Errorf("expected currentTheme ThemeLight, got %s", app.currentTheme)
+	}
+	app.themeSelect.SetSelected("🌙")
+	if app.currentTheme != ThemeDark {
+		t.Errorf("expected currentTheme ThemeDark, got %s", app.currentTheme)
+	}
+}
