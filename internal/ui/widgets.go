@@ -179,10 +179,11 @@ func NewAccountCardWidgetWithQuota(
 	refreshBtn.Importance = widget.LowImportance
 
 	// Right Action Cluster
+	compactRefresh := compactButton(refreshBtn)
 	var actionCluster fyne.CanvasObject
 	if item.IsActive {
 		activeBadge := widget.NewLabelWithStyle("[✔ Dùng]", fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
-		actionCluster = container.NewHBox(activeBadge, refreshBtn)
+		actionCluster = container.NewHBox(activeBadge, compactRefresh)
 	} else {
 		switchBtn := widget.NewButton("Chuyển", func() {
 			if onSwitch != nil {
@@ -190,7 +191,7 @@ func NewAccountCardWidgetWithQuota(
 			}
 		})
 		switchBtn.Importance = widget.HighImportance
-		actionCluster = container.NewHBox(compactButton(switchBtn), refreshBtn)
+		actionCluster = container.NewHBox(compactButton(switchBtn), compactRefresh)
 	}
 
 	topRow := container.NewBorder(nil, nil, nil, actionCluster, emailLabel)

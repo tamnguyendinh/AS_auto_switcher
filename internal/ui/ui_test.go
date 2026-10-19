@@ -2650,3 +2650,131 @@ func TestArchitectSpec_CompactWindowWidth960px_FullConformance(t *testing.T) {
 		t.Errorf("AC-2 VIOLATION: expected card dimensions 280x130, got %fx%f", card0.Size().Width, card0.Size().Height)
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Test for SPEC-ARCH-20261019-COMPACT-SWITCH-BUTTON-HEIGHT-70PCT
+// -----------------------------------------------------------------------------
+
+func findSwitchButton(obj fyne.CanvasObject) *widget.Button {
+	var target *widget.Button
+	var walk func(o fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if btn, ok := o.(*widget.Button); ok {
+			if btn.Text == "Chuyển" {
+				target = btn
+				return
+			}
+		}
+		if cont, ok := o.(*fyne.Container); ok {
+			for _, child := range cont.Objects {
+				walk(child)
+			}
+		}
+	}
+	walk(obj)
+	return target
+}
+
+func TestArchitectSpec_CompactSwitchButtonHeight70Pct_FullConformance(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	// AC-1: Verify compact switch button MinSize height <= 25.0px (clamped to 22.0 - 24.0px range)
+	switchBtn := widget.NewButton("Chuyển", nil)
+	switchBtn.Importance = widget.HighImportance
+	rawSwitchMin := switchBtn.MinSize()
+
+	compactSwitch := compactButton(switchBtn)
+	compactSwitchMin := compactSwitch.MinSize()
+
+	if compactSwitchMin.Height > 25.0 {
+		t.Fatalf("AC-1 VIOLATION: expected compact switch button height <= 25.0px, got %f", compactSwitchMin.Height)
+	}
+	if compactSwitchMin.Height > 24.0 {
+		t.Errorf("AC-1 VIOLATION: expected compact switch button height <= 24.0px, got %f", compactSwitchMin.Height)
+	}
+
+	// AC-2: Verify compact refresh button MinSize height <= 25.0px and matches compact switch height
+	refreshBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), nil)
+	refreshBtn.Importance = widget.LowImportance
+	rawRefreshMin := refreshBtn.MinSize()
+
+	compactRefresh := compactButton(refreshBtn)
+	compactRefreshMin := compactRefresh.MinSize()
+
+	if compactRefreshMin.Height > 25.0 {
+		t.Fatalf("AC-2 VIOLATION: expected compact refresh button height <= 25.0px, got %f", compactRefreshMin.Height)
+	}
+	if compactRefreshMin.Height > 24.0 {
+		t.Errorf("AC-2 VIOLATION: expected compact refresh button height <= 24.0px, got %f", compactRefreshMin.Height)
+	}
+
+	// Layout vertical centering verification
+	compactSwitch.Resize(fyne.NewSize(80, 32))
+	if switchBtn.Size().Height > 24.0 {
+		t.Errorf("Layout VIOLATION: expected inner button height <= 24.0px, got %f", switchBtn.Size().Height)
+	}
+	if switchBtn.Position().Y < 0 {
+		t.Errorf("Layout VIOLATION: expected non-negative Y offset, got %f", switchBtn.Position().Y)
+	}
+
+	// AC-3: Functional Integrity of [Chuyển] button and [🔄] in Inactive Card
+	var switchedEmail string
+	var refreshedEmail string
+	itemInactive := manager.AccountDisplayItem{
+		Email:    "inactive_test@example.com",
+		IsActive: false,
+	}
+	cardInactive := NewAccountCardWithQuota(itemInactive, nil, DarkPalette,
+		func(email string) { switchedEmail = email },
+		nil,
+		func(email string) { refreshedEmail = email },
+	)
+
+	foundSwitch := findSwitchButton(cardInactive)
+	if foundSwitch == nil {
+		t.Fatalf("AC-3 VIOLATION: could not find 'Chuyển' button in inactive card")
+	}
+	foundSwitch.OnTapped()
+	if switchedEmail != "inactive_test@example.com" {
+		t.Errorf("AC-3 VIOLATION: expected switchedEmail 'inactive_test@example.com', got '%s'", switchedEmail)
+	}
+
+	foundRefreshInactive := findRefreshButton(cardInactive)
+	if foundRefreshInactive == nil {
+		t.Fatalf("AC-2 VIOLATION: could not find refresh button in inactive card")
+	}
+	foundRefreshInactive.OnTapped()
+	if refreshedEmail != "inactive_test@example.com" {
+		t.Errorf("AC-2 VIOLATION: expected refreshedEmail 'inactive_test@example.com', got '%s'", refreshedEmail)
+	}
+
+	// Functional Integrity of [🔄] in Active Card ([✔ Dùng] badge + compactRefresh)
+	var activeRefreshedEmail string
+	itemActive := manager.AccountDisplayItem{
+		Email:    "active_test@example.com",
+		IsActive: true,
+	}
+	cardActive := NewAccountCardWithQuota(itemActive, nil, DarkPalette,
+		nil,
+		nil,
+		func(email string) { activeRefreshedEmail = email },
+	)
+
+	foundRefreshActive := findRefreshButton(cardActive)
+	if foundRefreshActive == nil {
+		t.Fatalf("AC-2 VIOLATION: could not find refresh button in active card")
+	}
+	foundRefreshActive.OnTapped()
+	if activeRefreshedEmail != "active_test@example.com" {
+		t.Errorf("AC-2 VIOLATION: expected activeRefreshedEmail 'active_test@example.com', got '%s'", activeRefreshedEmail)
+	}
+
+	// AC-4: Dimension preservation: Card remains within 280x130
+	cardMin := cardInactive.MinSize()
+	if cardMin.Width > 280.0 || cardMin.Height > 130.0 {
+		t.Errorf("AC-4 VIOLATION: expected card min size within 280x130, got %fx%f", cardMin.Width, cardMin.Height)
+	}
+	_ = rawSwitchMin
+	_ = rawRefreshMin
+}
