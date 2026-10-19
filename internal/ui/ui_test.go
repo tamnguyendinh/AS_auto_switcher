@@ -1062,7 +1062,7 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 }
 
 // -------------------------------------------------------------
-// Slice P6A-3 Tests: Owner Redesign Invariants (1008x630, 3-Column Grid, 3-Row Cards, No GPT)
+// Slice P6A-3 Tests: Owner Redesign Invariants (960x630, 3-Column Grid, 3-Row Cards, No GPT)
 // -------------------------------------------------------------
 
 func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
@@ -1083,8 +1083,8 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 	}
 
 	sz := win.Canvas().Size()
-	if sz.Width != 1008 || sz.Height != 630 {
-		t.Errorf("expected initial window size 1008x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != 960 || sz.Height != 630 {
+		t.Errorf("expected initial window size 960x630, got %fx%f", sz.Width, sz.Height)
 	}
 }
 
@@ -1601,7 +1601,7 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	defer app.Close()
 
 	w := app.Window()
-	w.Resize(fyne.NewSize(1008, 630))
+	w.Resize(fyne.NewSize(960, 630))
 
 	// Populate 6 cards
 	palette := DarkPalette
@@ -2273,7 +2273,7 @@ func TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate(t *testing.T) {
 	}
 }
 
-func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
+func TestIndustryStandard_WindowInit960x630(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
@@ -2295,8 +2295,8 @@ func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
 	}
 
 	sz := win.Canvas().Size()
-	if sz.Width != 1008 || sz.Height != 630 {
-		t.Errorf("expected window canvas size 1008x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != 960 || sz.Height != 630 {
+		t.Errorf("expected window canvas size 960x630, got %fx%f", sz.Width, sz.Height)
 	}
 }
 
@@ -2397,14 +2397,14 @@ func TestArchitectSpec_QuotaStackedLayoutCard280x130_FullConformance(t *testing.
 	app.Init()
 	waitForIdle(app, 3*time.Second)
 
-	// AC-4: Default window canvas size 1008x630
+	// AC-4: Default window canvas size 960x630
 	win := app.Window()
 	if win == nil {
 		t.Fatal("expected non-nil window")
 	}
 	sz := win.Canvas().Size()
-	if sz.Width != 1008 || sz.Height != 630 {
-		t.Errorf("AC-4 VIOLATION: expected window canvas size 1008x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != 960 || sz.Height != 630 {
+		t.Errorf("AC-4 VIOLATION: expected window canvas size 960x630, got %fx%f", sz.Width, sz.Height)
 	}
 
 	// AC-3: Account card size in GridWrap is 280x130
@@ -2582,9 +2582,9 @@ func TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance(t *te
 		t.Errorf("AC-2 VIOLATION: expected hSep width %f, got %f", expectedW, hSep.Size().Width)
 	}
 
-	// AC-4: Card Dimensions 280x130, Window 1008x630
-	if DefaultWindowWidth != 1008.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-4 VIOLATION: expected window 1008x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-4: Card Dimensions 280x130, Window 960x630
+	if DefaultWindowWidth != 960.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected window 960x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 
 	// AC-5: In-place reactive update zero jank
@@ -2600,4 +2600,53 @@ func TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance(t *te
 	_ = cGW
 	_ = cC5
 	_ = cCW
+}
+
+
+// -----------------------------------------------------------------------------
+// Test for SPEC-ARCH-20261019-COMPACT-WINDOW-WIDTH-960PX
+// -----------------------------------------------------------------------------
+
+func TestArchitectSpec_CompactWindowWidth960px_FullConformance(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	// AC-1: Default window width 960.0, height 630.0
+	if DefaultWindowWidth != 960.0 || DefaultWindowHeight != 630.0 {
+		t.Fatalf("AC-1 VIOLATION: expected DefaultWindowWidth=960.0, DefaultWindowHeight=630.0, got %f x %f", DefaultWindowWidth, DefaultWindowHeight)
+	}
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window")
+	}
+	sz := win.Canvas().Size()
+	if sz.Width != 960 || sz.Height != 630 {
+		t.Errorf("AC-1 VIOLATION: expected window canvas size 960x630, got %fx%f", sz.Width, sz.Height)
+	}
+
+	// AC-2: 3-Column Card Layout (280x130 Card GridWrap)
+	if app.accountListContainer == nil {
+		t.Fatal("expected non-nil accountListContainer")
+	}
+	palette := DarkPalette
+	for i := 1; i <= 6; i++ {
+		item := manager.AccountDisplayItem{Email: fmt.Sprintf("test%d@example.com", i)}
+		card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
+		app.accountListContainer.Add(card)
+	}
+	app.accountListContainer.Refresh()
+
+	// Verify each card retains 280x130 dimensions
+	card0 := app.accountListContainer.Objects[0]
+	if card0.Size().Width != 280 || card0.Size().Height != 130 {
+		t.Errorf("AC-2 VIOLATION: expected card dimensions 280x130, got %fx%f", card0.Size().Width, card0.Size().Height)
+	}
 }

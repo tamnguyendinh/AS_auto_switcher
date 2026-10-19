@@ -46,7 +46,7 @@ func setWindowAlwaysOnTop(title string, isTop bool) {
 }
 
 const (
-	DefaultWindowWidth  float32 = 1008.0
+	DefaultWindowWidth  float32 = 960.0
 	DefaultWindowHeight float32 = 630.0
 	MinWindowWidth      float32 = 480.0
 	MinWindowHeight     float32 = 360.0
