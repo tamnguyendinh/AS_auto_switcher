@@ -42,6 +42,114 @@ func NewStatusDot(c color.Color, diameter float32) fyne.CanvasObject {
 	return container.NewGridWrap(fyne.NewSize(diameter, diameter), dot)
 }
 
+// switchTextButton represents a flat, clickable text button [Chuyển] styled consistently with [✔ Dùng].
+type switchTextButton struct {
+	widget.BaseWidget
+	Text     string
+	OnTapped func()
+	hovered  bool
+	palette  ThemePalette
+
+	bg   *canvas.Rectangle
+	text *canvas.Text
+}
+
+var (
+	_ fyne.Widget        = (*switchTextButton)(nil)
+	_ fyne.Tappable      = (*switchTextButton)(nil)
+	_ desktop.Hoverable  = (*switchTextButton)(nil)
+	_ desktop.Cursorable = (*switchTextButton)(nil)
+)
+
+func newSwitchTextButton(onTapped func(), palette ThemePalette) *switchTextButton {
+	b := &switchTextButton{
+		Text:     "[Chuyển]",
+		OnTapped: onTapped,
+		palette:  palette,
+	}
+	b.bg = canvas.NewRectangle(color.Transparent)
+	b.bg.CornerRadius = 3
+	b.text = canvas.NewText("[Chuyển]", palette.Primary)
+	b.text.TextSize = 10
+	b.text.TextStyle = fyne.TextStyle{Bold: true}
+	b.text.Alignment = fyne.TextAlignCenter
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+func (b *switchTextButton) CreateRenderer() fyne.WidgetRenderer {
+	c := container.NewStack(b.bg, container.NewPadded(b.text))
+	return widget.NewSimpleRenderer(c)
+}
+
+func (b *switchTextButton) Refresh() {
+	if b.text != nil {
+		if b.Text != "" {
+			b.text.Text = b.Text
+		}
+		if b.hovered {
+			b.text.Color = lightenColor(b.palette.Primary, 35)
+		} else {
+			b.text.Color = b.palette.Primary
+		}
+		b.text.Refresh()
+	}
+	if b.bg != nil {
+		if b.hovered {
+			b.bg.FillColor = color.NRGBA{
+				R: b.palette.Primary.R,
+				G: b.palette.Primary.G,
+				B: b.palette.Primary.B,
+				A: 0x24,
+			}
+		} else {
+			b.bg.FillColor = color.Transparent
+		}
+		b.bg.Refresh()
+	}
+	b.BaseWidget.Refresh()
+}
+
+func (b *switchTextButton) Tapped(*fyne.PointEvent) {
+	if b.OnTapped != nil {
+		b.OnTapped()
+	}
+}
+
+func (b *switchTextButton) MouseIn(*desktop.MouseEvent) {
+	b.hovered = true
+	b.Refresh()
+}
+
+func (b *switchTextButton) MouseOut() {
+	b.hovered = false
+	b.Refresh()
+}
+
+func (b *switchTextButton) MouseMoved(*desktop.MouseEvent) {}
+
+func (b *switchTextButton) Cursor() desktop.Cursor {
+	return desktop.PointerCursor
+}
+
+func lightenColor(c color.NRGBA, delta int) color.NRGBA {
+	clamp := func(v int) uint8 {
+		if v > 255 {
+			return 255
+		}
+		if v < 0 {
+			return 0
+		}
+		return uint8(v)
+	}
+	return color.NRGBA{
+		R: clamp(int(c.R) + delta),
+		G: clamp(int(c.G) + delta),
+		B: clamp(int(c.B) + delta),
+		A: c.A,
+	}
+}
+
 // emailLabelWithTooltip implements an ellipsis-truncated email label with desktop hover tooltip.
 type emailLabelWithTooltip struct {
 	widget.Label
@@ -185,13 +293,12 @@ func NewAccountCardWidgetWithQuota(
 		activeBadge := widget.NewLabelWithStyle("[✔ Dùng]", fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
 		actionCluster = container.NewHBox(activeBadge, compactRefresh)
 	} else {
-		switchBtn := widget.NewButton("Chuyển", func() {
+		switchBtn := newSwitchTextButton(func() {
 			if onSwitch != nil {
 				onSwitch(item.Email)
 			}
-		})
-		switchBtn.Importance = widget.HighImportance
-		actionCluster = container.NewHBox(compactButton(switchBtn), compactRefresh)
+		}, palette)
+		actionCluster = container.NewHBox(switchBtn, compactRefresh)
 	}
 
 	topRow := container.NewBorder(nil, nil, nil, actionCluster, emailLabel)

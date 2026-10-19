@@ -18,6 +18,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
@@ -1246,10 +1247,10 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 		func() {},
 		func(email string) { singleRefreshedEmail = email },
 	)
-	var switchBtn *widget.Button
+	var switchBtn *switchTextButton
 	var findSwitch func(fyne.CanvasObject)
 	findSwitch = func(o fyne.CanvasObject) {
-		if btn, ok := o.(*widget.Button); ok && btn.Text == "Chuyển" {
+		if btn, ok := o.(*switchTextButton); ok {
 			switchBtn = btn
 			return
 		}
@@ -1261,7 +1262,7 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 	}
 	findSwitch(cardInactive)
 	if switchBtn == nil {
-		t.Fatalf("expected 'Chuyển' button on inactive card")
+		t.Fatalf("expected '[Chuyển]' button on inactive card")
 	}
 	switchBtn.OnTapped()
 	if switchedEmail != "inactive_owner@gmail.com" {
@@ -2655,15 +2656,13 @@ func TestArchitectSpec_CompactWindowWidth960px_FullConformance(t *testing.T) {
 // Test for SPEC-ARCH-20261019-COMPACT-SWITCH-BUTTON-HEIGHT-70PCT
 // -----------------------------------------------------------------------------
 
-func findSwitchButton(obj fyne.CanvasObject) *widget.Button {
-	var target *widget.Button
+func findSwitchButton(obj fyne.CanvasObject) *switchTextButton {
+	var target *switchTextButton
 	var walk func(o fyne.CanvasObject)
 	walk = func(o fyne.CanvasObject) {
-		if btn, ok := o.(*widget.Button); ok {
-			if btn.Text == "Chuyển" {
-				target = btn
-				return
-			}
+		if btn, ok := o.(*switchTextButton); ok {
+			target = btn
+			return
 		}
 		if cont, ok := o.(*fyne.Container); ok {
 			for _, child := range cont.Objects {
@@ -2777,4 +2776,93 @@ func TestArchitectSpec_CompactSwitchButtonHeight70Pct_FullConformance(t *testing
 	}
 	_ = rawSwitchMin
 	_ = rawRefreshMin
+}
+
+// -----------------------------------------------------------------------------
+// Test for SPEC-ARCH-20261019-FLAT-TEXT-SWITCH-BUTTON
+// -----------------------------------------------------------------------------
+
+func TestArchitectSpec_FlatTextSwitchButton_FullConformance(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	for _, palette := range []ThemePalette{DarkPalette, LightPalette, WarmPalette} {
+		var switchedEmail string
+		itemInactive := manager.AccountDisplayItem{
+			Email:    "flat_switch_test@example.com",
+			IsActive: false,
+		}
+		card := NewAccountCardWithQuota(itemInactive, nil, palette,
+			func(email string) { switchedEmail = email },
+			nil,
+			nil,
+		)
+
+		// AC-1: Verify flat text style: no solid button, text is "[Chuyển]", 10pt bold, palette.Primary color
+		btn := findSwitchButton(card)
+		if btn == nil {
+			t.Fatalf("[%s] AC-1 VIOLATION: expected switchTextButton on inactive card", palette.Name)
+		}
+		if btn.Text != "[Chuyển]" {
+			t.Errorf("[%s] AC-1 VIOLATION: expected text '[Chuyển]', got '%s'", palette.Name, btn.Text)
+		}
+		if btn.text == nil {
+			t.Fatalf("[%s] AC-1 VIOLATION: expected non-nil inner text object", palette.Name)
+		}
+		if btn.text.Text != "[Chuyển]" {
+			t.Errorf("[%s] AC-1 VIOLATION: expected inner text '[Chuyển]', got '%s'", palette.Name, btn.text.Text)
+		}
+		if btn.text.TextSize != 10 {
+			t.Errorf("[%s] AC-1 VIOLATION: expected text size 10, got %f", palette.Name, btn.text.TextSize)
+		}
+		if !btn.text.TextStyle.Bold {
+			t.Errorf("[%s] AC-1 VIOLATION: expected bold text style", palette.Name)
+		}
+		assertColorMatches(t, "FlatTextSwitchButton Normal", "text.Color", btn.text.Color, palette.Primary)
+		if btn.bg.FillColor != color.Transparent {
+			t.Errorf("[%s] AC-1 VIOLATION: expected transparent background in normal state, got %v", palette.Name, btn.bg.FillColor)
+		}
+
+		// AC-2: Pointer Cursor & Hover affordance
+		if btn.Cursor() != desktop.PointerCursor {
+			t.Errorf("[%s] AC-2 VIOLATION: expected desktop.PointerCursor, got %v", palette.Name, btn.Cursor())
+		}
+		btn.MouseIn(&desktop.MouseEvent{})
+		if !btn.hovered {
+			t.Errorf("[%s] AC-2 VIOLATION: expected hovered == true after MouseIn", palette.Name)
+		}
+		if btn.bg.FillColor == color.Transparent {
+			t.Errorf("[%s] AC-2 VIOLATION: expected non-transparent background tint on hover", palette.Name)
+		}
+		expectedHoverText := lightenColor(palette.Primary, 35)
+		assertColorMatches(t, "FlatTextSwitchButton Hover", "text.Color", btn.text.Color, expectedHoverText)
+
+		btn.MouseOut()
+		if btn.hovered {
+			t.Errorf("[%s] AC-2 VIOLATION: expected hovered == false after MouseOut", palette.Name)
+		}
+		if btn.bg.FillColor != color.Transparent {
+			t.Errorf("[%s] AC-2 VIOLATION: expected transparent background after MouseOut", palette.Name)
+		}
+		assertColorMatches(t, "FlatTextSwitchButton Restored", "text.Color", btn.text.Color, palette.Primary)
+
+		// AC-3: Switch Functionality on click/tap
+		btn.Tapped(&fyne.PointEvent{})
+		if switchedEmail != "flat_switch_test@example.com" {
+			t.Errorf("[%s] AC-3 VIOLATION: expected switchedEmail 'flat_switch_test@example.com', got '%s'", palette.Name, switchedEmail)
+		}
+
+		// Also verify direct OnTapped() execution
+		switchedEmail = ""
+		btn.OnTapped()
+		if switchedEmail != "flat_switch_test@example.com" {
+			t.Errorf("[%s] AC-3 VIOLATION: expected OnTapped() to set switchedEmail, got '%s'", palette.Name, switchedEmail)
+		}
+
+		// AC-4: Dimension preservation: Card remains within 280x130
+		cardMin := card.MinSize()
+		if cardMin.Width > 280.0 || cardMin.Height > 130.0 {
+			t.Errorf("[%s] AC-4 VIOLATION: expected card within 280x130, got %fx%f", palette.Name, cardMin.Width, cardMin.Height)
+		}
+	}
 }
