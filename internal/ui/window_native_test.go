@@ -134,7 +134,7 @@ func TestNativeWindowMaximizeRestoreAndGrid(t *testing.T) {
 		fyne.DoAndWait(func() {
 			expected = int((a.accountListContainer.Size().Width + theme.Padding()) / (318 + theme.Padding()))
 			for _, card := range a.accountListContainer.Objects {
-				if card.Size() != fyne.NewSize(318, 110) {
+				if card.Size() != fyne.NewSize(318, 100) {
 					t.Errorf("card stretched to %v", card.Size())
 				}
 				if card.Position().Y == 0 {
@@ -181,7 +181,7 @@ func TestNativeWindowMaximizeRestoreAndGrid(t *testing.T) {
 			t.Errorf("maximized button must show restore icon, got %q", icon)
 		}
 		columns := checkGrid()
-		t.Logf("maximize cycle %d: native=canvas=%dx%d, grid %d -> %d columns, cards 318x110", cycle+1, client.right, client.bottom, originalColumns, columns)
+		t.Logf("maximize cycle %d: native=canvas=%dx%d, grid %d -> %d columns, cards 318x100", cycle+1, client.right, client.bottom, originalColumns, columns)
 		if capturePath := os.Getenv("NATIVE_MAXIMIZE_CAPTURE"); capturePath != "" && cycle == 0 {
 			file, err := os.Create(capturePath)
 			if err != nil {

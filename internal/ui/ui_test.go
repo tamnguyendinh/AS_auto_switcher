@@ -2297,7 +2297,7 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 		t.Fatal("expected non-nil accountListContainer")
 	}
 
-	// Verify accountListContainer uses GridWrap layout with fixed 318x110 size
+	// Verify accountListContainer uses GridWrap layout with fixed 318x100 size
 	item := manager.AccountDisplayItem{Email: "user@example.com"}
 	palette := DarkPalette
 	card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
@@ -2305,7 +2305,7 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 	app.accountListContainer.Refresh()
 
 	cardSize := card.Size()
-	if cardSize.Width != 318 || cardSize.Height != 110 {
-		t.Errorf("expected card size 318x110 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
+	if cardSize.Width != 318 || cardSize.Height != 100 {
+		t.Errorf("expected card size 318x100 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
 	}
 }
