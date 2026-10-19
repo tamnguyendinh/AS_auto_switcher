@@ -634,7 +634,55 @@ func TestQuotaBadgeGroupAndColors(t *testing.T) {
 }
 
 func TestQuotaCountdownCalculationAndLabel(t *testing.T) {
-	// Retired in UI Redesign: Countdown labels and helpers removed to ensure compact 3-row layout.
+	// Zero time -> "--"
+	if res := formatCountdown(time.Time{}, false); res != "--" {
+		t.Errorf("expected '--' for zero time (5h), got %q", res)
+	}
+	if res := formatCountdown(time.Time{}, true); res != "--" {
+		t.Errorf("expected '--' for zero time (weekly), got %q", res)
+	}
+
+	// <= 0 remaining time -> "(Ready)"
+	past := time.Now().Add(-10 * time.Minute)
+	if res := formatCountdown(past, false); res != "(Ready)" {
+		t.Errorf("expected '(Ready)' for past time (5h), got %q", res)
+	}
+	if res := formatCountdown(past, true); res != "(Ready)" {
+		t.Errorf("expected '(Ready)' for past time (weekly), got %q", res)
+	}
+
+	// 5h cycle countdown format (04h 32m)
+	future5h := time.Now().Add(4*time.Hour + 32*time.Minute + 5*time.Second)
+	if res := formatCountdown(future5h, false); res != "(04h 32m)" {
+		t.Errorf("expected '(04h 32m)' for 4h 32m, got %q", res)
+	}
+	future5h2 := time.Now().Add(2*time.Hour + 12*time.Minute + 5*time.Second)
+	if res := formatCountdown(future5h2, false); res != "(02h 12m)" {
+		t.Errorf("expected '(02h 12m)' for 2h 12m, got %q", res)
+	}
+
+	// Week cycle countdown format (6d 21h 59m)
+	futureWeek := time.Now().Add(6*24*time.Hour + 21*time.Hour + 59*time.Minute + 5*time.Second)
+	if res := formatCountdown(futureWeek, true); res != "(6d 21h 59m)" {
+		t.Errorf("expected '(6d 21h 59m)', got %q", res)
+	}
+	futureWeek2 := time.Now().Add(2*24*time.Hour + 7*time.Hour + 8*time.Minute + 5*time.Second)
+	if res := formatCountdown(futureWeek2, true); res != "(2d 07h 08m)" {
+		t.Errorf("expected '(2d 07h 08m)', got %q", res)
+	}
+
+	// Cell visual styling invariant: text size 8.5pt and TextMuted color
+	cell := newMatrixQuotaCell(1.0, future5h, false, true, DarkPalette)
+	if cell.timeText == nil {
+		t.Fatal("expected non-nil timeText in cell")
+	}
+	if cell.timeText.TextSize != 8.5 {
+		t.Errorf("expected timeText size 8.5, got %f", cell.timeText.TextSize)
+	}
+	assertColorMatches(t, "DarkPalette", "timeText", cell.timeText.Color, DarkPalette.TextMuted)
+	if cell.timeText.Text != "(04h 32m)" {
+		t.Errorf("expected cell timeText '(04h 32m)', got %q", cell.timeText.Text)
+	}
 }
 
 type testAccountSource struct {
@@ -814,6 +862,27 @@ func TestExtractDualCycleQuota_Contract(t *testing.T) {
 	}
 	if dq.Gemini5h != 0.235 || dq.GeminiWeek != -1 {
 		t.Errorf("unexpected Gemini dual-cycle: 5h=%f, week=%f", dq.Gemini5h, dq.GeminiWeek)
+	}
+
+	// Populated quota with reset times
+	reset5h := time.Now().Add(2 * time.Hour)
+	resetWeek := time.Now().Add(7 * 24 * time.Hour)
+	qWithReset := &telemetry.AccountQuotaData{
+		Claude: telemetry.ModelQuotaBucket{
+			RemainingFraction: 1.0, FiveHourFraction: 1.0, WeeklyFraction: 0.5,
+			FiveHourReset: reset5h, WeeklyReset: resetWeek,
+		},
+		Gemini: telemetry.ModelQuotaBucket{
+			RemainingFraction: 0.8, FiveHourFraction: 0.8, WeeklyFraction: 0.4,
+			FiveHourReset: reset5h, WeeklyReset: resetWeek,
+		},
+	}
+	dqWithReset := ExtractDualCycleQuota(qWithReset)
+	if !dqWithReset.Claude5hReset.Equal(reset5h) || !dqWithReset.ClaudeWeekReset.Equal(resetWeek) {
+		t.Errorf("unexpected Claude reset times in DualCycleQuota")
+	}
+	if !dqWithReset.Gemini5hReset.Equal(reset5h) || !dqWithReset.GeminiWeekReset.Equal(resetWeek) {
+		t.Errorf("unexpected Gemini reset times in DualCycleQuota")
 	}
 }
 
@@ -1014,8 +1083,8 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 	}
 
 	sz := win.Canvas().Size()
-	if sz.Width != 1008 || sz.Height != 630 {
-		t.Errorf("expected initial window size 1008x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != 1090 || sz.Height != 630 {
+		t.Errorf("expected initial window size 1090x630, got %fx%f", sz.Width, sz.Height)
 	}
 }
 
@@ -1537,7 +1606,7 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	defer app.Close()
 
 	w := app.Window()
-	w.Resize(fyne.NewSize(1008, 630))
+	w.Resize(fyne.NewSize(1090, 630))
 
 	// Populate 6 cards
 	palette := DarkPalette
@@ -2035,10 +2104,10 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 		t.Errorf("expected 4 '--%%' labels on error matrix, got %d (texts: %v)", dashCount, errTexts)
 	}
 
-	// 3. Dimensions: MinSize width ~236px, fits well inside 252px card
+	// 3. Dimensions: MinSize width 340px, fits well inside 350px card
 	minSize := matrixErr.MinSize()
-	if minSize.Width > 252.0 {
-		t.Errorf("expected matrix MinSize.Width <= 252, got %f", minSize.Width)
+	if minSize.Width > 350.0 {
+		t.Errorf("expected matrix MinSize.Width <= 350, got %f", minSize.Width)
 	}
 	if minSize.Height > 60.0 {
 		t.Errorf("expected matrix MinSize.Height <= 60, got %f", minSize.Height)
@@ -2143,34 +2212,34 @@ func TestIndustryStandard_FixedMatrixMetrics(t *testing.T) {
 	col5h := cont.Objects[2]
 	colWeek := cont.Objects[4]
 
-	// Check table MinSize is 244.0 x 49.0
+	// Check table MinSize is 340.0 x 49.0
 	minSz := cont.MinSize()
-	if minSz.Width != 244.0 || minSz.Height != 49.0 {
-		t.Errorf("expected table MinSize 244x49, got %v", minSz)
+	if minSz.Width != 340.0 || minSz.Height != 49.0 {
+		t.Errorf("expected table MinSize 340x49, got %v", minSz)
 	}
 
 	// Ray bar must be 40.0px
-	cell := newMatrixQuotaCell(0.80, true, DarkPalette)
+	cell := newMatrixQuotaCell(0.80, time.Time{}, false, true, DarkPalette)
 	if cell.bgTrack.Size().Width != 40.0 {
 		t.Errorf("expected ray bar (bgTrack) fixed at 40.0px, got %f", cell.bgTrack.Size().Width)
 	}
 
-	for _, w := range []float32{236.0, 244.0, 300.0, 400.0, 600.0} {
+	for _, w := range []float32{300.0, 340.0, 400.0, 600.0} {
 		cont.Resize(fyne.NewSize(w, 49.0))
-		if colModel.Size().Width != 50.0 {
-			t.Errorf("expected colModel width 50.0 at width %f, got %f", w, colModel.Size().Width)
+		if colModel.Size().Width != 48.0 {
+			t.Errorf("expected colModel width 48.0 at width %f, got %f", w, colModel.Size().Width)
 		}
-		if col5h.Size().Width != 88.0 {
-			t.Errorf("expected col5h width 88.0 at width %f, got %f", w, col5h.Size().Width)
+		if col5h.Size().Width != 128.0 {
+			t.Errorf("expected col5h width 128.0 at width %f, got %f", w, col5h.Size().Width)
 		}
-		if colWeek.Size().Width != 88.0 {
-			t.Errorf("expected colWeek width 88.0 at width %f, got %f", w, colWeek.Size().Width)
+		if colWeek.Size().Width != 146.0 {
+			t.Errorf("expected colWeek width 146.0 at width %f, got %f", w, colWeek.Size().Width)
 		}
 	}
 }
 
 func TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate(t *testing.T) {
-	cell := newMatrixQuotaCell(1.0, true, DarkPalette)
+	cell := newMatrixQuotaCell(1.0, time.Time{}, false, true, DarkPalette)
 	if cell == nil {
 		t.Fatal("expected non-nil cell")
 	}
@@ -2187,7 +2256,7 @@ func TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate(t *testing.T) {
 	}
 
 	// Tụt về 50% -> fillBar = 20px, bgTrack vẫn 40px
-	cell.update(0.50, true)
+	cell.update(0.50, time.Time{}, true)
 	if cell.fillBar.Size().Width != 20.0 {
 		t.Errorf("expected fillBar width 20.0 at 50%%, got %f", cell.fillBar.Size().Width)
 	}
@@ -2199,7 +2268,7 @@ func TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate(t *testing.T) {
 	}
 
 	// Tụt về 0% -> fillBar = 0px, bgTrack vẫn 40px
-	cell.update(0.0, true)
+	cell.update(0.0, time.Time{}, true)
 	if cell.fillBar.Size().Width != 0.0 {
 		t.Errorf("expected fillBar width 0.0 at 0%%, got %f", cell.fillBar.Size().Width)
 	}
@@ -2211,7 +2280,7 @@ func TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate(t *testing.T) {
 	}
 }
 
-func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
+func TestIndustryStandard_WindowInit1090x630(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
@@ -2220,6 +2289,7 @@ func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
 	defer app.Close()
 
 	app.Init()
+	waitForIdle(app, 3*time.Second)
 
 	win := app.Window()
 	if win == nil {
@@ -2232,8 +2302,8 @@ func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
 	}
 
 	sz := win.Canvas().Size()
-	if sz.Width != 1008 || sz.Height != 630 {
-		t.Errorf("expected window canvas size 1008x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != 1090 || sz.Height != 630 {
+		t.Errorf("expected window canvas size 1090x630, got %fx%f", sz.Width, sz.Height)
 	}
 }
 
@@ -2314,7 +2384,7 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 	app.accountListContainer.Refresh()
 
 	cardSize := card.Size()
-	if cardSize.Width != 318 || cardSize.Height != 100 {
-		t.Errorf("expected card size 318x100 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
+	if cardSize.Width != 350 || cardSize.Height != 100 {
+		t.Errorf("expected card size 350x100 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
 	}
 }

@@ -104,12 +104,16 @@ type AccountCardWidget struct {
 
 	gemini5hPct   *canvas.Text
 	gemini5hBar   *canvas.Rectangle
+	gemini5hTime  *canvas.Text
 	geminiWeekPct *canvas.Text
 	geminiWeekBar *canvas.Rectangle
+	geminiWeekTime *canvas.Text
 	claude5hPct   *canvas.Text
 	claude5hBar   *canvas.Rectangle
+	claude5hTime  *canvas.Text
 	claudeWeekPct *canvas.Text
 	claudeWeekBar *canvas.Rectangle
+	claudeWeekTime *canvas.Text
 
 	gemini5hCell   *matrixQuotaCell
 	geminiWeekCell *matrixQuotaCell
@@ -135,22 +139,22 @@ func (w *AccountCardWidget) UpdateQuota(quota *telemetry.AccountQuotaData, palet
 
 	hasGemini5h := !dq.IsError && dq.HasData && dq.Gemini5h >= 0
 	if w.gemini5hCell != nil {
-		w.gemini5hCell.update(dq.Gemini5h, hasGemini5h)
+		w.gemini5hCell.update(dq.Gemini5h, dq.Gemini5hReset, hasGemini5h)
 	}
 
 	hasGeminiWeek := !dq.IsError && dq.HasData && dq.GeminiWeek >= 0
 	if w.geminiWeekCell != nil {
-		w.geminiWeekCell.update(dq.GeminiWeek, hasGeminiWeek)
+		w.geminiWeekCell.update(dq.GeminiWeek, dq.GeminiWeekReset, hasGeminiWeek)
 	}
 
 	hasClaude5h := !dq.IsError && dq.HasData && dq.Claude5h >= 0
 	if w.claude5hCell != nil {
-		w.claude5hCell.update(dq.Claude5h, hasClaude5h)
+		w.claude5hCell.update(dq.Claude5h, dq.Claude5hReset, hasClaude5h)
 	}
 
 	hasClaudeWeek := !dq.IsError && dq.HasData && dq.ClaudeWeek >= 0
 	if w.claudeWeekCell != nil {
-		w.claudeWeekCell.update(dq.ClaudeWeek, hasClaudeWeek)
+		w.claudeWeekCell.update(dq.ClaudeWeek, dq.ClaudeWeekReset, hasClaudeWeek)
 	}
 }
 
@@ -227,12 +231,16 @@ func NewAccountCardWidgetWithQuota(
 
 		gemini5hPct:   cGemini5h.pctText,
 		gemini5hBar:   cGemini5h.fillBar,
+		gemini5hTime:  cGemini5h.timeText,
 		geminiWeekPct: cGeminiWeek.pctText,
 		geminiWeekBar: cGeminiWeek.fillBar,
+		geminiWeekTime: cGeminiWeek.timeText,
 		claude5hPct:   cClaude5h.pctText,
 		claude5hBar:   cClaude5h.fillBar,
+		claude5hTime:  cClaude5h.timeText,
 		claudeWeekPct: cClaudeWeek.pctText,
 		claudeWeekBar: cClaudeWeek.fillBar,
+		claudeWeekTime: cClaudeWeek.timeText,
 
 		gemini5hCell:   cGemini5h,
 		geminiWeekCell: cGeminiWeek,

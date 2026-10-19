@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -141,12 +142,16 @@ func formatFraction(fraction float64) string {
 
 // DualCycleQuota holds extracted 5h and weekly quota fractions for Claude and Gemini.
 type DualCycleQuota struct {
-	Claude5h   float64
-	ClaudeWeek float64
-	Gemini5h   float64
-	GeminiWeek float64
-	HasData    bool
-	IsError    bool
+	Claude5h        float64
+	ClaudeWeek      float64
+	Gemini5h        float64
+	GeminiWeek      float64
+	Claude5hReset   time.Time
+	ClaudeWeekReset time.Time
+	Gemini5hReset   time.Time
+	GeminiWeekReset time.Time
+	HasData         bool
+	IsError         bool
 }
 
 // extractFamilyCycles extracts 5h and weekly quota fractions for one model family (Claude or Gemini).
@@ -224,14 +229,38 @@ func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
 	g5h, gWeek := extractFamilyCycles(quota.Gemini, quota.RawBuckets, []string{"gemini"})
 
 	dq := DualCycleQuota{
-		Claude5h:   c5h,
-		ClaudeWeek: cWeek,
-		Gemini5h:   g5h,
-		GeminiWeek: gWeek,
-		HasData:    c5h >= 0 || cWeek >= 0 || g5h >= 0 || gWeek >= 0,
+		Claude5h:        c5h,
+		ClaudeWeek:      cWeek,
+		Gemini5h:        g5h,
+		GeminiWeek:      gWeek,
+		Claude5hReset:   quota.Claude.FiveHourReset,
+		ClaudeWeekReset: quota.Claude.WeeklyReset,
+		Gemini5hReset:   quota.Gemini.FiveHourReset,
+		GeminiWeekReset: quota.Gemini.WeeklyReset,
+		HasData:         c5h >= 0 || cWeek >= 0 || g5h >= 0 || gWeek >= 0,
 	}
 
 	return dq
+}
+
+// formatCountdown formats the time remaining until quota bucket reset per architect spec.
+func formatCountdown(resetTime time.Time, isWeekly bool) string {
+	if resetTime.IsZero() {
+		return "--"
+	}
+	duration := time.Until(resetTime)
+	if duration <= 0 {
+		return "(Ready)"
+	}
+	if !isWeekly {
+		h := int(duration.Hours())
+		m := int(duration.Minutes()) % 60
+		return fmt.Sprintf("(%02dh %02dm)", h, m)
+	}
+	d := int(duration.Hours()) / 24
+	h := int(duration.Hours()) % 24
+	m := int(duration.Minutes()) % 60
+	return fmt.Sprintf("(%dd %02dh %02dm)", d, h, m)
 }
 
 // modelQuotaItemLayout provides responsive layout for [txtModel, bar, txtPct].
@@ -405,7 +434,11 @@ func (l *matrixCellLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	if bw <= 0 {
 		bw = MatrixMiniBarWidth
 	}
-	return fyne.NewSize(bw+4.0+objects[1].MinSize().Width, 15.0)
+	w := bw + 4.0 + objects[1].MinSize().Width
+	if len(objects) >= 3 {
+		w += 4.0 + objects[2].MinSize().Width
+	}
+	return fyne.NewSize(w, 15.0)
 }
 
 func (l *matrixCellLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
@@ -424,9 +457,18 @@ func (l *matrixCellLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	bar.Move(fyne.NewPos(0, (size.Height-6.0)/2))
 	bar.Resize(fyne.NewSize(bw, 6.0))
 
+	pctW := pct.MinSize().Width
 	pctH := pct.MinSize().Height
 	pct.Move(fyne.NewPos(bw+spacing, (size.Height-pctH)/2))
-	pct.Resize(fyne.NewSize(pct.MinSize().Width, pctH))
+	pct.Resize(fyne.NewSize(pctW, pctH))
+
+	if len(objects) >= 3 {
+		timeObj := objects[2]
+		timeW := timeObj.MinSize().Width
+		timeH := timeObj.MinSize().Height
+		timeObj.Move(fyne.NewPos(bw+spacing+pctW+spacing, (size.Height-timeH)/2))
+		timeObj.Resize(fyne.NewSize(timeW, timeH))
+	}
 }
 
 type matrixQuotaCell struct {
@@ -435,9 +477,11 @@ type matrixQuotaCell struct {
 	bgTrack   *canvas.Rectangle
 	fillBar   *canvas.Rectangle
 	pctText   *canvas.Text
+	timeText  *canvas.Text
+	isWeekly  bool
 }
 
-func newMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) *matrixQuotaCell {
+func newMatrixQuotaCell(fraction float64, resetTime time.Time, isWeekly bool, hasData bool, palette ThemePalette) *matrixQuotaCell {
 	barWidth := MatrixMiniBarWidth
 	barHeight := float32(6.0)
 	cornerRadius := float32(3.0)
@@ -486,7 +530,16 @@ func newMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) *m
 	pct.TextSize = BodyTextSize
 	pct.TextStyle = fyne.TextStyle{Bold: true}
 
-	cellContainer := container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, barContainer, pct)
+	var timeStr string
+	if !hasData {
+		timeStr = "--"
+	} else {
+		timeStr = formatCountdown(resetTime, isWeekly)
+	}
+	timeTxt := canvas.NewText(timeStr, palette.TextMuted)
+	timeTxt.TextSize = 8.5
+
+	cellContainer := container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, barContainer, pct, timeTxt)
 
 	return &matrixQuotaCell{
 		container: cellContainer,
@@ -494,10 +547,12 @@ func newMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) *m
 		bgTrack:   bgTrack,
 		fillBar:   fillBar,
 		pctText:   pct,
+		timeText:  timeTxt,
+		isWeekly:  isWeekly,
 	}
 }
 
-func (c *matrixQuotaCell) update(fraction float64, hasData bool) {
+func (c *matrixQuotaCell) update(fraction float64, resetTime time.Time, hasData bool) {
 	if c == nil {
 		return
 	}
@@ -525,6 +580,15 @@ func (c *matrixQuotaCell) update(fraction float64, hasData bool) {
 		c.fillBar.Resize(fyne.NewSize(fw, c.layout.barHeight))
 	}
 
+	if c.timeText != nil {
+		if !hasData {
+			c.timeText.Text = "--"
+		} else {
+			c.timeText.Text = formatCountdown(resetTime, c.isWeekly)
+		}
+		c.timeText.Refresh()
+	}
+
 	c.fillBar.Refresh()
 	c.pctText.Refresh()
 	// TUYỆT ĐỐI KHÔNG GỌI c.container.Refresh()
@@ -532,7 +596,7 @@ func (c *matrixQuotaCell) update(fraction float64, hasData bool) {
 
 // createMatrixQuotaCell creates a graphical mini progress bar (40px) and percentage text label.
 func createMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) fyne.CanvasObject {
-	cell := newMatrixQuotaCell(fraction, hasData, palette)
+	cell := newMatrixQuotaCell(fraction, time.Time{}, false, hasData, palette)
 	return cell.container
 }
 
@@ -571,7 +635,7 @@ func (l *matrixColumnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 type matrixTableLayout struct{}
 
 func (l *matrixTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	const totalW = float32(50.0 + 1.0 + 88.0 + 1.0 + 88.0 + 16.0) // 244.0 px
+	const totalW = float32(48.0 + 1.0 + 128.0 + 1.0 + 146.0 + 16.0) // 340.0 px
 	return fyne.NewSize(totalW, 49.0)
 }
 
@@ -587,10 +651,11 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 
 	h := size.Height
 	// CHỈ SỐ CỐ ĐỊNH CHUẨN NGÀNH - TUYỆT ĐỐI KHÔNG CO GIÃN
-	const col1W = float32(50.0)     // Cột Model: CỐ ĐỊNH 50px
-	const sepW = float32(1.0)      // Vách ngăn đứng: CỐ ĐỊNH 1px
-	const colGap = float32(4.0)    // Khoảng cách giữa các cột: CỐ ĐỊNH 4px
-	const colCycleW = float32(88.0) // Cột 5h và Week: CỐ ĐỊNH 88px
+	const col1W = float32(48.0)     // Cột Model: CỐ ĐỊNH 48px
+	const sepW = float32(1.0)       // Vách ngăn đứng: CỐ ĐỊNH 1px
+	const colGap = float32(4.0)     // Khoảng cách giữa các cột: CỐ ĐỊNH 4px
+	const col5hW = float32(128.0)   // Cột 5h: CỐ ĐỊNH 128px
+	const colWeekW = float32(146.0) // Cột Week: CỐ ĐỊNH 146px
 
 	x := float32(0)
 	// Col 1: Model (Gemini / Claude)
@@ -605,8 +670,8 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 
 	// Col 2: 5h
 	col5h.Move(fyne.NewPos(x, 0))
-	col5h.Resize(fyne.NewSize(colCycleW, h))
-	x += colCycleW + colGap
+	col5h.Resize(fyne.NewSize(col5hW, h))
+	x += col5hW + colGap
 
 	// Sep 2
 	sep2.Move(fyne.NewPos(x, 1))
@@ -615,7 +680,7 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 
 	// Col 3: Week
 	colWeek.Move(fyne.NewPos(x, 0))
-	colWeek.Resize(fyne.NewSize(colCycleW, h))
+	colWeek.Resize(fyne.NewSize(colWeekW, h))
 }
 
 func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (fyne.CanvasObject, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell) {
@@ -643,10 +708,10 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 	txt5h.TextStyle = fyne.TextStyle{Bold: true}
 
 	hasGemini5h := !dq.IsError && dq.HasData && dq.Gemini5h >= 0
-	cellGemini5h := newMatrixQuotaCell(dq.Gemini5h, hasGemini5h, palette)
+	cellGemini5h := newMatrixQuotaCell(dq.Gemini5h, dq.Gemini5hReset, false, hasGemini5h, palette)
 
 	hasClaude5h := !dq.IsError && dq.HasData && dq.Claude5h >= 0
-	cellClaude5h := newMatrixQuotaCell(dq.Claude5h, hasClaude5h, palette)
+	cellClaude5h := newMatrixQuotaCell(dq.Claude5h, dq.Claude5hReset, false, hasClaude5h, palette)
 
 	col5h := container.New(&matrixColumnLayout{}, txt5h, cellGemini5h.container, cellClaude5h.container)
 
@@ -659,10 +724,10 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 	txtWeek.TextStyle = fyne.TextStyle{Bold: true}
 
 	hasGeminiWeek := !dq.IsError && dq.HasData && dq.GeminiWeek >= 0
-	cellGeminiWeek := newMatrixQuotaCell(dq.GeminiWeek, hasGeminiWeek, palette)
+	cellGeminiWeek := newMatrixQuotaCell(dq.GeminiWeek, dq.GeminiWeekReset, true, hasGeminiWeek, palette)
 
 	hasClaudeWeek := !dq.IsError && dq.HasData && dq.ClaudeWeek >= 0
-	cellClaudeWeek := newMatrixQuotaCell(dq.ClaudeWeek, hasClaudeWeek, palette)
+	cellClaudeWeek := newMatrixQuotaCell(dq.ClaudeWeek, dq.ClaudeWeekReset, true, hasClaudeWeek, palette)
 
 	colWeek := container.New(&matrixColumnLayout{}, txtWeek, cellGeminiWeek.container, cellClaudeWeek.container)
 
