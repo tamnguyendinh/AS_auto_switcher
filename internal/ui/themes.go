@@ -13,6 +13,11 @@ import (
 )
 
 const (
+	// Compact typography shared by all themes and directly drawn quota labels.
+	BodyTextSize      float32            = 5
+	TitleTextSize     float32            = 9
+	titleTextSizeName fyne.ThemeSizeName = "appTitleText"
+
 	// Theme identifiers
 	ThemeDark  = "dark"
 	ThemeLight = "light"
@@ -146,7 +151,7 @@ func (t *DarkTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 }
 
 func (t *DarkTheme) Size(name fyne.ThemeSizeName) float32 {
-	return theme.DefaultTheme().Size(name)
+	return compactThemeSize(name)
 }
 
 // LightTheme satisfies fyne.Theme for Light Mode.
@@ -186,7 +191,7 @@ func (t *LightTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 }
 
 func (t *LightTheme) Size(name fyne.ThemeSizeName) float32 {
-	return theme.DefaultTheme().Size(name)
+	return compactThemeSize(name)
 }
 
 // WarmTheme satisfies fyne.Theme for Warm Mode.
@@ -226,6 +231,16 @@ func (t *WarmTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 }
 
 func (t *WarmTheme) Size(name fyne.ThemeSizeName) float32 {
+	return compactThemeSize(name)
+}
+
+func compactThemeSize(name fyne.ThemeSizeName) float32 {
+	switch name {
+	case titleTextSizeName:
+		return TitleTextSize
+	case theme.SizeNameText, theme.SizeNameCaptionText:
+		return BodyTextSize
+	}
 	return theme.DefaultTheme().Size(name)
 }
 

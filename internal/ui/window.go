@@ -81,7 +81,13 @@ func (a *App) setupLayout() {
 	monogramStack := container.NewStack(a.monogramBg, container.NewCenter(monogramText))
 	monogramWrap := container.NewGridWrap(fyne.NewSize(26, 26), monogramStack)
 
-	titleLabel := widget.NewLabelWithStyle("Antigravity Multi-Account Switcher", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	titleLabel := widget.NewRichText(&widget.TextSegment{
+		Text: "Antigravity Multi-Account Switcher",
+		Style: widget.RichTextStyle{
+			SizeName:  titleTextSizeName,
+			TextStyle: fyne.TextStyle{Bold: true},
+		},
+	})
 	titleLeft := container.NewHBox(monogramWrap, titleLabel)
 
 	// Standard window controls: minimize, maximize/restore, close.

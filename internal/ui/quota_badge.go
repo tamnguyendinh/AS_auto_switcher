@@ -289,11 +289,11 @@ func createModelQuotaItem(modelName string, fraction float64, hasData bool) fyne
 	if !hasData || fraction < 0 {
 		bar := createMiniProgressBar(-1, DefaultMiniBarWidth)
 		txtModel := canvas.NewText(modelName, ColorQuotaMuted)
-		txtModel.TextSize = 11
+		txtModel.TextSize = BodyTextSize
 		txtModel.TextStyle = fyne.TextStyle{Bold: true}
 
 		txtPct := canvas.NewText("--%", ColorQuotaMuted)
-		txtPct.TextSize = 11
+		txtPct.TextSize = BodyTextSize
 		txtPct.TextStyle = fyne.TextStyle{Bold: true}
 
 		return container.New(&modelQuotaItemLayout{}, txtModel, bar, txtPct)
@@ -304,11 +304,11 @@ func createModelQuotaItem(modelName string, fraction float64, hasData bool) fyne
 	bar := createMiniProgressBar(fraction, DefaultMiniBarWidth)
 
 	txtModel := canvas.NewText(modelName, tierColor)
-	txtModel.TextSize = 11
+	txtModel.TextSize = BodyTextSize
 	txtModel.TextStyle = fyne.TextStyle{Bold: true}
 
 	txtPct := canvas.NewText(pctStr, tierColor)
-	txtPct.TextSize = 11
+	txtPct.TextSize = BodyTextSize
 	txtPct.TextStyle = fyne.TextStyle{Bold: true}
 
 	return container.New(&modelQuotaItemLayout{}, txtModel, bar, txtPct)
@@ -374,7 +374,7 @@ func (l *quotaCycleRowLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 // CreateQuotaCycleRow builds a single cycle row (e.g. "5h: Claude [██] 100% Gemini [██] 88%" or "week: Claude [██] 100% Gemini [██] 90%").
 func CreateQuotaCycleRow(prefix string, claudeFrac, geminiFrac float64, hasData bool, isError bool) fyne.CanvasObject {
 	lbl := canvas.NewText(prefix, ColorQuotaMuted)
-	lbl.TextSize = 11
+	lbl.TextSize = BodyTextSize
 	lbl.TextStyle = fyne.TextStyle{Bold: true}
 
 	if isError || !hasData {
@@ -483,7 +483,7 @@ func newMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette) *m
 	barContainer := container.New(pbLayout, bgTrack, fillBar)
 
 	pct := canvas.NewText(pctStr, pctColor)
-	pct.TextSize = 11
+	pct.TextSize = BodyTextSize
 	pct.TextStyle = fyne.TextStyle{Bold: true}
 
 	cellContainer := container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, barContainer, pct)
@@ -621,15 +621,15 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (fyne.CanvasObject, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell) {
 	// Col 1: Model Labels
 	txtQuota := canvas.NewText("Quota", palette.TextMuted)
-	txtQuota.TextSize = 11
+	txtQuota.TextSize = BodyTextSize
 	txtQuota.TextStyle = fyne.TextStyle{Bold: true}
 
 	txtGemini := canvas.NewText("Gemini", palette.Text)
-	txtGemini.TextSize = 11
+	txtGemini.TextSize = BodyTextSize
 	txtGemini.TextStyle = fyne.TextStyle{Bold: true}
 
 	txtClaude := canvas.NewText("Claude", palette.Text)
-	txtClaude.TextSize = 11
+	txtClaude.TextSize = BodyTextSize
 	txtClaude.TextStyle = fyne.TextStyle{Bold: true}
 
 	colModel := container.New(&matrixColumnLayout{}, txtQuota, txtGemini, txtClaude)
@@ -639,7 +639,7 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 
 	// Col 2: 5h Cycle
 	txt5h := canvas.NewText("5h", palette.TextMuted)
-	txt5h.TextSize = 11
+	txt5h.TextSize = BodyTextSize
 	txt5h.TextStyle = fyne.TextStyle{Bold: true}
 
 	hasGemini5h := !dq.IsError && dq.HasData && dq.Gemini5h >= 0
@@ -655,7 +655,7 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 
 	// Col 3: Week Cycle
 	txtWeek := canvas.NewText("Week", palette.TextMuted)
-	txtWeek.TextSize = 11
+	txtWeek.TextSize = BodyTextSize
 	txtWeek.TextStyle = fyne.TextStyle{Bold: true}
 
 	hasGeminiWeek := !dq.IsError && dq.HasData && dq.GeminiWeek >= 0
