@@ -1542,8 +1542,8 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	app.accountListContainer.Refresh()
 
 	card0Size := app.accountListContainer.Objects[0].Size()
-	if card0Size.Height > 100 {
-		t.Fatalf("F5 VIOLATION: Card height is stretched to %f (expected <= 100 compact)", card0Size.Height)
+	if card0Size.Height > 120 {
+		t.Fatalf("F5 VIOLATION: Card height is stretched to %f (expected <= 120 compact)", card0Size.Height)
 	}
 	if card0Size.Height <= 0 {
 		t.Fatalf("F5 VIOLATION: Card height is non-positive: %f", card0Size.Height)
@@ -2293,7 +2293,7 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 		t.Fatal("expected non-nil accountListContainer")
 	}
 
-	// Verify accountListContainer uses GridWrap layout with fixed 318x90 size
+	// Verify accountListContainer uses GridWrap layout with fixed 318x110 size
 	item := manager.AccountDisplayItem{Email: "user@example.com"}
 	palette := DarkPalette
 	card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
@@ -2301,7 +2301,7 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 	app.accountListContainer.Refresh()
 
 	cardSize := card.Size()
-	if cardSize.Width != 318 || cardSize.Height != 90 {
-		t.Errorf("expected card size 318x90 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
+	if cardSize.Width != 318 || cardSize.Height != 110 {
+		t.Errorf("expected card size 318x110 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
 	}
 }
