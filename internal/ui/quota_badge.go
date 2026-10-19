@@ -42,9 +42,6 @@ func (l *miniProgressBarLayout) Layout(objects []fyne.CanvasObject, size fyne.Si
 		return
 	}
 	w := l.barWidth
-	if size.Width > 0 {
-		w = size.Width
-	}
 	y := float32(0)
 	if size.Height > l.barHeight {
 		y = (size.Height - l.barHeight) / 2
@@ -522,12 +519,7 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	sepW := float32(1.0)
 	colGap := float32(4.0)
 
-	fixedW := col1W + 2*sepW + 4*colGap
-	remainW := size.Width - fixedW
 	colCycleW := float32(88.0)
-	if remainW >= 170.0 {
-		colCycleW = remainW / 2.0
-	}
 
 	x := float32(0)
 	// Col 1: Model

@@ -679,12 +679,6 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 				a.accountListContainer.Add(card)
 			}
 		}
-		minH := a.accountListContainer.MinSize().Height
-		w := a.accountListContainer.Size().Width
-		if w <= 0 {
-			w = 992
-		}
-		a.accountListContainer.Resize(fyne.NewSize(w, minH))
 		a.accountListContainer.Refresh()
 		if a.accountScroll != nil {
 			a.accountScroll.Refresh()

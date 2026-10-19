@@ -51,20 +51,7 @@ type minSizeLayout struct {
 }
 
 func (m *minSizeLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	var maxW, maxH float32 = m.min.Width, m.min.Height
-	for _, o := range objects {
-		if !o.Visible() {
-			continue
-		}
-		s := o.MinSize()
-		if s.Width > maxW {
-			maxW = s.Width
-		}
-		if s.Height > maxH {
-			maxH = s.Height
-		}
-	}
-	return fyne.NewSize(maxW, maxH)
+	return m.min
 }
 
 func (m *minSizeLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
