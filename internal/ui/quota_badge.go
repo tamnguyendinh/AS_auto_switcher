@@ -715,32 +715,28 @@ func (l *matrixColumnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size)
 }
 
 // matrixTableLayout provides responsive layout for the 3x3 quota matrix:
-// [colModel, sep1, col5h, sep2, colWeek, (optional) hSep]
+// [colModel, col5h, colWeek, (optional) hSep]
 type matrixTableLayout struct{}
 
 func (l *matrixTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	const totalW = float32(48.0 + 1.0 + 78.0 + 1.0 + 86.0 + 16.0) // 230.0 px
+	const totalW = float32(48.0 + 8.0 + 78.0 + 8.0 + 86.0) // 228.0 px
 	return fyne.NewSize(totalW, 77.0)
 }
 
 func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) < 5 {
+	if len(objects) < 3 {
 		return
 	}
 	colModel := objects[0]
-	sep1 := objects[1]
-	col5h := objects[2]
-	sep2 := objects[3]
-	colWeek := objects[4]
-
+	col5h := objects[1]
+	colWeek := objects[2]
 	h := size.Height
 	if h < 77.0 {
 		h = 77.0
 	}
 	// CHỈ SỐ CỐ ĐỊNH CHUẨN NGÀNH - TUYỆT ĐỐI KHÔNG CO GIÃN
 	const col1W = float32(48.0)    // Cột Model: CỐ ĐỊNH 48px
-	const sepW = float32(1.0)      // Vách ngăn đứng: CỐ ĐỊNH 1px
-	const colGap = float32(4.0)    // Khoảng cách giữa các cột: CỐ ĐỊNH 4px
+	const colGap = float32(8.0)    // Khoảng cách tự nhiên giữa các cột: CỐ ĐỊNH 8px
 	const col5hW = float32(78.0)   // Cột 5h: CỐ ĐỊNH 78px
 	const colWeekW = float32(86.0) // Cột Week: CỐ ĐỊNH 86px
 
@@ -750,30 +746,20 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	colModel.Resize(fyne.NewSize(col1W, h))
 	x += col1W + colGap
 
-	// Sep 1
-	sep1.Move(fyne.NewPos(x, 1))
-	sep1.Resize(fyne.NewSize(sepW, h-2))
-	x += sepW + colGap
-
 	// Col 2: 5h
 	col5h.Move(fyne.NewPos(x, 0))
 	col5h.Resize(fyne.NewSize(col5hW, h))
 	x += col5hW + colGap
-
-	// Sep 2
-	sep2.Move(fyne.NewPos(x, 1))
-	sep2.Resize(fyne.NewSize(sepW, h-2))
-	x += sepW + colGap
 
 	// Col 3: Week
 	colWeek.Move(fyne.NewPos(x, 0))
 	colWeek.Resize(fyne.NewSize(colWeekW, h))
 
 	// Horizontal Separator (between Gemini and Claude)
-	if len(objects) >= 6 {
-		hSep := objects[5]
-		hSep.Move(fyne.NewPos(0, 46.5))
-		hSep.Resize(fyne.NewSize(size.Width, 1.0))
+	if len(objects) >= 4 {
+		hSep := objects[3]
+		hSep.Move(fyne.NewPos(0, 46.0))
+		hSep.Resize(fyne.NewSize(x+colWeekW, 1.0))
 	}
 }
 
@@ -796,9 +782,6 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 
 	colModel := container.New(&matrixColumnLayout{}, txtQuota, cellGeminiModel, cellClaudeModel)
 
-	// Vertical Separator 1 (1px)
-	sep1 := canvas.NewRectangle(palette.BorderSubtle)
-
 	// Col 2: 5h Cycle
 	txt5h := canvas.NewText("5h", palette.TextMuted)
 	txt5h.TextSize = BodyTextSize
@@ -811,9 +794,6 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 	cellClaude5h := newMatrixQuotaCell(dq.Claude5h, dq.Claude5hReset, false, hasClaude5h, palette)
 
 	col5h := container.New(&matrixColumnLayout{}, txt5h, cellGemini5h.container, cellClaude5h.container)
-
-	// Vertical Separator 2 (1px)
-	sep2 := canvas.NewRectangle(palette.BorderSubtle)
 
 	// Col 3: Week Cycle
 	txtWeek := canvas.NewText("Week", palette.TextMuted)
@@ -831,7 +811,7 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 	// Horizontal Separator (between Gemini and Claude)
 	hSep := canvas.NewRectangle(palette.BorderSubtle)
 
-	table := container.New(&matrixTableLayout{}, colModel, sep1, col5h, sep2, colWeek, hSep)
+	table := container.New(&matrixTableLayout{}, colModel, col5h, colWeek, hSep)
 	return table, cellGemini5h, cellGeminiWeek, cellClaude5h, cellClaudeWeek
 }
 

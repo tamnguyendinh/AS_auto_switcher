@@ -1268,13 +1268,13 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 		t.Errorf("expected switchedEmail 'inactive_owner@gmail.com', got '%s'", switchedEmail)
 	}
 
-	// Line 2: Matrix Quota Table (3x3 Matrix with 3 columns and 2 vertical separators)
+	// Line 2: Matrix Quota Table (3x3 Matrix with 3 columns, whitespace gap 8px, and horizontal separator)
 	line2, ok := cardVBox.Objects[1].(*fyne.Container)
 	if !ok {
 		t.Fatalf("expected line 2 to be matrix table container")
 	}
-	if len(line2.Objects) < 5 {
-		t.Fatalf("expected at least 5 objects in matrix table (3 cols + 2 seps), got %d", len(line2.Objects))
+	if len(line2.Objects) < 4 {
+		t.Fatalf("expected at least 4 objects in matrix table (3 cols + hSep), got %d", len(line2.Objects))
 	}
 
 	// Verify required labels: Quota, Gemini, Claude, 5h, Week
@@ -1293,16 +1293,11 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 		}
 	}
 
-	// Verify separators have BorderSubtle color
-	if sep1, ok := line2.Objects[1].(*canvas.Rectangle); ok {
-		assertColorMatches(t, "MatrixTable", "sep1", sep1.FillColor, DarkPalette.BorderSubtle)
+	// Verify horizontal separator between Gemini and Claude has BorderSubtle color
+	if hSep, ok := line2.Objects[3].(*canvas.Rectangle); ok {
+		assertColorMatches(t, "MatrixTable", "hSep", hSep.FillColor, DarkPalette.BorderSubtle)
 	} else {
-		t.Errorf("expected separator 1 to be canvas.Rectangle")
-	}
-	if sep2, ok := line2.Objects[3].(*canvas.Rectangle); ok {
-		assertColorMatches(t, "MatrixTable", "sep2", sep2.FillColor, DarkPalette.BorderSubtle)
-	} else {
-		t.Errorf("expected separator 2 to be canvas.Rectangle")
+		t.Errorf("expected horizontal separator to be canvas.Rectangle")
 	}
 }
 
@@ -2051,23 +2046,16 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected matrix to be a *fyne.Container")
 			}
-			if len(cont.Objects) < 5 {
-				t.Fatalf("expected at least 5 objects in matrix (3 cols + 2 seps), got %d", len(cont.Objects))
+			if len(cont.Objects) < 4 {
+				t.Fatalf("expected at least 4 objects in matrix (3 cols + hSep), got %d", len(cont.Objects))
 			}
 
-			// Verify 2 vertical separators
-			sep1, ok := cont.Objects[1].(*canvas.Rectangle)
+			// Verify horizontal separator between Gemini and Claude
+			hSep, ok := cont.Objects[3].(*canvas.Rectangle)
 			if !ok {
-				t.Fatalf("expected sep1 to be canvas.Rectangle")
+				t.Fatalf("expected hSep to be canvas.Rectangle")
 			}
-			assertColorMatches(t, palette.Name, "sep1", sep1.FillColor, palette.BorderSubtle)
-
-			sep2, ok := cont.Objects[3].(*canvas.Rectangle)
-			if !ok {
-				t.Fatalf("expected sep2 to be canvas.Rectangle")
-			}
-			assertColorMatches(t, palette.Name, "sep2", sep2.FillColor, palette.BorderSubtle)
-
+			assertColorMatches(t, palette.Name, "hSep", hSep.FillColor, palette.BorderSubtle)
 			// Verify labels and percentages
 			texts := extractAllTexts(matrix)
 			expectedTexts := []string{"Quota", "Gemini", "Claude", "5h", "88%", "100%", "Week", "12%", "46%"}
@@ -2107,10 +2095,13 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 		t.Errorf("expected 4 '--%%' labels on error matrix, got %d (texts: %v)", dashCount, errTexts)
 	}
 
-	// 3. Dimensions: MinSize width 230px, fits well inside 300px card
+	// 3. Dimensions: MinSize width 228px, fits well inside 300px card
 	minSize := matrixErr.MinSize()
 	if minSize.Width > 300.0 {
 		t.Errorf("expected matrix MinSize.Width <= 300, got %f", minSize.Width)
+	}
+	if minSize.Width != 228.0 || minSize.Height != 77.0 {
+		t.Errorf("expected matrix MinSize 228x77, got %v", minSize)
 	}
 	if minSize.Height > 80.0 {
 		t.Errorf("expected matrix MinSize.Height <= 80, got %f", minSize.Height)
@@ -2207,18 +2198,17 @@ func TestIndustryStandard_FixedMatrixMetrics(t *testing.T) {
 
 	table := CreateMatrixQuotaTable(dq, DarkPalette)
 	cont, ok := table.(*fyne.Container)
-	if !ok || len(cont.Objects) < 5 {
-		t.Fatalf("expected at least 5 objects in table container")
+	if !ok || len(cont.Objects) < 4 {
+		t.Fatalf("expected at least 4 objects in table container")
 	}
 
 	colModel := cont.Objects[0]
-	col5h := cont.Objects[2]
-	colWeek := cont.Objects[4]
-
-	// Check table MinSize is 230.0 x 77.0
+	col5h := cont.Objects[1]
+	colWeek := cont.Objects[2]
+	// Check table MinSize is 228.0 x 77.0
 	minSz := cont.MinSize()
-	if minSz.Width != 230.0 || minSz.Height != 77.0 {
-		t.Errorf("expected table MinSize 230x77, got %v", minSz)
+	if minSz.Width != 228.0 || minSz.Height != 77.0 {
+		t.Errorf("expected table MinSize 228x77, got %v", minSz)
 	}
 
 	// Ray bar must be 40.0px
@@ -2227,7 +2217,7 @@ func TestIndustryStandard_FixedMatrixMetrics(t *testing.T) {
 		t.Errorf("expected ray bar (bgTrack) fixed at 40.0px, got %f", cell.bgTrack.Size().Width)
 	}
 
-	for _, w := range []float32{230.0, 300.0, 340.0, 400.0, 600.0} {
+	for _, w := range []float32{228.0, 300.0, 340.0, 400.0, 600.0} {
 		cont.Resize(fyne.NewSize(w, 77.0))
 		if colModel.Size().Width != 48.0 {
 			t.Errorf("expected colModel width 48.0 at width %f, got %f", w, colModel.Size().Width)
@@ -2446,16 +2436,15 @@ func TestArchitectSpec_QuotaStackedLayoutCard300x130_FullConformance(t *testing.
 
 	table, cG5, cGW, cC5, cCW := createMatrixQuotaTableWithCells(dq, palette)
 	cont, ok := table.(*fyne.Container)
-	if !ok || len(cont.Objects) < 5 {
-		t.Fatalf("expected matrix table container with at least 5 objects")
+	if !ok || len(cont.Objects) < 4 {
+		t.Fatalf("expected matrix table container with at least 4 objects")
 	}
 
-	// Geometry invariants: 230x77
+	// Geometry invariants: 228x77
 	tableMin := cont.MinSize()
-	if tableMin.Width != 230.0 || tableMin.Height != 77.0 {
-		t.Errorf("expected table MinSize 230x77, got %fx%f", tableMin.Width, tableMin.Height)
+	if tableMin.Width != 228.0 || tableMin.Height != 77.0 {
+		t.Errorf("expected table MinSize 228x77, got %fx%f", tableMin.Width, tableMin.Height)
 	}
-
 	// Cell tier 1: 8.5pt font, TextMuted color
 	if cG5.timeText.TextSize != 8.5 {
 		t.Errorf("AC-1 VIOLATION: expected timeText font size 8.5pt, got %f", cG5.timeText.TextSize)
@@ -2483,6 +2472,131 @@ func TestArchitectSpec_QuotaStackedLayoutCard300x130_FullConformance(t *testing.
 	if cG5.pctText.Text != "50%" {
 		t.Errorf("expected pctText '50%%', got %q", cG5.pctText.Text)
 	}
+	_ = cGW
+	_ = cC5
+	_ = cCW
+}
+
+// TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance verifies all ACs of
+// reports/architect/2026-10-19-remove-vertical-separators-quota-matrix-spec.md
+// (SPEC-ARCH-20261019-REMOVE-VERTICAL-SEPARATORS-QUOTA-MATRIX).
+func TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	palette := DarkPalette
+
+	future5h := time.Now().Add(4*time.Hour + 32*time.Minute)
+	futureWeek := time.Now().Add(6*24*time.Hour + 21*time.Hour + 59*time.Minute)
+	dq := DualCycleQuota{
+		Gemini5h:        1.0,
+		Gemini5hReset:   future5h,
+		GeminiWeek:      0.438,
+		GeminiWeekReset: futureWeek,
+		Claude5h:        1.0,
+		Claude5hReset:   future5h,
+		ClaudeWeek:      1.0,
+		ClaudeWeekReset: futureWeek,
+		HasData:         true,
+	}
+
+	table, cG5, cGW, cC5, cCW := createMatrixQuotaTableWithCells(dq, palette)
+	cont, ok := table.(*fyne.Container)
+	if !ok {
+		t.Fatalf("expected matrix table container")
+	}
+
+	// AC-1: No Vertical Separators. The table must have exactly 4 objects:
+	// objects[0]: colModel
+	// objects[1]: col5h
+	// objects[2]: colWeek
+	// objects[3]: hSep
+	if len(cont.Objects) != 4 {
+		t.Fatalf("AC-1 VIOLATION: expected exactly 4 objects in matrix table (colModel, col5h, colWeek, hSep), got %d", len(cont.Objects))
+	}
+
+	// Verify that objects[1] is col5h (container), NOT a rectangle separator
+	if _, isRect := cont.Objects[1].(*canvas.Rectangle); isRect {
+		t.Fatalf("AC-1 VIOLATION: object[1] is canvas.Rectangle (sep1 still exists), expected col5h container")
+	}
+	// Verify that objects[2] is colWeek (container), NOT a rectangle separator
+	if _, isRect := cont.Objects[2].(*canvas.Rectangle); isRect {
+		t.Fatalf("AC-1 VIOLATION: object[2] is canvas.Rectangle (sep2 still exists), expected colWeek container")
+	}
+
+	// AC-2: Horizontal Separator Preserved.
+	hSep, isHSepRect := cont.Objects[3].(*canvas.Rectangle)
+	if !isHSepRect {
+		t.Fatalf("AC-2 VIOLATION: object[3] is not canvas.Rectangle (hSep missing)")
+	}
+	assertColorMatches(t, "RemoveVerticalSeps", "hSep color", hSep.FillColor, palette.BorderSubtle)
+
+	// Layout at default min size
+	tableMin := cont.MinSize()
+	// AC-3: Geometric Budget: 48 (col1) + 8 (gap) + 78 (col2) + 8 (gap) + 86 (col3) = 228.0 px
+	const expectedW = float32(48.0 + 8.0 + 78.0 + 8.0 + 86.0) // 228.0
+	const expectedH = float32(77.0)
+	if tableMin.Width != expectedW || tableMin.Height != expectedH {
+		t.Fatalf("AC-3 VIOLATION: expected MinSize 228x77, got %fx%f", tableMin.Width, tableMin.Height)
+	}
+
+	// Trigger Layout
+	cont.Resize(tableMin)
+
+	colModel := cont.Objects[0]
+	col5h := cont.Objects[1]
+	colWeek := cont.Objects[2]
+
+	// Check column widths and positions
+	if colModel.Size().Width != 48.0 {
+		t.Errorf("AC-3 VIOLATION: expected colModel width 48.0, got %f", colModel.Size().Width)
+	}
+	if colModel.Position().X != 0 {
+		t.Errorf("AC-3 VIOLATION: expected colModel pos.X = 0, got %f", colModel.Position().X)
+	}
+
+	if col5h.Size().Width != 78.0 {
+		t.Errorf("AC-3 VIOLATION: expected col5h width 78.0, got %f", col5h.Size().Width)
+	}
+	// colModel(48) + colGap(8) = 56.0
+	if col5h.Position().X != 56.0 {
+		t.Errorf("AC-3 VIOLATION: expected col5h pos.X = 56.0, got %f", col5h.Position().X)
+	}
+
+	if colWeek.Size().Width != 86.0 {
+		t.Errorf("AC-3 VIOLATION: expected colWeek width 86.0, got %f", colWeek.Size().Width)
+	}
+	// col5h pos(56) + col5h width(78) + colGap(8) = 142.0
+	if colWeek.Position().X != 142.0 {
+		t.Errorf("AC-3 VIOLATION: expected colWeek pos.X = 142.0, got %f", colWeek.Position().X)
+	}
+
+	// Horizontal separator position and geometry
+	if hSep.Position().Y != 46.0 {
+		t.Errorf("AC-2 VIOLATION: expected hSep pos.Y = 46.0, got %f", hSep.Position().Y)
+	}
+	if hSep.Size().Height != 1.0 {
+		t.Errorf("AC-2 VIOLATION: expected hSep height 1.0, got %f", hSep.Size().Height)
+	}
+	if hSep.Size().Width != expectedW {
+		t.Errorf("AC-2 VIOLATION: expected hSep width %f, got %f", expectedW, hSep.Size().Width)
+	}
+
+	// AC-4: Card Dimensions 300x130, Window 1008x630
+	if DefaultWindowWidth != 1008.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected window 1008x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	}
+
+	// AC-5: In-place reactive update zero jank
+	initialFillW := cG5.fillBar.Size().Width
+	cG5.update(0.50, future5h, true)
+	if cG5.fillBar.Size().Width == initialFillW {
+		t.Errorf("AC-5 VIOLATION: fillBar width should update")
+	}
+	if cG5.pctText.Text != "50%" {
+		t.Errorf("AC-5 VIOLATION: expected pctText '50%%', got %q", cG5.pctText.Text)
+	}
+
 	_ = cGW
 	_ = cC5
 	_ = cCW
