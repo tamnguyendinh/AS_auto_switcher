@@ -207,9 +207,9 @@ func (a *App) Init() {
 	a.win = a.app.NewWindow(windowTitle)
 	a.win.SetIcon(AppLogoResource)
 
-	// Khởi tạo kích thước chuẩn 1008x630 px
+	// Khởi tạo kích thước chuẩn 1008x630 px và khóa cứng
 	a.win.Resize(fyne.NewSize(1008, 630))
-	a.win.SetFixedSize(false) // User được tự do chỉnh kích thước cửa sổ nếu muốn
+	a.win.SetFixedSize(true)
 
 	a.setupLayout()
 	a.setupTray()

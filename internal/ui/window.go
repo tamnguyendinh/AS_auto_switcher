@@ -57,7 +57,7 @@ func (a *App) setupLayout() {
 	palette := GetThemePalette(a.currentTheme)
 
 	// -------------------------------------------------------------------------
-	// TopSection Row 1 (Header): Monogram [AS] + App Title + Drag Area + Window Controls (_ |_| X)
+	// TopSection Row 1 (Header): Monogram [AS] + App Title + Drag Area + Window Controls (_ X)
 	// -------------------------------------------------------------------------
 	a.monogramBg = canvas.NewRectangle(palette.Primary)
 	a.monogramBg.CornerRadius = 6
@@ -71,18 +71,15 @@ func (a *App) setupLayout() {
 	titleLabel := widget.NewLabelWithStyle("Antigravity Multi-Account Switcher", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	titleLeft := container.NewHBox(monogramWrap, titleLabel)
 
-	// Bộ 3 nút điều khiển cửa sổ
+	// Cụm nút điều khiển cửa sổ cố định (chỉ thu nhỏ Taskbar và đóng)
 	btnMin := container.NewGridWrap(fyne.NewSize(32, 26), newCustomTitleBtn("—", func() {
 		MinimizeNativeWindow()
-	}))
-	btnMax := container.NewGridWrap(fyne.NewSize(32, 26), newCustomTitleBtn("口", func() {
-		ToggleMaximizeNativeWindow()
 	}))
 	btnClose := container.NewGridWrap(fyne.NewSize(32, 26), newCustomCloseBtn(func() {
 		a.Close()
 		a.app.Quit()
 	}))
-	windowControls := container.NewHBox(btnMin, btnMax, btnClose)
+	windowControls := container.NewHBox(btnMin, btnClose)
 
 	dragArea := &windowDragArea{}
 	dragArea.ExtendBaseWidget(dragArea)
@@ -156,9 +153,9 @@ func (a *App) setupLayout() {
 	)
 
 	// -------------------------------------------------------------------------
-	// Center Section: 3-Column Account Grid inside Vertical Scroller
+	// Center Section: 318x78 Fixed Card Grid inside Vertical Scroller
 	// -------------------------------------------------------------------------
-	a.accountListContainer = container.NewGridWithColumns(3)
+	a.accountListContainer = container.NewGridWrap(fyne.NewSize(318, 78))
 	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
 	a.accountScroll = scrollList
 

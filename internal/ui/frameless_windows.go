@@ -13,7 +13,6 @@ import (
 var (
 	procGetWindowLongW = modUser32.NewProc("GetWindowLongW")
 	procSetWindowLongW = modUser32.NewProc("SetWindowLongW")
-	procIsZoomed       = modUser32.NewProc("IsZoomed")
 	procReleaseCapture = modUser32.NewProc("ReleaseCapture")
 	procSendMessageW   = modUser32.NewProc("SendMessageW")
 
@@ -29,8 +28,6 @@ const (
 	SWP_NOZORDER     = 0x0004
 
 	SW_MINIMIZE = 6
-	SW_MAXIMIZE = 3
-	SW_RESTORE  = 9
 
 	WM_NCLBUTTONDOWN = 0x00A1
 	HTCAPTION        = 0x0002
@@ -53,7 +50,7 @@ func GetMainHWND() uintptr {
 	return mainHWND
 }
 
-// MakeWindowFrameless loại bỏ thanh tiêu đề xám của Windows nhưng giữ WS_THICKFRAME để co giãn cửa sổ.
+// MakeWindowFrameless loại bỏ thanh tiêu đề xám của Windows và gỡ bỏ WS_THICKFRAME để khóa cứng cửa sổ, ngăn co giãn.
 func MakeWindowFrameless(windowTitle string) uintptr {
 	titlePtr := windows.StringToUTF16Ptr(windowTitle)
 	hwnd, _, _ := procFindWindowW.Call(0, uintptr(unsafe.Pointer(titlePtr)))
@@ -73,7 +70,7 @@ func MakeWindowFrameless(windowTitle string) uintptr {
 	SetMainHWND(hwnd)
 
 	style, _, _ := procGetWindowLongW.Call(hwnd, uintptr(gwlStyleVal))
-	newStyle := (style &^ uintptr(WS_CAPTION)) | uintptr(WS_THICKFRAME)
+	newStyle := style &^ uintptr(WS_CAPTION | WS_THICKFRAME)
 	procSetWindowLongW.Call(hwnd, uintptr(gwlStyleVal), newStyle)
 	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0, uintptr(SWP_FRAMECHANGED|SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER))
 	return hwnd
@@ -96,15 +93,5 @@ func MinimizeNativeWindow() {
 	}
 }
 
-// ToggleMaximizeNativeWindow phóng to hoặc khôi phục kích thước cửa sổ.
-func ToggleMaximizeNativeWindow() {
-	hwnd := GetMainHWND()
-	if hwnd != 0 {
-		zoomed, _, _ := procIsZoomed.Call(hwnd)
-		if zoomed != 0 {
-			procShowWindow.Call(hwnd, uintptr(SW_RESTORE))
-		} else {
-			procShowWindow.Call(hwnd, uintptr(SW_MAXIMIZE))
-		}
-	}
-}
+// ToggleMaximizeNativeWindow vô hiệu hóa chức năng phóng to (cửa sổ cố định 1008x630).
+func ToggleMaximizeNativeWindow() {}

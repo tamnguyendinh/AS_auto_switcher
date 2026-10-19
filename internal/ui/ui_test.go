@@ -1000,8 +1000,8 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 		t.Fatal("expected non-nil window")
 	}
 
-	if win.FixedSize() {
-		t.Errorf("expected window to be resizable, got FixedSize=true")
+	if !win.FixedSize() {
+		t.Errorf("expected window to have FixedSize=true, got FixedSize=false")
 	}
 
 	sz := win.Canvas().Size()
@@ -2218,12 +2218,90 @@ func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
 	}
 
 	// Window must be resizable
-	if win.FixedSize() {
-		t.Errorf("expected window to be resizable, got FixedSize=true")
+	if !win.FixedSize() {
+		t.Errorf("expected window to have FixedSize=true, got FixedSize=false")
 	}
 
 	sz := win.Canvas().Size()
 	if sz.Width != 1008 || sz.Height != 630 {
 		t.Errorf("expected window canvas size 1008x630, got %fx%f", sz.Width, sz.Height)
+	}
+}
+
+func TestPurgeAllResizing_WindowControlsTwoButtons(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window")
+	}
+
+	content := win.Content().(*fyne.Container)
+	var topSection *fyne.Container
+	for _, obj := range content.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			topSection = c
+			break
+		}
+	}
+	if topSection == nil {
+		t.Fatal("expected to find topSection container")
+	}
+	var row1Header *fyne.Container
+	for _, obj := range topSection.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			row1Header = c
+			break
+		}
+	}
+	if row1Header == nil {
+		t.Fatal("expected to find row1Header container")
+	}
+	var windowControls *fyne.Container
+	for _, obj := range row1Header.Objects {
+		if c, ok := obj.(*fyne.Container); ok && len(c.Objects) == 2 {
+			windowControls = c
+			break
+		}
+	}
+	if windowControls == nil {
+		t.Fatalf("expected to find windowControls container with 2 buttons in row1Header")
+	}
+	if len(windowControls.Objects) != 2 {
+		t.Errorf("expected exactly 2 window control buttons (btnMin, btnClose), got %d", len(windowControls.Objects))
+	}
+}
+
+func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+
+	if app.accountListContainer == nil {
+		t.Fatal("expected non-nil accountListContainer")
+	}
+
+	// Verify accountListContainer uses GridWrap layout with fixed 318x78 size
+	item := manager.AccountDisplayItem{Email: "user@example.com"}
+	palette := DarkPalette
+	card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
+	app.accountListContainer.Add(card)
+	app.accountListContainer.Refresh()
+
+	cardSize := card.Size()
+	if cardSize.Width != 318 || cardSize.Height != 78 {
+		t.Errorf("expected card size 318x78 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
 	}
 }
