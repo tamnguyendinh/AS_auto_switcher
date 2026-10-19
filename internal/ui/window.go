@@ -46,7 +46,7 @@ func setWindowAlwaysOnTop(title string, isTop bool) {
 }
 
 const (
-	DefaultWindowWidth  float32 = 1090.0
+	DefaultWindowWidth  float32 = 1008.0
 	DefaultWindowHeight float32 = 630.0
 	MinWindowWidth      float32 = 480.0
 	MinWindowHeight     float32 = 360.0
@@ -182,9 +182,9 @@ func (a *App) setupLayout() {
 	)
 
 	// -------------------------------------------------------------------------
-	// Center Section: 350x100 Fixed Card Grid inside Vertical Scroller
+	// Center Section: 300x130 Fixed Card Grid inside Vertical Scroller
 	// -------------------------------------------------------------------------
-	a.accountListContainer = container.NewGridWrap(fyne.NewSize(350, 100))
+	a.accountListContainer = container.NewGridWrap(fyne.NewSize(300, 130))
 	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
 	a.accountScroll = scrollList
 

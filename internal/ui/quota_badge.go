@@ -421,54 +421,131 @@ func CreateQuotaCycleRow(prefix string, claudeFrac, geminiFrac float64, hasData 
 // MatrixMiniBarWidth defines the 40px width for 3x3 matrix quota mini progress bars per architect spec.
 const MatrixMiniBarWidth float32 = 40.0
 
-// matrixCellLayout lays out [miniBar, pctLabel] horizontally with vertical centering.
-type matrixCellLayout struct {
+// matrixStackedCellLayout lays out 2 tiers:
+// Tier 1 (top): timeText (height 13px)
+// Tier 2 (bottom): [miniBar (40px)] [gap 4px] [pctLabel] (height 15px)
+// Total cell height = 28px per architect spec.
+type matrixStackedCellLayout struct {
 	barWidth float32
 }
 
-func (l *matrixCellLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	if len(objects) < 2 {
-		return fyne.NewSize(76.0, 15.0)
-	}
+func (l *matrixStackedCellLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	bw := l.barWidth
 	if bw <= 0 {
 		bw = MatrixMiniBarWidth
 	}
-	w := bw + 4.0 + objects[1].MinSize().Width
-	if len(objects) >= 3 {
-		w += 4.0 + objects[2].MinSize().Width
+	var timeW, pctW float32
+	for _, o := range objects {
+		if txt, ok := o.(*canvas.Text); ok {
+			if txt.TextSize < 9.0 {
+				timeW = txt.MinSize().Width
+			} else {
+				pctW = txt.MinSize().Width
+			}
+		}
 	}
-	return fyne.NewSize(w, 15.0)
+	tier2W := bw + 4.0 + pctW
+	maxW := tier2W
+	if timeW > maxW {
+		maxW = timeW
+	}
+	return fyne.NewSize(maxW, 28.0)
 }
 
-func (l *matrixCellLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if len(objects) < 2 {
+func (l *matrixStackedCellLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) == 0 {
 		return
 	}
-	bar := objects[0]
-	pct := objects[1]
-
 	bw := l.barWidth
 	if bw <= 0 {
 		bw = MatrixMiniBarWidth
 	}
-	spacing := float32(4.0)
+	const spacing = float32(4.0)
 
-	bar.Move(fyne.NewPos(0, (size.Height-6.0)/2))
-	bar.Resize(fyne.NewSize(bw, 6.0))
+	var timeObj, pctObj *canvas.Text
+	var barCont fyne.CanvasObject
 
-	pctW := pct.MinSize().Width
-	pctH := pct.MinSize().Height
-	pct.Move(fyne.NewPos(bw+spacing, (size.Height-pctH)/2))
-	pct.Resize(fyne.NewSize(pctW, pctH))
-
-	if len(objects) >= 3 {
-		timeObj := objects[2]
-		timeW := timeObj.MinSize().Width
-		timeH := timeObj.MinSize().Height
-		timeObj.Move(fyne.NewPos(bw+spacing+pctW+spacing, (size.Height-timeH)/2))
-		timeObj.Resize(fyne.NewSize(timeW, timeH))
+	for _, o := range objects {
+		if c, ok := o.(*fyne.Container); ok {
+			barCont = c
+		} else if txt, ok := o.(*canvas.Text); ok {
+			if txt.TextSize < 9.0 {
+				timeObj = txt
+			} else {
+				pctObj = txt
+			}
+		}
 	}
+
+	// Fallback to index-based if needed
+	if timeObj == nil && len(objects) >= 1 {
+		if txt, ok := objects[0].(*canvas.Text); ok {
+			timeObj = txt
+		}
+	}
+	if barCont == nil && len(objects) >= 2 {
+		barCont = objects[1]
+	}
+	if pctObj == nil && len(objects) >= 3 {
+		if txt, ok := objects[2].(*canvas.Text); ok {
+			pctObj = txt
+		}
+	}
+
+	// Tier 1: timeText (height 13px, y = 0)
+	if timeObj != nil {
+		tH := timeObj.MinSize().Height
+		y := (13.0 - tH) / 2
+		if y < 0 {
+			y = 0
+		}
+		timeObj.Move(fyne.NewPos(0, y))
+		timeObj.Resize(fyne.NewSize(size.Width, 13.0))
+	}
+
+	// Tier 2: barContainer + pctText (height 15px, y = 13.0)
+	const tier2Y = float32(13.0)
+	const tier2H = float32(15.0)
+
+	if barCont != nil {
+		barH := float32(6.0)
+		yBar := tier2Y + (tier2H-barH)/2
+		barCont.Move(fyne.NewPos(0, yBar))
+		barCont.Resize(fyne.NewSize(bw, barH))
+	}
+
+	if pctObj != nil {
+		pH := pctObj.MinSize().Height
+		pW := pctObj.MinSize().Width
+		yPct := tier2Y + (tier2H-pH)/2
+		pctObj.Move(fyne.NewPos(bw+spacing, yPct))
+		pctObj.Resize(fyne.NewSize(pW, pH))
+	}
+}
+
+// matrixStackedModelCellLayout aligns model names (Gemini, Claude) with the bottom tier (y = 13px)
+// of stacked quota cells, leaving the top tier (0..13px) blank for visual baseline symmetry.
+type matrixStackedModelCellLayout struct{}
+
+func (l *matrixStackedModelCellLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) == 0 {
+		return fyne.NewSize(48.0, 28.0)
+	}
+	return fyne.NewSize(objects[0].MinSize().Width, 28.0)
+}
+
+func (l *matrixStackedModelCellLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) == 0 {
+		return
+	}
+	txt := objects[0]
+	txtH := txt.MinSize().Height
+	y := float32(13.0) + (15.0-txtH)/2
+	if y < 13.0 {
+		y = 13.0
+	}
+	txt.Move(fyne.NewPos(0, y))
+	txt.Resize(fyne.NewSize(size.Width, txtH))
 }
 
 type matrixQuotaCell struct {
@@ -539,7 +616,7 @@ func newMatrixQuotaCell(fraction float64, resetTime time.Time, isWeekly bool, ha
 	timeTxt := canvas.NewText(timeStr, palette.TextMuted)
 	timeTxt.TextSize = 8.5
 
-	cellContainer := container.New(&matrixCellLayout{barWidth: MatrixMiniBarWidth}, barContainer, pct, timeTxt)
+	cellContainer := container.New(&matrixStackedCellLayout{barWidth: MatrixMiniBarWidth}, timeTxt, barContainer, pct)
 
 	return &matrixQuotaCell{
 		container: cellContainer,
@@ -600,43 +677,50 @@ func createMatrixQuotaCell(fraction float64, hasData bool, palette ThemePalette)
 	return cell.container
 }
 
-// matrixColumnLayout lays out 3 rows in a column with fixed row heights and subtle spacing.
+// matrixColumnLayout lays out 3 rows in a column with fixed row heights and subtle spacing:
+// Row 0 (header): height 15px, y = 0
+// Gap under header: 2px
+// Row 1 (Gemini): height 28px, y = 17px
+// Gap between Gemini & Claude: 4px
+// Row 2 (Claude): height 28px, y = 49px
+// Total column height = 77px
 type matrixColumnLayout struct{}
 
 func (l *matrixColumnLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	maxW := float32(0)
-	totalH := float32(0)
-	for i, o := range objects {
+	for _, o := range objects {
 		ms := o.MinSize()
 		if ms.Width > maxW {
 			maxW = ms.Width
 		}
-		totalH += 15.0
-		if i > 0 {
-			totalH += 2.0
-		}
 	}
-	return fyne.NewSize(maxW, totalH)
+	return fyne.NewSize(maxW, 77.0)
 }
 
 func (l *matrixColumnLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	rowH := float32(15.0)
-	spacing := float32(2.0)
-	y := float32(0)
-	for _, o := range objects {
-		o.Move(fyne.NewPos(0, y))
-		o.Resize(fyne.NewSize(size.Width, rowH))
-		y += rowH + spacing
+	if len(objects) < 3 {
+		return
 	}
+	// Row 0: Header (15px)
+	objects[0].Move(fyne.NewPos(0, 0))
+	objects[0].Resize(fyne.NewSize(size.Width, 15.0))
+
+	// Row 1: Gemini (28px)
+	objects[1].Move(fyne.NewPos(0, 17.0))
+	objects[1].Resize(fyne.NewSize(size.Width, 28.0))
+
+	// Row 2: Claude (28px)
+	objects[2].Move(fyne.NewPos(0, 49.0))
+	objects[2].Resize(fyne.NewSize(size.Width, 28.0))
 }
 
 // matrixTableLayout provides responsive layout for the 3x3 quota matrix:
-// [colModel, sep1, col5h, sep2, colWeek]
+// [colModel, sep1, col5h, sep2, colWeek, (optional) hSep]
 type matrixTableLayout struct{}
 
 func (l *matrixTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	const totalW = float32(48.0 + 1.0 + 128.0 + 1.0 + 146.0 + 16.0) // 340.0 px
-	return fyne.NewSize(totalW, 49.0)
+	const totalW = float32(48.0 + 1.0 + 78.0 + 1.0 + 86.0 + 16.0) // 230.0 px
+	return fyne.NewSize(totalW, 77.0)
 }
 
 func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
@@ -650,12 +734,15 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	colWeek := objects[4]
 
 	h := size.Height
+	if h < 77.0 {
+		h = 77.0
+	}
 	// CHỈ SỐ CỐ ĐỊNH CHUẨN NGÀNH - TUYỆT ĐỐI KHÔNG CO GIÃN
-	const col1W = float32(48.0)     // Cột Model: CỐ ĐỊNH 48px
-	const sepW = float32(1.0)       // Vách ngăn đứng: CỐ ĐỊNH 1px
-	const colGap = float32(4.0)     // Khoảng cách giữa các cột: CỐ ĐỊNH 4px
-	const col5hW = float32(128.0)   // Cột 5h: CỐ ĐỊNH 128px
-	const colWeekW = float32(146.0) // Cột Week: CỐ ĐỊNH 146px
+	const col1W = float32(48.0)    // Cột Model: CỐ ĐỊNH 48px
+	const sepW = float32(1.0)      // Vách ngăn đứng: CỐ ĐỊNH 1px
+	const colGap = float32(4.0)    // Khoảng cách giữa các cột: CỐ ĐỊNH 4px
+	const col5hW = float32(78.0)   // Cột 5h: CỐ ĐỊNH 78px
+	const colWeekW = float32(86.0) // Cột Week: CỐ ĐỊNH 86px
 
 	x := float32(0)
 	// Col 1: Model (Gemini / Claude)
@@ -681,6 +768,13 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	// Col 3: Week
 	colWeek.Move(fyne.NewPos(x, 0))
 	colWeek.Resize(fyne.NewSize(colWeekW, h))
+
+	// Horizontal Separator (between Gemini and Claude)
+	if len(objects) >= 6 {
+		hSep := objects[5]
+		hSep.Move(fyne.NewPos(0, 46.5))
+		hSep.Resize(fyne.NewSize(size.Width, 1.0))
+	}
 }
 
 func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (fyne.CanvasObject, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell) {
@@ -697,7 +791,10 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 	txtClaude.TextSize = BodyTextSize
 	txtClaude.TextStyle = fyne.TextStyle{Bold: true}
 
-	colModel := container.New(&matrixColumnLayout{}, txtQuota, txtGemini, txtClaude)
+	cellGeminiModel := container.New(&matrixStackedModelCellLayout{}, txtGemini)
+	cellClaudeModel := container.New(&matrixStackedModelCellLayout{}, txtClaude)
+
+	colModel := container.New(&matrixColumnLayout{}, txtQuota, cellGeminiModel, cellClaudeModel)
 
 	// Vertical Separator 1 (1px)
 	sep1 := canvas.NewRectangle(palette.BorderSubtle)
@@ -731,7 +828,10 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 
 	colWeek := container.New(&matrixColumnLayout{}, txtWeek, cellGeminiWeek.container, cellClaudeWeek.container)
 
-	table := container.New(&matrixTableLayout{}, colModel, sep1, col5h, sep2, colWeek)
+	// Horizontal Separator (between Gemini and Claude)
+	hSep := canvas.NewRectangle(palette.BorderSubtle)
+
+	table := container.New(&matrixTableLayout{}, colModel, sep1, col5h, sep2, colWeek, hSep)
 	return table, cellGemini5h, cellGeminiWeek, cellClaude5h, cellClaudeWeek
 }
 

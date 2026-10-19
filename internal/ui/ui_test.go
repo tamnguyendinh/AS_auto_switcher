@@ -1083,8 +1083,8 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 	}
 
 	sz := win.Canvas().Size()
-	if sz.Width != 1090 || sz.Height != 630 {
-		t.Errorf("expected initial window size 1090x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != 1008 || sz.Height != 630 {
+		t.Errorf("expected initial window size 1008x630, got %fx%f", sz.Width, sz.Height)
 	}
 }
 
@@ -1273,8 +1273,8 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected line 2 to be matrix table container")
 	}
-	if len(line2.Objects) != 5 {
-		t.Fatalf("expected 5 objects in matrix table (3 cols + 2 seps), got %d", len(line2.Objects))
+	if len(line2.Objects) < 5 {
+		t.Fatalf("expected at least 5 objects in matrix table (3 cols + 2 seps), got %d", len(line2.Objects))
 	}
 
 	// Verify required labels: Quota, Gemini, Claude, 5h, Week
@@ -1606,7 +1606,7 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	defer app.Close()
 
 	w := app.Window()
-	w.Resize(fyne.NewSize(1090, 630))
+	w.Resize(fyne.NewSize(1008, 630))
 
 	// Populate 6 cards
 	palette := DarkPalette
@@ -1620,16 +1620,19 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	app.accountListContainer.Refresh()
 
 	card0Size := app.accountListContainer.Objects[0].Size()
-	if card0Size.Height > 120 {
-		t.Fatalf("F5 VIOLATION: Card height is stretched to %f (expected <= 120 compact)", card0Size.Height)
+	if card0Size.Height != 130 {
+		t.Fatalf("F5 VIOLATION: Card height is %f (expected 130.0)", card0Size.Height)
+	}
+	if card0Size.Width != 300 {
+		t.Fatalf("F5 VIOLATION: Card width is %f (expected 300.0)", card0Size.Width)
 	}
 	if card0Size.Height <= 0 {
 		t.Fatalf("F5 VIOLATION: Card height is non-positive: %f", card0Size.Height)
 	}
 
 	gridH := app.accountListContainer.Size().Height
-	if gridH > 250 {
-		t.Fatalf("F5 VIOLATION: Grid height is stretched to %f (expected <= 250 compact)", gridH)
+	if gridH > 350 {
+		t.Fatalf("F5 VIOLATION: Grid height is stretched to %f (expected <= 350 compact)", gridH)
 	}
 }
 
@@ -2048,8 +2051,8 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected matrix to be a *fyne.Container")
 			}
-			if len(cont.Objects) != 5 {
-				t.Fatalf("expected 5 objects in matrix (3 cols + 2 seps), got %d", len(cont.Objects))
+			if len(cont.Objects) < 5 {
+				t.Fatalf("expected at least 5 objects in matrix (3 cols + 2 seps), got %d", len(cont.Objects))
 			}
 
 			// Verify 2 vertical separators
@@ -2104,13 +2107,13 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 		t.Errorf("expected 4 '--%%' labels on error matrix, got %d (texts: %v)", dashCount, errTexts)
 	}
 
-	// 3. Dimensions: MinSize width 340px, fits well inside 350px card
+	// 3. Dimensions: MinSize width 230px, fits well inside 300px card
 	minSize := matrixErr.MinSize()
-	if minSize.Width > 350.0 {
-		t.Errorf("expected matrix MinSize.Width <= 350, got %f", minSize.Width)
+	if minSize.Width > 300.0 {
+		t.Errorf("expected matrix MinSize.Width <= 300, got %f", minSize.Width)
 	}
-	if minSize.Height > 60.0 {
-		t.Errorf("expected matrix MinSize.Height <= 60, got %f", minSize.Height)
+	if minSize.Height > 80.0 {
+		t.Errorf("expected matrix MinSize.Height <= 80, got %f", minSize.Height)
 	}
 }
 
@@ -2205,17 +2208,17 @@ func TestIndustryStandard_FixedMatrixMetrics(t *testing.T) {
 	table := CreateMatrixQuotaTable(dq, DarkPalette)
 	cont, ok := table.(*fyne.Container)
 	if !ok || len(cont.Objects) < 5 {
-		t.Fatalf("expected 5 objects in table container")
+		t.Fatalf("expected at least 5 objects in table container")
 	}
 
 	colModel := cont.Objects[0]
 	col5h := cont.Objects[2]
 	colWeek := cont.Objects[4]
 
-	// Check table MinSize is 340.0 x 49.0
+	// Check table MinSize is 230.0 x 77.0
 	minSz := cont.MinSize()
-	if minSz.Width != 340.0 || minSz.Height != 49.0 {
-		t.Errorf("expected table MinSize 340x49, got %v", minSz)
+	if minSz.Width != 230.0 || minSz.Height != 77.0 {
+		t.Errorf("expected table MinSize 230x77, got %v", minSz)
 	}
 
 	// Ray bar must be 40.0px
@@ -2224,16 +2227,16 @@ func TestIndustryStandard_FixedMatrixMetrics(t *testing.T) {
 		t.Errorf("expected ray bar (bgTrack) fixed at 40.0px, got %f", cell.bgTrack.Size().Width)
 	}
 
-	for _, w := range []float32{300.0, 340.0, 400.0, 600.0} {
-		cont.Resize(fyne.NewSize(w, 49.0))
+	for _, w := range []float32{230.0, 300.0, 340.0, 400.0, 600.0} {
+		cont.Resize(fyne.NewSize(w, 77.0))
 		if colModel.Size().Width != 48.0 {
 			t.Errorf("expected colModel width 48.0 at width %f, got %f", w, colModel.Size().Width)
 		}
-		if col5h.Size().Width != 128.0 {
-			t.Errorf("expected col5h width 128.0 at width %f, got %f", w, col5h.Size().Width)
+		if col5h.Size().Width != 78.0 {
+			t.Errorf("expected col5h width 78.0 at width %f, got %f", w, col5h.Size().Width)
 		}
-		if colWeek.Size().Width != 146.0 {
-			t.Errorf("expected colWeek width 146.0 at width %f, got %f", w, colWeek.Size().Width)
+		if colWeek.Size().Width != 86.0 {
+			t.Errorf("expected colWeek width 86.0 at width %f, got %f", w, colWeek.Size().Width)
 		}
 	}
 }
@@ -2280,7 +2283,7 @@ func TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate(t *testing.T) {
 	}
 }
 
-func TestIndustryStandard_WindowInit1090x630(t *testing.T) {
+func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
@@ -2302,8 +2305,8 @@ func TestIndustryStandard_WindowInit1090x630(t *testing.T) {
 	}
 
 	sz := win.Canvas().Size()
-	if sz.Width != 1090 || sz.Height != 630 {
-		t.Errorf("expected window canvas size 1090x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != 1008 || sz.Height != 630 {
+		t.Errorf("expected window canvas size 1008x630, got %fx%f", sz.Width, sz.Height)
 	}
 }
 
@@ -2384,7 +2387,103 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 	app.accountListContainer.Refresh()
 
 	cardSize := card.Size()
-	if cardSize.Width != 350 || cardSize.Height != 100 {
-		t.Errorf("expected card size 350x100 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
+	if cardSize.Width != 300 || cardSize.Height != 130 {
+		t.Errorf("expected card size 300x130 in GridWrap, got %fx%f", cardSize.Width, cardSize.Height)
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Test for SPEC-ARCH-20261019-QUOTA-STACKED-CARD-300X130
+// -----------------------------------------------------------------------------
+
+func TestArchitectSpec_QuotaStackedLayoutCard300x130_FullConformance(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	// AC-4: Default window canvas size 1008x630
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window")
+	}
+	sz := win.Canvas().Size()
+	if sz.Width != 1008 || sz.Height != 630 {
+		t.Errorf("AC-4 VIOLATION: expected window canvas size 1008x630, got %fx%f", sz.Width, sz.Height)
+	}
+
+	// AC-3: Account card size in GridWrap is 300x130
+	item := manager.AccountDisplayItem{Email: "stacked@example.com"}
+	palette := DarkPalette
+	card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
+	app.accountListContainer.Add(card)
+	app.accountListContainer.Refresh()
+
+	cardSize := card.Size()
+	if cardSize.Width != 300 || cardSize.Height != 130 {
+		t.Errorf("AC-3 VIOLATION: expected card size 300x130, got %fx%f", cardSize.Width, cardSize.Height)
+	}
+
+	// AC-1, AC-2: Stacked 2-tier Quota Table (230x77px)
+	future5h := time.Now().Add(4*time.Hour + 32*time.Minute)
+	futureWeek := time.Now().Add(6*24*time.Hour + 21*time.Hour + 59*time.Minute)
+	dq := DualCycleQuota{
+		Gemini5h:        1.0,
+		Gemini5hReset:   future5h,
+		GeminiWeek:      0.438,
+		GeminiWeekReset: futureWeek,
+		Claude5h:        1.0,
+		Claude5hReset:   future5h,
+		ClaudeWeek:      1.0,
+		ClaudeWeekReset: futureWeek,
+		HasData:         true,
+	}
+
+	table, cG5, cGW, cC5, cCW := createMatrixQuotaTableWithCells(dq, palette)
+	cont, ok := table.(*fyne.Container)
+	if !ok || len(cont.Objects) < 5 {
+		t.Fatalf("expected matrix table container with at least 5 objects")
+	}
+
+	// Geometry invariants: 230x77
+	tableMin := cont.MinSize()
+	if tableMin.Width != 230.0 || tableMin.Height != 77.0 {
+		t.Errorf("expected table MinSize 230x77, got %fx%f", tableMin.Width, tableMin.Height)
+	}
+
+	// Cell tier 1: 8.5pt font, TextMuted color
+	if cG5.timeText.TextSize != 8.5 {
+		t.Errorf("AC-1 VIOLATION: expected timeText font size 8.5pt, got %f", cG5.timeText.TextSize)
+	}
+	assertColorMatches(t, "StackedLayout", "timeText color", cG5.timeText.Color, palette.TextMuted)
+
+	// Cell tier 2: 10pt Bold BodyTextSize font
+	if cG5.pctText.TextSize != BodyTextSize {
+		t.Errorf("expected pctText font size 10pt (BodyTextSize), got %f", cG5.pctText.TextSize)
+	}
+	if !cG5.pctText.TextStyle.Bold {
+		t.Errorf("expected pctText Bold")
+	}
+
+	// Ray bar 40px
+	if cG5.bgTrack.Size().Width != 40.0 {
+		t.Errorf("expected bgTrack 40px, got %f", cG5.bgTrack.Size().Width)
+	}
+
+	// AC-5: In-place reactive update zero jank
+	cG5.update(0.50, future5h, true)
+	if cG5.fillBar.Size().Width != 20.0 {
+		t.Errorf("expected fillBar width 20px after update to 50%%, got %f", cG5.fillBar.Size().Width)
+	}
+	if cG5.pctText.Text != "50%" {
+		t.Errorf("expected pctText '50%%', got %q", cG5.pctText.Text)
+	}
+	_ = cGW
+	_ = cC5
+	_ = cCW
 }

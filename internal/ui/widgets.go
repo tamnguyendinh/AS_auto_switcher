@@ -251,7 +251,7 @@ func NewAccountCardWidgetWithQuota(
 
 // NewAccountCardWithQuota creates a standardized account card matching the Owner's specification:
 // Line 1: Email (with truncation/tooltip) + Action Cluster: [✔ Dùng]/[Chuyển] + [🔄]
-// Line 2: 3x3 Matrix Table: Quota | 5h | Week with Gemini and Claude rows separated by 1px vertical borders.
+// Line 2: 3x3 Matrix Table: Quota | 5h | Week with 2-tier stacked layout (time countdown on top, minibar + % on bottom).
 func NewAccountCardWithQuota(
 	item manager.AccountDisplayItem,
 	quota *telemetry.AccountQuotaData,
