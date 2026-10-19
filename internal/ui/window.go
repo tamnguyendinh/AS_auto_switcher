@@ -166,7 +166,11 @@ func (a *App) setupLayout() {
 	})
 	a.alwaysOnTopBtn.Importance = pinImportance
 
-	toolbarLeft := container.NewHBox(a.refreshBtn, a.quotaRefreshAllBtn, a.alwaysOnTopBtn)
+	toolbarLeft := container.NewHBox(
+		compactButton(a.refreshBtn),
+		compactButton(a.quotaRefreshAllBtn),
+		compactButton(a.alwaysOnTopBtn),
+	)
 	row3Toolbar := toolbarLeft // Phía bên phải để trống hoàn toàn thoáng đãng
 
 	// Separator chia phần điều khiển với lưới tài khoản

@@ -186,7 +186,7 @@ func NewAccountCardWidgetWithQuota(
 			}
 		})
 		switchBtn.Importance = widget.HighImportance
-		actionCluster = container.NewHBox(switchBtn, refreshBtn)
+		actionCluster = container.NewHBox(compactButton(switchBtn), refreshBtn)
 	}
 
 	topRow := container.NewBorder(nil, nil, nil, actionCluster, emailLabel)
