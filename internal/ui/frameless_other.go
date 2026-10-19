@@ -10,3 +10,4 @@ func bindMainWindowHandle(win fyne.Window) {}
 func DragNativeWindow()                    {}
 func MinimizeNativeWindow()                {}
 func ToggleMaximizeNativeWindow()          {}
+func IsNativeWindowMaximized() bool        { return false }

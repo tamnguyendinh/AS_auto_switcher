@@ -1000,8 +1000,8 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 		t.Fatal("expected non-nil window")
 	}
 
-	if !win.FixedSize() {
-		t.Errorf("expected window to have FixedSize=true, got FixedSize=false")
+	if win.FixedSize() {
+		t.Errorf("expected a resizable window for maximize/restore")
 	}
 
 	sz := win.Canvas().Size()
@@ -2218,8 +2218,8 @@ func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
 	}
 
 	// Window must be resizable
-	if !win.FixedSize() {
-		t.Errorf("expected window to have FixedSize=true, got FixedSize=false")
+	if win.FixedSize() {
+		t.Errorf("expected a resizable window for maximize/restore")
 	}
 
 	sz := win.Canvas().Size()
@@ -2228,7 +2228,7 @@ func TestIndustryStandard_WindowInit1008x630(t *testing.T) {
 	}
 }
 
-func TestPurgeAllResizing_WindowControlsTwoButtons(t *testing.T) {
+func TestWindowControlsMinimizeMaximizeClose(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
@@ -2266,16 +2266,20 @@ func TestPurgeAllResizing_WindowControlsTwoButtons(t *testing.T) {
 	}
 	var windowControls *fyne.Container
 	for _, obj := range row1Header.Objects {
-		if c, ok := obj.(*fyne.Container); ok && len(c.Objects) == 2 {
+		if c, ok := obj.(*fyne.Container); ok && len(c.Objects) == 3 {
 			windowControls = c
 			break
 		}
 	}
 	if windowControls == nil {
-		t.Fatalf("expected to find windowControls container with 2 buttons in row1Header")
+		t.Fatalf("expected to find windowControls container with 3 buttons in row1Header")
 	}
-	if len(windowControls.Objects) != 2 {
-		t.Errorf("expected exactly 2 window control buttons (btnMin, btnClose), got %d", len(windowControls.Objects))
+	if len(windowControls.Objects) != 3 {
+		t.Errorf("expected minimize, maximize/restore, close; got %d controls", len(windowControls.Objects))
+	}
+	maximize := windowControls.Objects[1].(*fyne.Container).Objects[0].(*customTitleBtn)
+	if maximize.stateLabel == nil || maximize.onTapped == nil {
+		t.Fatal("middle window control must expose the maximize/restore action and state")
 	}
 }
 

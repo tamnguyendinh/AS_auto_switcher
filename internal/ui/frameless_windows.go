@@ -12,10 +12,12 @@ import (
 var (
 	procReleaseCapture = modUser32.NewProc("ReleaseCapture")
 	procSendMessageW   = modUser32.NewProc("SendMessageW")
+	procIsZoomed       = modUser32.NewProc("IsZoomed")
 )
 
 const (
 	SW_MINIMIZE = 6
+	SW_MAXIMIZE = 3
 
 	WM_NCLBUTTONDOWN = 0x00A1
 	HTCAPTION        = 0x0002
@@ -68,5 +70,22 @@ func MinimizeNativeWindow() {
 	}
 }
 
-// ToggleMaximizeNativeWindow vô hiệu hóa chức năng phóng to (cửa sổ cố định 1008x630).
-func ToggleMaximizeNativeWindow() {}
+func IsNativeWindowMaximized() bool {
+	if hwnd := GetMainHWND(); hwnd != 0 {
+		maximized, _, _ := procIsZoomed.Call(hwnd)
+		return maximized != 0
+	}
+	return false
+}
+
+// ToggleMaximizeNativeWindow uses the monitor work area (leaving the taskbar
+// visible). Windows retains the normal window placement for the restore action.
+func ToggleMaximizeNativeWindow() {
+	if hwnd := GetMainHWND(); hwnd != 0 {
+		command := SW_MAXIMIZE
+		if IsNativeWindowMaximized() {
+			command = swRestore
+		}
+		procShowWindow.Call(hwnd, uintptr(command))
+	}
+}

@@ -65,12 +65,12 @@ func newMainWindow(app fyne.App) fyne.Window {
 	return app.NewWindow(windowTitle)
 }
 
-// setupLayout builds the standard 1008x630 desktop layout with 3-row TopSection and 3-column account grid.
+// setupLayout builds the compact desktop layout with a reflowing fixed-card grid.
 func (a *App) setupLayout() {
 	palette := GetThemePalette(a.currentTheme)
 
 	// -------------------------------------------------------------------------
-	// TopSection Row 1 (Header): Monogram [AS] + App Title + Drag Area + Window Controls (_ X)
+	// TopSection Row 1 (Header): Monogram [AS] + App Title + Drag Area + Window Controls (_ □ X)
 	// -------------------------------------------------------------------------
 	a.monogramBg = canvas.NewRectangle(palette.Primary)
 	a.monogramBg.CornerRadius = 6
@@ -84,15 +84,23 @@ func (a *App) setupLayout() {
 	titleLabel := widget.NewLabelWithStyle("Antigravity Multi-Account Switcher", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	titleLeft := container.NewHBox(monogramWrap, titleLabel)
 
-	// Cụm nút điều khiển cửa sổ cố định (chỉ thu nhỏ Taskbar và đóng)
+	// Standard window controls: minimize, maximize/restore, close.
 	btnMin := container.NewGridWrap(fyne.NewSize(32, 26), newCustomTitleBtn("—", func() {
 		MinimizeNativeWindow()
 	}))
+	maximizeButton := newCustomTitleBtn("□", ToggleMaximizeNativeWindow)
+	maximizeButton.stateLabel = func() string {
+		if IsNativeWindowMaximized() {
+			return "❐"
+		}
+		return "□"
+	}
+	btnMax := container.NewGridWrap(fyne.NewSize(32, 26), maximizeButton)
 	btnClose := container.NewGridWrap(fyne.NewSize(32, 26), newCustomCloseBtn(func() {
 		a.Close()
 		a.app.Quit()
 	}))
-	windowControls := container.NewHBox(btnMin, btnClose)
+	windowControls := container.NewHBox(btnMin, btnMax, btnClose)
 
 	dragArea := &windowDragArea{}
 	dragArea.ExtendBaseWidget(dragArea)
@@ -191,9 +199,10 @@ func (a *App) setupLayout() {
 // customTitleBtn: Widget nút thu nhỏ/phóng to có hover sáng
 type customTitleBtn struct {
 	widget.BaseWidget
-	bg       *canvas.Rectangle
-	text     *canvas.Text
-	onTapped func()
+	bg         *canvas.Rectangle
+	text       *canvas.Text
+	onTapped   func()
+	stateLabel func() string
 }
 
 func newCustomTitleBtn(label string, onTapped func()) *customTitleBtn {
@@ -212,6 +221,13 @@ func (b *customTitleBtn) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(c)
 }
 
+func (b *customTitleBtn) Refresh() {
+	if b.stateLabel != nil {
+		b.text.Text = b.stateLabel()
+	}
+	b.BaseWidget.Refresh()
+}
+
 func (b *customTitleBtn) MouseIn(*desktop.MouseEvent) {
 	b.bg.FillColor = color.NRGBA{R: 0x45, G: 0x47, B: 0x5a, A: 0xaa} // Hover sáng
 	b.Refresh()
@@ -228,6 +244,7 @@ func (b *customTitleBtn) Tapped(*fyne.PointEvent) {
 	if b.onTapped != nil {
 		b.onTapped()
 	}
+	b.Refresh()
 }
 
 // customCloseBtn: Nút X có hover màu đỏ rực (#ef4444)

@@ -206,9 +206,9 @@ func (a *App) Init() {
 	a.win = newMainWindow(a.app)
 	a.win.SetIcon(AppLogoResource)
 
-	// Khởi tạo kích thước chuẩn 1008x630 px và khóa cứng
+	// Start at the compact size; let GLFW track native maximize/restore sizes.
 	a.win.Resize(fyne.NewSize(DefaultWindowWidth, DefaultWindowHeight))
-	a.win.SetFixedSize(true)
+	a.win.SetFixedSize(false)
 
 	a.setupLayout()
 	a.setupTray()
