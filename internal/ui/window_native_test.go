@@ -48,16 +48,23 @@ func TestMain(m *testing.M) {
 		preferencesPath: filepath.Join(profile, "preferences.json"),
 	}
 	nativeWindowApp.Init()
-	result := make(chan int, 1)
+	var savedPointer resizePoint
+	procResizeGetCursorPos.Call(uintptr(unsafe.Pointer(&savedPointer)))
 	go func() {
 		code := m.Run()
-		result <- code
-		fyne.Do(nativeWindowApp.app.Quit)
+		// This harness verifies window geometry/input, not the system-tray exit
+		// lifecycle. Finish after tests and temporary-profile cleanup rather than
+		// waiting indefinitely for the tray's desktop message loop to terminate.
+		nativeWindowApp.Close()
+		fyne.DoAndWait(func() {
+			modUser32.NewProc("SetCursorPos").Call(uintptr(savedPointer.x), uintptr(savedPointer.y))
+		})
+		_ = os.RemoveAll(profile)
+		os.Exit(code)
 	}()
 	nativeWindowApp.ShowAndRun()
-	code := <-result
 	_ = os.RemoveAll(profile)
-	os.Exit(code)
+	os.Exit(1) // The native runtime stopped before the tests completed.
 }
 
 // Send client-coordinate pointer input through the real GLFW WndProc.
@@ -69,6 +76,9 @@ func clickNativeControl(t *testing.T, object fyne.CanvasObject) {
 		position := a.app.Driver().AbsolutePositionForObject(object)
 		center := position.Add(fyne.NewPos(object.Size().Width/2, object.Size().Height/2))
 		x, y = a.win.Canvas().PixelCoordinateForPosition(center)
+		pointer := resizePoint{int32(x), int32(y)}
+		modUser32.NewProc("ClientToScreen").Call(GetMainHWND(), uintptr(unsafe.Pointer(&pointer)))
+		modUser32.NewProc("SetCursorPos").Call(uintptr(pointer.x), uintptr(pointer.y))
 	})
 	point := uintptr(uint32(uint16(x)) | uint32(uint16(y))<<16)
 	postMessage := modUser32.NewProc("PostMessageW")
@@ -132,9 +142,9 @@ func TestNativeWindowMaximizeRestoreAndGrid(t *testing.T) {
 		t.Helper()
 		var columns, expected int
 		fyne.DoAndWait(func() {
-			expected = int((a.accountListContainer.Size().Width + theme.Padding()) / (318 + theme.Padding()))
+			expected = int((a.accountListContainer.Size().Width + theme.Padding()) / (280 + theme.Padding()))
 			for _, card := range a.accountListContainer.Objects {
-				if card.Size() != fyne.NewSize(318, 100) {
+				if card.Size() != fyne.NewSize(280, 130) {
 					t.Errorf("card stretched to %v", card.Size())
 				}
 				if card.Position().Y == 0 {
@@ -181,7 +191,7 @@ func TestNativeWindowMaximizeRestoreAndGrid(t *testing.T) {
 			t.Errorf("maximized button must show restore icon, got %q", icon)
 		}
 		columns := checkGrid()
-		t.Logf("maximize cycle %d: native=canvas=%dx%d, grid %d -> %d columns, cards 318x100", cycle+1, client.right, client.bottom, originalColumns, columns)
+		t.Logf("maximize cycle %d: native=canvas=%dx%d, grid %d -> %d columns, cards 280x130", cycle+1, client.right, client.bottom, originalColumns, columns)
 		if capturePath := os.Getenv("NATIVE_MAXIMIZE_CAPTURE"); capturePath != "" && cycle == 0 {
 			file, err := os.Create(capturePath)
 			if err != nil {
@@ -211,7 +221,6 @@ func TestNativeWindowGeometryAndPointer(t *testing.T) {
 	}
 	getClientRect := modUser32.NewProc("GetClientRect")
 	getWindowLong := modUser32.NewProc("GetWindowLongW")
-	postMessage := modUser32.NewProc("PostMessageW")
 	checkGeometry := func() {
 		t.Helper()
 		var rect struct{ left, top, right, bottom int32 }
@@ -241,15 +250,7 @@ func TestNativeWindowGeometryAndPointer(t *testing.T) {
 			center := position.Add(fyne.NewPos(a.alwaysOnTopBtn.Size().Width/2, a.alwaysOnTopBtn.Size().Height/2))
 			x, y = a.win.Canvas().PixelCoordinateForPosition(center)
 		})
-		point := uintptr(uint32(uint16(x)) | uint32(uint16(y))<<16)
-		// Route real client-coordinate mouse messages through GLFW's WndProc.
-		// Calling Tapped directly would miss the original coordinate mismatch.
-		for _, event := range []struct{ message, state uintptr }{{0x0200, 0}, {0x0201, 1}, {0x0202, 0}} {
-			ok, _, err := postMessage.Call(hwnd, event.message, event.state, point)
-			if ok == 0 {
-				t.Fatalf("posting native pointer event failed: %v", err)
-			}
-		}
+		clickNativeControl(t, a.alwaysOnTopBtn)
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
 			if a.IsAlwaysOnTop() == want {

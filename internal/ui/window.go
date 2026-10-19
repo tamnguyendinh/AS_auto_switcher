@@ -203,6 +203,7 @@ func (a *App) setupLayout() {
 		scrollList,
 	)
 
+	addWindowResizeFrame(a.win, mainLayout)
 	a.win.SetContent(mainLayout)
 }
 
