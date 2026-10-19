@@ -609,11 +609,10 @@ func (a *App) syncAlwaysOnTopBtn(enabled bool) {
 	if a.alwaysOnTopBtn == nil {
 		return
 	}
+	a.alwaysOnTopBtn.SetText("📌")
 	if enabled {
-		a.alwaysOnTopBtn.SetText("📌 Ghim : Bật")
 		a.alwaysOnTopBtn.Importance = widget.HighImportance
 	} else {
-		a.alwaysOnTopBtn.SetText("📌 Ghim : Tắt")
 		a.alwaysOnTopBtn.Importance = widget.MediumImportance
 	}
 	a.alwaysOnTopBtn.Refresh()

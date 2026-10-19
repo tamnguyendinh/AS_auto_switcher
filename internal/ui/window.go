@@ -155,13 +155,11 @@ func (a *App) setupLayout() {
 	})
 	a.quotaRefreshAllBtn.Importance = widget.HighImportance
 
-	pinLabel := "📌 Ghim : Bật"
 	pinImportance := widget.HighImportance
 	if !a.alwaysOnTop {
-		pinLabel = "📌 Ghim : Tắt"
 		pinImportance = widget.MediumImportance
 	}
-	a.alwaysOnTopBtn = widget.NewButton(pinLabel, func() {
+	a.alwaysOnTopBtn = widget.NewButton("📌", func() {
 		a.ToggleAlwaysOnTop()
 	})
 	a.alwaysOnTopBtn.Importance = pinImportance

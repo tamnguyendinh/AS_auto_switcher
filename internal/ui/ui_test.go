@@ -179,7 +179,7 @@ func TestNewAppAndInit(t *testing.T) {
 	waitForIdle(app, 3*time.Second)
 }
 
-func TestToggleAlwaysOnTop(t *testing.T) {
+func TestAlwaysOnTop(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	app := NewAppWithFyne(testApp, mgr)
@@ -194,21 +194,30 @@ func TestToggleAlwaysOnTop(t *testing.T) {
 	if app.IsAlwaysOnTop() {
 		t.Errorf("expected alwaysOnTop to be false after toggle")
 	}
-	if app.alwaysOnTopBtn.Text != "📌 Ghim : Tắt" {
-		t.Errorf("expected button text '📌 Ghim : Tắt', got: %s", app.alwaysOnTopBtn.Text)
+	if app.alwaysOnTopBtn.Text != "📌" {
+		t.Errorf("expected button text '📌', got: %s", app.alwaysOnTopBtn.Text)
+	}
+	if app.alwaysOnTopBtn.Importance != widget.MediumImportance {
+		t.Errorf("expected button importance MediumImportance, got: %v", app.alwaysOnTopBtn.Importance)
 	}
 
 	app.SetAlwaysOnTop(true)
 	if !app.IsAlwaysOnTop() {
 		t.Errorf("expected alwaysOnTop to be true after SetAlwaysOnTop(true)")
 	}
-	if app.alwaysOnTopBtn.Text != "📌 Ghim : Bật" {
-		t.Errorf("expected button text '📌 Ghim : Bật', got: %s", app.alwaysOnTopBtn.Text)
+	if app.alwaysOnTopBtn.Text != "📌" {
+		t.Errorf("expected button text '📌', got: %s", app.alwaysOnTopBtn.Text)
+	}
+	if app.alwaysOnTopBtn.Importance != widget.HighImportance {
+		t.Errorf("expected button importance HighImportance, got: %v", app.alwaysOnTopBtn.Importance)
 	}
 
 	waitForIdle(app, 3*time.Second)
 }
 
+func TestToggleAlwaysOnTop(t *testing.T) {
+	TestAlwaysOnTop(t)
+}
 func TestUpdateUI_WithAccounts(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
