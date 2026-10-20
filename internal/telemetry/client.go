@@ -232,6 +232,9 @@ type ModelQuotaBucket struct {
 	WeeklyFraction    float64   `json:"weekly_fraction"`
 	FiveHourReset     time.Time `json:"five_hour_reset,omitempty"`
 	WeeklyReset       time.Time `json:"weekly_reset,omitempty"`
+	Disabled          bool      `json:"disabled,omitempty"`
+	FiveHourDisabled  bool      `json:"five_hour_disabled,omitempty"`
+	WeeklyDisabled    bool      `json:"weekly_disabled,omitempty"`
 }
 
 // UnmarshalJSON custom unmarshaler ensures cycle and remaining fractions default to -1 when absent in JSON (legacy cache).
@@ -244,6 +247,11 @@ func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
 		FiveHourCamel          *float64 `json:"fiveHourFraction"`
 		Weekly                 *float64 `json:"weekly_fraction"`
 		WeeklyCamel            *float64 `json:"weeklyFraction"`
+		Disabled               *bool    `json:"disabled,omitempty"`
+		FiveHourDisabled       *bool    `json:"five_hour_disabled,omitempty"`
+		FiveHourDisabledCamel  *bool    `json:"fiveHourDisabled,omitempty"`
+		WeeklyDisabled         *bool    `json:"weekly_disabled,omitempty"`
+		WeeklyDisabledCamel    *bool    `json:"weeklyDisabled,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(m),
@@ -273,6 +281,20 @@ func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
 		m.WeeklyFraction = *aux.WeeklyCamel
 	} else {
 		m.WeeklyFraction = -1
+	}
+
+	if aux.Disabled != nil {
+		m.Disabled = *aux.Disabled
+	}
+	if aux.FiveHourDisabled != nil {
+		m.FiveHourDisabled = *aux.FiveHourDisabled
+	} else if aux.FiveHourDisabledCamel != nil {
+		m.FiveHourDisabled = *aux.FiveHourDisabledCamel
+	}
+	if aux.WeeklyDisabled != nil {
+		m.WeeklyDisabled = *aux.WeeklyDisabled
+	} else if aux.WeeklyDisabledCamel != nil {
+		m.WeeklyDisabled = *aux.WeeklyDisabledCamel
 	}
 	return nil
 }
@@ -379,6 +401,8 @@ type rawBucketInfo struct {
 	TokenTypeSnake         string          `json:"token_type"`
 	ModelID                string          `json:"modelId"`
 	ModelIDSnake           string          `json:"model_id"`
+	Disabled               *bool           `json:"disabled,omitempty"`
+	DisabledSnake          *bool           `json:"disabled_snake,omitempty"`
 }
 
 func parseResetTime(raw json.RawMessage) time.Time {
@@ -457,6 +481,12 @@ func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
 		b.RemainingAmount = *r.RemainingAmount
 	} else if r.RemainingAmountSnake != nil {
 		b.RemainingAmount = *r.RemainingAmountSnake
+	}
+
+	if r.Disabled != nil {
+		b.Disabled = *r.Disabled
+	} else if r.DisabledSnake != nil {
+		b.Disabled = *r.DisabledSnake
 	}
 
 	if len(r.ResetTimeRaw) > 0 {
@@ -675,6 +705,7 @@ type rawQuotaBucket struct {
 	Window            string   `json:"window"`
 	RemainingFraction *float64 `json:"remainingFraction"`
 	ResetTime         string   `json:"resetTime"`
+	Disabled          *bool    `json:"disabled,omitempty"`
 }
 
 // ParseQuotaSummary parses the Connect-RPC RetrieveUserQuotaSummary JSON payload.
@@ -735,26 +766,49 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 				WeeklyFraction:    -1,
 				ResetTime:         resetT,
 			}
+			if b.Disabled != nil && *b.Disabled {
+				rawB.Disabled = true
+			}
 
 			lowerID := strings.ToLower(b.BucketID)
 			lowerWindow := strings.ToLower(b.Window)
 			is5h := strings.Contains(lowerID, "5h") || strings.Contains(lowerWindow, "5h")
 			isWeek := strings.Contains(lowerID, "week") || strings.Contains(lowerWindow, "week")
 
-			if is5h && hasFrac {
-				rawB.FiveHourFraction = frac
-			} else if isWeek && hasFrac {
-				rawB.WeeklyFraction = frac
+			if is5h {
+				if hasFrac {
+					rawB.FiveHourFraction = frac
+				}
+				if b.Disabled != nil && *b.Disabled {
+					rawB.FiveHourDisabled = true
+				}
+			} else if isWeek {
+				if hasFrac {
+					rawB.WeeklyFraction = frac
+				}
+				if b.Disabled != nil && *b.Disabled {
+					rawB.WeeklyDisabled = true
+				}
 			}
 
 			if strings.Contains(lowerGroup, "gemini") || strings.Contains(lowerID, "gemini") {
 				rawB.TokenType = "gemini"
-				if is5h && hasFrac {
-					gemini.FiveHourFraction = frac
-					gemini.FiveHourReset = resetT
-				} else if isWeek && hasFrac {
-					gemini.WeeklyFraction = frac
-					gemini.WeeklyReset = resetT
+				if is5h {
+					if hasFrac {
+						gemini.FiveHourFraction = frac
+						gemini.FiveHourReset = resetT
+					}
+					if b.Disabled != nil && *b.Disabled {
+						gemini.FiveHourDisabled = true
+					}
+				} else if isWeek {
+					if hasFrac {
+						gemini.WeeklyFraction = frac
+						gemini.WeeklyReset = resetT
+					}
+					if b.Disabled != nil && *b.Disabled {
+						gemini.WeeklyDisabled = true
+					}
 				}
 				if hasFrac && (!hasGemini || frac < gemini.RemainingFraction) {
 					gemini.RemainingFraction = frac
@@ -765,16 +819,28 @@ func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQu
 			} else if strings.Contains(lowerGroup, "claude") || strings.Contains(lowerGroup, "gpt") || strings.Contains(lowerGroup, "3p") ||
 				strings.Contains(lowerID, "claude") || strings.Contains(lowerID, "3p") {
 				rawB.TokenType = "claude"
-				if is5h && hasFrac {
-					claude.FiveHourFraction = frac
-					claude.FiveHourReset = resetT
-					gpt.FiveHourFraction = frac
-					gpt.FiveHourReset = resetT
-				} else if isWeek && hasFrac {
-					claude.WeeklyFraction = frac
-					claude.WeeklyReset = resetT
-					gpt.WeeklyFraction = frac
-					gpt.WeeklyReset = resetT
+				if is5h {
+					if hasFrac {
+						claude.FiveHourFraction = frac
+						claude.FiveHourReset = resetT
+						gpt.FiveHourFraction = frac
+						gpt.FiveHourReset = resetT
+					}
+					if b.Disabled != nil && *b.Disabled {
+						claude.FiveHourDisabled = true
+						gpt.FiveHourDisabled = true
+					}
+				} else if isWeek {
+					if hasFrac {
+						claude.WeeklyFraction = frac
+						claude.WeeklyReset = resetT
+						gpt.WeeklyFraction = frac
+						gpt.WeeklyReset = resetT
+					}
+					if b.Disabled != nil && *b.Disabled {
+						claude.WeeklyDisabled = true
+						gpt.WeeklyDisabled = true
+					}
 				}
 				if hasFrac && (!hasClaudeGPT || frac < claude.RemainingFraction) {
 					claude.RemainingFraction = frac

@@ -657,3 +657,83 @@ func TestF1_PositiveLegacyFraction_WithBothCyclesZero(t *testing.T) {
 		t.Errorf("expected 0 raw buckets, got %d", len(reloaded.RawBuckets))
 	}
 }
+
+
+func TestDisabledMetadataPassThrough_ParserCacheRoundTrip(t *testing.T) {
+	payload := []byte(`{
+		"response": {
+			"groups": [
+				{
+					"displayName": "Gemini Models",
+					"buckets": [
+						{"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.01, "disabled": true},
+						{"bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.75}
+					]
+				},
+				{
+					"displayName": "Claude and GPT models",
+					"buckets": [
+						{"bucketId": "3p-5h", "window": "5h", "remainingFraction": 0.40, "disabled": false},
+						{"bucketId": "3p-weekly", "window": "weekly", "remainingFraction": 0.60}
+					]
+				}
+			]
+		}
+	}`)
+
+	claude, gemini, _, rawBuckets, _, _, err := ParseQuotaSummaryWithBuckets(payload)
+	if err != nil {
+		t.Fatalf("ParseQuotaSummaryWithBuckets failed: %v", err)
+	}
+
+	if !gemini.FiveHourDisabled {
+		t.Errorf("expected Gemini 5h bucket to have FiveHourDisabled=true")
+	}
+	if gemini.WeeklyDisabled {
+		t.Errorf("expected Gemini weekly bucket to have WeeklyDisabled=false")
+	}
+	if claude.FiveHourDisabled || claude.WeeklyDisabled {
+		t.Errorf("expected Claude buckets to not be disabled")
+	}
+	if len(rawBuckets) != 4 {
+		t.Fatalf("expected 4 raw buckets, got %d", len(rawBuckets))
+	}
+	if !rawBuckets[0].Disabled || !rawBuckets[0].FiveHourDisabled {
+		t.Errorf("expected raw bucket 0 to have Disabled=true and FiveHourDisabled=true")
+	}
+
+	// Test QuotaCache round-trip
+	tmpDir := t.TempDir()
+	cachePath := filepath.Join(tmpDir, ".quota_cache.json")
+	cache := NewQuotaCache(cachePath)
+
+	data := &AccountQuotaData{
+		Email:      "disabled_test@example.com",
+		Gemini:     gemini,
+		Claude:     claude,
+		RawBuckets: rawBuckets,
+		Status:     StatusPlentiful,
+	}
+
+	cache.Update(data)
+	if err := cache.SaveToDisk(); err != nil {
+		t.Fatalf("SaveToDisk failed: %v", err)
+	}
+
+	reloadedCache := NewQuotaCache(cachePath)
+	if err := reloadedCache.LoadFromDisk(); err != nil {
+		t.Fatalf("LoadFromDisk failed: %v", err)
+	}
+
+	reloaded, ok := reloadedCache.Get(data.Email)
+	if !ok || reloaded == nil {
+		t.Fatalf("failed loading account from cache")
+	}
+
+	if !reloaded.Gemini.FiveHourDisabled {
+		t.Errorf("expected reloaded Gemini FiveHourDisabled=true")
+	}
+	if len(reloaded.RawBuckets) != 4 || !reloaded.RawBuckets[0].Disabled {
+		t.Errorf("expected reloaded raw bucket 0 to retain Disabled=true")
+	}
+}
