@@ -3915,6 +3915,8 @@ func TestArchitectSpec_Row2Layout_WithDividers(t *testing.T) {
 	if maskToggle.IsOn() {
 		t.Errorf("expected maskToggle.IsOn() == false after second tap")
 	}
+	// Allow background persistence goroutines from Tapped to settle cleanly
+	time.Sleep(50 * time.Millisecond)
 
 	// 6. Verify existing AutoSwitchToggle remains completely functional
 	if app.IsAutoSwitchEnabled() {
@@ -3943,6 +3945,9 @@ func TestArchitectSpec_Row2Layout_ThemeSync(t *testing.T) {
 	div1, div2 := app.Row2Dividers()
 	maskToggle := app.MaskAccountsToggleWidget()
 	autoToggle := app.autoSwitchToggle
+
+	// Neutralize onChange callback so visual state toggles do not trigger unmanaged background disk persistence goroutines in TempDir
+	maskToggle.onChange = nil
 
 	themes := []string{ThemeDark, ThemeLight, ThemeWarm}
 	for _, th := range themes {
