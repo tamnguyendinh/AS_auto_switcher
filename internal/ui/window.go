@@ -171,7 +171,7 @@ func (a *App) setupLayout() {
 		a.themeSelect.SetSelected("🌙")
 	}
 
-	themeSelectWrap := container.NewGridWrap(fyne.NewSize(36, 20), a.themeSelect)
+	themeSelectWrap := container.NewGridWrap(fyne.NewSize(58, 20), a.themeSelect)
 
 	// Auto Switch Toggle Capsule Widget (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
 	lblAuto := canvas.NewText("Tự động:", palette.Text)
@@ -441,19 +441,19 @@ func newAutoSwitchToggle(initial bool, onChange func(bool), palette ThemePalette
 	}
 
 	t.track = canvas.NewRectangle(palette.BorderSubtle)
-	t.track.CornerRadius = 10.0
-	t.track.Resize(fyne.NewSize(38, 20))
+	t.track.CornerRadius = 6.0
+	t.track.Resize(fyne.NewSize(23, 12))
 	t.track.Move(fyne.NewPos(0, 0))
 
 	t.thumb = canvas.NewCircle(color.White)
-	t.thumb.Resize(fyne.NewSize(14, 14))
+	t.thumb.Resize(fyne.NewSize(8, 8))
 
 	if initial {
 		t.track.FillColor = palette.Primary
-		t.thumb.Move(fyne.NewPos(21, 3))
+		t.thumb.Move(fyne.NewPos(13, 2))
 	} else {
 		t.track.FillColor = palette.BorderSubtle
-		t.thumb.Move(fyne.NewPos(3, 3))
+		t.thumb.Move(fyne.NewPos(2, 2))
 	}
 
 	t.ExtendBaseWidget(t)
@@ -467,7 +467,7 @@ func (t *AutoSwitchToggle) CreateRenderer() fyne.WidgetRenderer {
 
 func (t *AutoSwitchToggle) MinSize() fyne.Size {
 	t.ExtendBaseWidget(t)
-	return fyne.NewSize(38, 20)
+	return fyne.NewSize(23, 12)
 }
 
 func (t *AutoSwitchToggle) Tapped(_ *fyne.PointEvent) {
@@ -509,10 +509,10 @@ func (t *AutoSwitchToggle) SetPalette(palette ThemePalette) {
 func (t *AutoSwitchToggle) updateVisuals() {
 	if t.isOn {
 		t.track.FillColor = t.palette.Primary
-		t.thumb.Move(fyne.NewPos(21, 3))
+		t.thumb.Move(fyne.NewPos(13, 2))
 	} else {
 		t.track.FillColor = t.palette.BorderSubtle
-		t.thumb.Move(fyne.NewPos(3, 3))
+		t.thumb.Move(fyne.NewPos(2, 2))
 	}
 	t.track.Refresh()
 	t.thumb.Refresh()
@@ -524,18 +524,18 @@ type autoSwitchToggleRenderer struct {
 }
 
 func (r *autoSwitchToggleRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(38, 20)
+	return fyne.NewSize(23, 12)
 }
 
 func (r *autoSwitchToggleRenderer) Layout(_ fyne.Size) {
 	r.toggle.track.Move(fyne.NewPos(0, 0))
-	r.toggle.track.Resize(fyne.NewSize(38, 20))
+	r.toggle.track.Resize(fyne.NewSize(23, 12))
 	if r.toggle.isOn {
-		r.toggle.thumb.Move(fyne.NewPos(21, 3))
+		r.toggle.thumb.Move(fyne.NewPos(13, 2))
 	} else {
-		r.toggle.thumb.Move(fyne.NewPos(3, 3))
+		r.toggle.thumb.Move(fyne.NewPos(2, 2))
 	}
-	r.toggle.thumb.Resize(fyne.NewSize(14, 14))
+	r.toggle.thumb.Resize(fyne.NewSize(8, 8))
 }
 
 func (r *autoSwitchToggleRenderer) Refresh() {
@@ -554,3 +554,5 @@ func (r *autoSwitchToggleRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *autoSwitchToggleRenderer) Destroy() {}
+
+

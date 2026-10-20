@@ -2956,8 +2956,8 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Fatalf("expected to find themeSelectWrap in row2Combined")
 	}
 	themeWrapSize := foundThemeWrap.MinSize()
-	if themeWrapSize.Width > 40.0 || themeWrapSize.Height > 22.0 {
-		t.Errorf("AC-1 VIOLATION: expected themeSelectWrap size <= 40x22, got %fx%f", themeWrapSize.Width, themeWrapSize.Height)
+	if themeWrapSize.Width != 58.0 || themeWrapSize.Height > 22.0 {
+		t.Errorf("expected themeSelectWrap size 58x20, got %fx%f", themeWrapSize.Width, themeWrapSize.Height)
 	}
 
 	// Verify row2LeftCluster contains serverStatusLabel and toolbarLeft
@@ -3211,17 +3211,17 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	// Geometric specification (Section 2 of SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
 	toggle := app.autoSwitchToggle
 	minSize := toggle.MinSize()
-	if minSize.Width != 38.0 || minSize.Height != 20.0 {
-		t.Fatalf("Geometry VIOLATION: expected toggle MinSize 38x20, got %fx%f", minSize.Width, minSize.Height)
+	if minSize.Width != 23.0 || minSize.Height != 12.0 {
+		t.Fatalf("Geometry VIOLATION: expected toggle MinSize 23x12 (60%%), got %fx%f", minSize.Width, minSize.Height)
 	}
-	if toggle.track.CornerRadius != 10.0 {
-		t.Fatalf("Geometry VIOLATION: expected track CornerRadius 10.0, got %f", toggle.track.CornerRadius)
+	if toggle.track.CornerRadius != 6.0 {
+		t.Fatalf("Geometry VIOLATION: expected track CornerRadius 6.0, got %f", toggle.track.CornerRadius)
 	}
-	if toggle.track.Size().Width != 38.0 || toggle.track.Size().Height != 20.0 {
-		t.Fatalf("Geometry VIOLATION: expected track size 38x20, got %fx%f", toggle.track.Size().Width, toggle.track.Size().Height)
+	if toggle.track.Size().Width != 23.0 || toggle.track.Size().Height != 12.0 {
+		t.Fatalf("Geometry VIOLATION: expected track size 23x12, got %fx%f", toggle.track.Size().Width, toggle.track.Size().Height)
 	}
-	if toggle.thumb.Size().Width != 14.0 || toggle.thumb.Size().Height != 14.0 {
-		t.Fatalf("Geometry VIOLATION: expected thumb size 14x14, got %fx%f", toggle.thumb.Size().Width, toggle.thumb.Size().Height)
+	if toggle.thumb.Size().Width != 8.0 || toggle.thumb.Size().Height != 8.0 {
+		t.Fatalf("Geometry VIOLATION: expected thumb size 8x8, got %fx%f", toggle.thumb.Size().Width, toggle.thumb.Size().Height)
 	}
 
 	// AC-2: Default State OFF
@@ -3231,8 +3231,8 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	if toggle.IsOn() != false {
 		t.Fatal("AC-2 VIOLATION: expected initial toggle.IsOn() to be false")
 	}
-	if toggle.thumb.Position().X != 3.0 || toggle.thumb.Position().Y != 3.0 {
-		t.Fatalf("Geometry VIOLATION: expected OFF thumb position (3, 3), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
+	if toggle.thumb.Position().X != 2.0 || toggle.thumb.Position().Y != 2.0 {
+		t.Fatalf("Geometry VIOLATION: expected OFF thumb position (2, 2), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
 	}
 	if toggle.track.FillColor != DarkPalette.BorderSubtle {
 		t.Fatalf("Visual VIOLATION: expected OFF track color BorderSubtle, got %+v", toggle.track.FillColor)
@@ -3261,8 +3261,8 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	if toggle.IsOn() != true {
 		t.Fatal("AC-2 VIOLATION: expected toggle.IsOn() to become true after first tap")
 	}
-	if toggle.thumb.Position().X != 21.0 || toggle.thumb.Position().Y != 3.0 {
-		t.Fatalf("Geometry VIOLATION: expected ON thumb position (21, 3), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
+	if toggle.thumb.Position().X != 13.0 || toggle.thumb.Position().Y != 2.0 {
+		t.Fatalf("Geometry VIOLATION: expected ON thumb position (13, 2), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
 	}
 	if toggle.track.FillColor != DarkPalette.Primary {
 		t.Fatalf("Visual VIOLATION: expected ON track color Primary, got %+v", toggle.track.FillColor)
@@ -3284,8 +3284,8 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	if toggle.IsOn() != false {
 		t.Fatal("AC-2 VIOLATION: expected toggle.IsOn() to become false after second tap")
 	}
-	if toggle.thumb.Position().X != 3.0 || toggle.thumb.Position().Y != 3.0 {
-		t.Fatalf("Geometry VIOLATION: expected OFF thumb position (3, 3), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
+	if toggle.thumb.Position().X != 2.0 || toggle.thumb.Position().Y != 2.0 {
+		t.Fatalf("Geometry VIOLATION: expected OFF thumb position (2, 2), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
 	}
 	if toggle.track.FillColor != DarkPalette.BorderSubtle {
 		t.Fatalf("Visual VIOLATION: expected OFF track color BorderSubtle, got %+v", toggle.track.FillColor)
@@ -3293,11 +3293,11 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 
 	// Programmatic SetAutoSwitchEnabled
 	app.SetAutoSwitchEnabled(true)
-	if !app.IsAutoSwitchEnabled() || !toggle.IsOn() || toggle.thumb.Position().X != 21.0 {
+	if !app.IsAutoSwitchEnabled() || !toggle.IsOn() || toggle.thumb.Position().X != 13.0 {
 		t.Fatal("expected SetAutoSwitchEnabled(true) to update state and visuals")
 	}
 	app.SetAutoSwitchEnabled(false)
-	if app.IsAutoSwitchEnabled() || toggle.IsOn() || toggle.thumb.Position().X != 3.0 {
+	if app.IsAutoSwitchEnabled() || toggle.IsOn() || toggle.thumb.Position().X != 2.0 {
 		t.Fatal("expected SetAutoSwitchEnabled(false) to update state and visuals")
 	}
 
@@ -3393,18 +3393,17 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 	}
 
 	themeWrapMin := foundThemeWrap.MinSize()
-	// AC-1: Width reduced ~60% (36px, <= 40px) and Height reduced ~60% (20px, <= 22px)
-	if themeWrapMin.Width != 36.0 && themeWrapMin.Width != 38.0 {
-		t.Errorf("AC-1 VIOLATION: expected themeSelectWrap width 36 or 38 px, got %f", themeWrapMin.Width)
+	// Theme select width restored to original 58px, height kept compact at 20px
+	if themeWrapMin.Width != 58.0 {
+		t.Errorf("expected themeSelectWrap width 58 px, got %f", themeWrapMin.Width)
 	}
-	// AC-2: Height uniform with autoSwitchToggle (20px)
 	if themeWrapMin.Height != 20.0 {
-		t.Errorf("AC-2 VIOLATION: expected themeSelectWrap height 20 px, got %f", themeWrapMin.Height)
+		t.Errorf("expected themeSelectWrap height 20 px, got %f", themeWrapMin.Height)
 	}
 	if app.autoSwitchToggle != nil {
 		toggleMin := app.autoSwitchToggle.MinSize()
-		if toggleMin.Height != themeWrapMin.Height {
-			t.Errorf("AC-2 VIOLATION: expected themeSelectWrap height (%f) to match autoSwitchToggle height (%f)", themeWrapMin.Height, toggleMin.Height)
+		if toggleMin.Width != 23.0 || toggleMin.Height != 12.0 {
+			t.Errorf("expected autoSwitchToggle 60%% size 23x12, got %fx%f", toggleMin.Width, toggleMin.Height)
 		}
 	}
 
@@ -3436,3 +3435,5 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 		t.Errorf("AC-4 VIOLATION: expected card min size within 280x130, got %fx%f", cardMin.Width, cardMin.Height)
 	}
 }
+
+
