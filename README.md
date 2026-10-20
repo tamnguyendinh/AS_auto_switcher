@@ -27,8 +27,6 @@ Từ phiên bản **Version 1.0.1.8**, ứng dụng tích hợp toàn diện h�
 
 ## Cơ chế Chuyển Đổi Tự Động (Autonomous Failover Engine)
 
-Phiên bản **Version 1.0.1.8** đánh dấu bước tiến đột phá với hệ thống chuyển đổi tài khoản hoàn toàn tự trị, bảo vệ dòng làm việc liên tục của lập trình viên:
-
 ### 1. Van kích hoạt kép (Dual-Trigger Engine)
 
 Hệ thống kết hợp hai cơ chế kích hoạt bổ trợ nhau:
@@ -56,7 +54,7 @@ Hệ thống kết hợp hai cơ chế kích hoạt bổ trợ nhau:
   - Nếu 1 trong 3 lần thử thành công: Dừng phục hồi, giữ nguyên tài khoản hiện tại để tiếp tục công việc.
   - Nếu cả 3 lần thử đều xác nhận thất bại do lỗi cạn kiệt tài nguyên (`RESOURCE_EXHAUSTED`): Bộ điều phối (Retry Coordinator) mới chính thức kích hoạt quy trình chuyển đổi sang tài khoản mới.
 
-### 3. Thuật toán sắp xếp thông minh Burn-down Sorter
+### 3. Thuật toán Burn-down Sorter
 
 Khi có lệnh chuyển tài khoản, hệ thống áp dụng thuật toán Burn-down Sorter để chọn ra tài khoản kế thừa tối ưu nhất từ kho lưu trữ `accounts_store/`:
 
