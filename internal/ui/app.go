@@ -47,10 +47,15 @@ type App struct {
 	quotaRefreshAllBtn   *widget.Button
 	alwaysOnTopBtn       *widget.Button
 	themeSelect          *widget.Select
+	autoSwitchToggle     *AutoSwitchToggle
+	autoSwitchLabel      *canvas.Text
 	monogramBg           *canvas.Rectangle
 	accountScroll        *container.Scroll
 	statusBar            *widget.Label
 	statusBarHideTimer   *time.Timer
+
+	// Auto-switch UI State (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
+	autoSwitchEnabled bool
 
 	// In-place update state
 	accountCards []*AccountCardWidget
@@ -187,6 +192,13 @@ func (a *App) SetTheme(themeName string) {
 	if a.monogramBg != nil {
 		a.monogramBg.FillColor = palette.Primary
 		a.monogramBg.Refresh()
+	}
+	if a.autoSwitchToggle != nil {
+		a.autoSwitchToggle.SetPalette(palette)
+	}
+	if a.autoSwitchLabel != nil {
+		a.autoSwitchLabel.Color = palette.Text
+		a.autoSwitchLabel.Refresh()
 	}
 
 	a.mu.RLock()
@@ -633,6 +645,25 @@ func (a *App) IsAlwaysOnTop() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.alwaysOnTop
+}
+
+// IsAutoSwitchEnabled returns whether auto-switch is currently toggled on in the UI.
+func (a *App) IsAutoSwitchEnabled() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.autoSwitchEnabled
+}
+
+// SetAutoSwitchEnabled explicitly sets the auto-switch state in the UI.
+func (a *App) SetAutoSwitchEnabled(enabled bool) {
+	a.mu.Lock()
+	a.autoSwitchEnabled = enabled
+	toggle := a.autoSwitchToggle
+	a.mu.Unlock()
+
+	if toggle != nil {
+		toggle.SetOn(enabled)
+	}
 }
 
 // updateUI refreshes all visual components based on the given overview.

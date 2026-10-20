@@ -2937,6 +2937,14 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 					foundThemeWrap = c
 					break
 				}
+				if innerC, ok := inner.(*fyne.Container); ok {
+					for _, deepInner := range innerC.Objects {
+						if deepInner == app.themeSelect {
+							foundThemeWrap = innerC
+							break
+						}
+					}
+				}
 			}
 		}
 	}
@@ -3116,5 +3124,206 @@ func TestSymmetricGridWrapLayout_ExactSymmetry(t *testing.T) {
 	}
 	if gridLayout.CellSize.Width != 280 || gridLayout.CellSize.Height != 130 {
 		t.Fatalf("expected CellSize 280x130, got %fx%f", gridLayout.CellSize.Width, gridLayout.CellSize.Height)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Test for SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON
+// -----------------------------------------------------------------------------
+
+func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	// AC-1: AutoSwitchToggle Capsule Widget present on UI next to Theme Selector
+	if app.autoSwitchToggle == nil {
+		t.Fatal("AC-1 VIOLATION: expected non-nil app.autoSwitchToggle")
+	}
+	if app.autoSwitchLabel == nil {
+		t.Fatal("AC-1 VIOLATION: expected non-nil app.autoSwitchLabel")
+	}
+	if app.autoSwitchLabel.Text != "Tự động:" {
+		t.Fatalf("AC-1 VIOLATION: expected label text 'Tự động:', got '%s'", app.autoSwitchLabel.Text)
+	}
+	if app.autoSwitchLabel.TextSize != BodyTextSize {
+		t.Fatalf("AC-1 VIOLATION: expected label text size %f, got %f", BodyTextSize, app.autoSwitchLabel.TextSize)
+	}
+	if !app.autoSwitchLabel.TextStyle.Bold {
+		t.Fatalf("AC-1 VIOLATION: expected label text style to be bold")
+	}
+
+	// Verify presence in Row 2 rightCluster
+	win := app.win
+	content, ok := win.Content().(*fyne.Container)
+	if !ok || content == nil {
+		t.Fatal("expected non-nil window content container")
+	}
+	var topSection *fyne.Container
+	for _, obj := range content.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			topSection = c
+			break
+		}
+	}
+	if topSection == nil || len(topSection.Objects) < 2 {
+		t.Fatal("expected topSection with at least 2 children")
+	}
+	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
+	if !ok || row2Combined == nil {
+		t.Fatal("expected row2Combined container")
+	}
+
+	var foundToggle bool
+	var foundLabel bool
+	for _, obj := range row2Combined.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			for _, inner := range c.Objects {
+				if innerC, ok := inner.(*fyne.Container); ok {
+					for _, deep := range innerC.Objects {
+						if deep == app.autoSwitchToggle {
+							foundToggle = true
+						}
+						if deep == app.autoSwitchLabel {
+							foundLabel = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if !foundToggle {
+		t.Fatal("AC-1 VIOLATION: expected autoSwitchToggle to be located in row2Combined rightCluster")
+	}
+	if !foundLabel {
+		t.Fatal("AC-1 VIOLATION: expected autoSwitchLabel to be located in row2Combined rightCluster")
+	}
+
+	// Geometric specification (Section 2 of SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
+	toggle := app.autoSwitchToggle
+	minSize := toggle.MinSize()
+	if minSize.Width != 38.0 || minSize.Height != 20.0 {
+		t.Fatalf("Geometry VIOLATION: expected toggle MinSize 38x20, got %fx%f", minSize.Width, minSize.Height)
+	}
+	if toggle.track.CornerRadius != 10.0 {
+		t.Fatalf("Geometry VIOLATION: expected track CornerRadius 10.0, got %f", toggle.track.CornerRadius)
+	}
+	if toggle.track.Size().Width != 38.0 || toggle.track.Size().Height != 20.0 {
+		t.Fatalf("Geometry VIOLATION: expected track size 38x20, got %fx%f", toggle.track.Size().Width, toggle.track.Size().Height)
+	}
+	if toggle.thumb.Size().Width != 14.0 || toggle.thumb.Size().Height != 14.0 {
+		t.Fatalf("Geometry VIOLATION: expected thumb size 14x14, got %fx%f", toggle.thumb.Size().Width, toggle.thumb.Size().Height)
+	}
+
+	// AC-2: Default State OFF
+	if app.IsAutoSwitchEnabled() != false {
+		t.Fatal("AC-2 VIOLATION: expected initial autoSwitchEnabled to be false")
+	}
+	if toggle.IsOn() != false {
+		t.Fatal("AC-2 VIOLATION: expected initial toggle.IsOn() to be false")
+	}
+	if toggle.thumb.Position().X != 3.0 || toggle.thumb.Position().Y != 3.0 {
+		t.Fatalf("Geometry VIOLATION: expected OFF thumb position (3, 3), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
+	}
+	if toggle.track.FillColor != DarkPalette.BorderSubtle {
+		t.Fatalf("Visual VIOLATION: expected OFF track color BorderSubtle, got %+v", toggle.track.FillColor)
+	}
+
+	// AC-3: Pointer Cursor
+	cursor := toggle.Cursor()
+	if cursor != desktop.PointerCursor {
+		t.Fatalf("AC-3 VIOLATION: expected desktop.PointerCursor, got %v", cursor)
+	}
+
+	// Capture initial manager state for AC-4
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	initialOverview, err := mgr.GetAccountStates(ctx)
+	if err != nil {
+		t.Fatalf("failed getting initial account states: %v", err)
+	}
+	initialActive := initialOverview.ActiveEmail
+
+	// AC-2: Interaction Tap -> Turn ON
+	toggle.Tapped(nil)
+	if app.IsAutoSwitchEnabled() != true {
+		t.Fatal("AC-2 VIOLATION: expected autoSwitchEnabled to become true after first tap")
+	}
+	if toggle.IsOn() != true {
+		t.Fatal("AC-2 VIOLATION: expected toggle.IsOn() to become true after first tap")
+	}
+	if toggle.thumb.Position().X != 21.0 || toggle.thumb.Position().Y != 3.0 {
+		t.Fatalf("Geometry VIOLATION: expected ON thumb position (21, 3), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
+	}
+	if toggle.track.FillColor != DarkPalette.Primary {
+		t.Fatalf("Visual VIOLATION: expected ON track color Primary, got %+v", toggle.track.FillColor)
+	}
+
+	// AC-4: No Backend Side Effects
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel2()
+	postTapOverview, _ := mgr.GetAccountStates(ctx2)
+	if postTapOverview.ActiveEmail != initialActive {
+		t.Fatalf("AC-4 VIOLATION: active account changed after toggle tap from %s to %s", initialActive, postTapOverview.ActiveEmail)
+	}
+
+	// AC-2: Interaction Second Tap -> Turn OFF
+	toggle.Tapped(nil)
+	if app.IsAutoSwitchEnabled() != false {
+		t.Fatal("AC-2 VIOLATION: expected autoSwitchEnabled to become false after second tap")
+	}
+	if toggle.IsOn() != false {
+		t.Fatal("AC-2 VIOLATION: expected toggle.IsOn() to become false after second tap")
+	}
+	if toggle.thumb.Position().X != 3.0 || toggle.thumb.Position().Y != 3.0 {
+		t.Fatalf("Geometry VIOLATION: expected OFF thumb position (3, 3), got (%f, %f)", toggle.thumb.Position().X, toggle.thumb.Position().Y)
+	}
+	if toggle.track.FillColor != DarkPalette.BorderSubtle {
+		t.Fatalf("Visual VIOLATION: expected OFF track color BorderSubtle, got %+v", toggle.track.FillColor)
+	}
+
+	// Programmatic SetAutoSwitchEnabled
+	app.SetAutoSwitchEnabled(true)
+	if !app.IsAutoSwitchEnabled() || !toggle.IsOn() || toggle.thumb.Position().X != 21.0 {
+		t.Fatal("expected SetAutoSwitchEnabled(true) to update state and visuals")
+	}
+	app.SetAutoSwitchEnabled(false)
+	if app.IsAutoSwitchEnabled() || toggle.IsOn() || toggle.thumb.Position().X != 3.0 {
+		t.Fatal("expected SetAutoSwitchEnabled(false) to update state and visuals")
+	}
+
+	// Theme Switching Reactive Updates
+	app.SetTheme(ThemeLight)
+	if toggle.track.FillColor != LightPalette.BorderSubtle {
+		t.Fatalf("expected track color LightPalette.BorderSubtle after theme change, got %+v", toggle.track.FillColor)
+	}
+	if app.autoSwitchLabel.Color != LightPalette.Text {
+		t.Fatalf("expected label color LightPalette.Text after theme change, got %+v", app.autoSwitchLabel.Color)
+	}
+
+	toggle.Tapped(nil) // Turn ON under Light Theme
+	if toggle.track.FillColor != LightPalette.Primary {
+		t.Fatalf("expected track color LightPalette.Primary when ON under Light Theme, got %+v", toggle.track.FillColor)
+	}
+
+	app.SetTheme(ThemeWarm)
+	if toggle.track.FillColor != WarmPalette.Primary {
+		t.Fatalf("expected track color WarmPalette.Primary when ON under Warm Theme, got %+v", toggle.track.FillColor)
+	}
+	if app.autoSwitchLabel.Color != WarmPalette.Text {
+		t.Fatalf("expected label color WarmPalette.Text under Warm Theme, got %+v", app.autoSwitchLabel.Color)
+	}
+
+	// Restore Dark Theme
+	app.SetTheme(ThemeDark)
+
+	// AC-5: Dimension preservation: window 920x630, card 280x130
+	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-5 VIOLATION: expected DefaultWindowWidth 920 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 }

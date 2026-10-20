@@ -172,7 +172,22 @@ func (a *App) setupLayout() {
 	}
 
 	themeSelectWrap := container.NewGridWrap(fyne.NewSize(58, 32), a.themeSelect)
-	row2Combined := container.NewBorder(nil, nil, row2LeftCluster, themeSelectWrap)
+
+	// Auto Switch Toggle Capsule Widget (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
+	lblAuto := canvas.NewText("Tự động:", palette.Text)
+	lblAuto.TextSize = BodyTextSize
+	lblAuto.TextStyle = fyne.TextStyle{Bold: true}
+	a.autoSwitchLabel = lblAuto
+
+	a.autoSwitchToggle = newAutoSwitchToggle(a.autoSwitchEnabled, func(isOn bool) {
+		a.mu.Lock()
+		a.autoSwitchEnabled = isOn
+		a.mu.Unlock()
+	}, palette)
+
+	autoCluster := container.NewHBox(lblAuto, a.autoSwitchToggle)
+	rightCluster := container.NewHBox(autoCluster, themeSelectWrap)
+	row2Combined := container.NewBorder(nil, nil, row2LeftCluster, rightCluster)
 
 	// Separator chia phần điều khiển với lưới tài khoản
 	sep := widget.NewSeparator()
@@ -395,3 +410,147 @@ func (g *symmetricGridWrapLayout) MinSize(objects []fyne.CanvasObject) fyne.Size
 	return fyne.NewSize(g.CellSize.Width,
 		(g.CellSize.Height*float32(rows))+(float32(rows-1)*theme.Padding()))
 }
+
+// -----------------------------------------------------------------------------
+// Auto Switch Toggle Widget (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
+// -----------------------------------------------------------------------------
+
+// AutoSwitchToggle represents a capsule pill toggle switch.
+type AutoSwitchToggle struct {
+	widget.BaseWidget
+	isOn     bool
+	onChange func(bool)
+	palette  ThemePalette
+
+	track *canvas.Rectangle
+	thumb *canvas.Circle
+}
+
+var (
+	_ fyne.Widget        = (*AutoSwitchToggle)(nil)
+	_ fyne.Tappable      = (*AutoSwitchToggle)(nil)
+	_ desktop.Hoverable  = (*AutoSwitchToggle)(nil)
+	_ desktop.Cursorable = (*AutoSwitchToggle)(nil)
+)
+
+func newAutoSwitchToggle(initial bool, onChange func(bool), palette ThemePalette) *AutoSwitchToggle {
+	t := &AutoSwitchToggle{
+		isOn:     initial,
+		onChange: onChange,
+		palette:  palette,
+	}
+
+	t.track = canvas.NewRectangle(palette.BorderSubtle)
+	t.track.CornerRadius = 10.0
+	t.track.Resize(fyne.NewSize(38, 20))
+	t.track.Move(fyne.NewPos(0, 0))
+
+	t.thumb = canvas.NewCircle(color.White)
+	t.thumb.Resize(fyne.NewSize(14, 14))
+
+	if initial {
+		t.track.FillColor = palette.Primary
+		t.thumb.Move(fyne.NewPos(21, 3))
+	} else {
+		t.track.FillColor = palette.BorderSubtle
+		t.thumb.Move(fyne.NewPos(3, 3))
+	}
+
+	t.ExtendBaseWidget(t)
+	return t
+}
+
+func (t *AutoSwitchToggle) CreateRenderer() fyne.WidgetRenderer {
+	t.ExtendBaseWidget(t)
+	return &autoSwitchToggleRenderer{toggle: t}
+}
+
+func (t *AutoSwitchToggle) MinSize() fyne.Size {
+	t.ExtendBaseWidget(t)
+	return fyne.NewSize(38, 20)
+}
+
+func (t *AutoSwitchToggle) Tapped(_ *fyne.PointEvent) {
+	t.isOn = !t.isOn
+	t.updateVisuals()
+	if t.onChange != nil {
+		t.onChange(t.isOn)
+	}
+}
+
+func (t *AutoSwitchToggle) Cursor() desktop.Cursor {
+	return desktop.PointerCursor
+}
+
+func (t *AutoSwitchToggle) MouseIn(*desktop.MouseEvent)   {}
+func (t *AutoSwitchToggle) MouseOut()                    {}
+func (t *AutoSwitchToggle) MouseMoved(*desktop.MouseEvent) {}
+
+func (t *AutoSwitchToggle) IsOn() bool {
+	return t.isOn
+}
+
+func (t *AutoSwitchToggle) SetOn(on bool) {
+	if t.isOn == on {
+		return
+	}
+	t.isOn = on
+	t.updateVisuals()
+	if t.onChange != nil {
+		t.onChange(t.isOn)
+	}
+}
+
+func (t *AutoSwitchToggle) SetPalette(palette ThemePalette) {
+	t.palette = palette
+	t.updateVisuals()
+}
+
+func (t *AutoSwitchToggle) updateVisuals() {
+	if t.isOn {
+		t.track.FillColor = t.palette.Primary
+		t.thumb.Move(fyne.NewPos(21, 3))
+	} else {
+		t.track.FillColor = t.palette.BorderSubtle
+		t.thumb.Move(fyne.NewPos(3, 3))
+	}
+	t.track.Refresh()
+	t.thumb.Refresh()
+	t.Refresh()
+}
+
+type autoSwitchToggleRenderer struct {
+	toggle *AutoSwitchToggle
+}
+
+func (r *autoSwitchToggleRenderer) MinSize() fyne.Size {
+	return fyne.NewSize(38, 20)
+}
+
+func (r *autoSwitchToggleRenderer) Layout(_ fyne.Size) {
+	r.toggle.track.Move(fyne.NewPos(0, 0))
+	r.toggle.track.Resize(fyne.NewSize(38, 20))
+	if r.toggle.isOn {
+		r.toggle.thumb.Move(fyne.NewPos(21, 3))
+	} else {
+		r.toggle.thumb.Move(fyne.NewPos(3, 3))
+	}
+	r.toggle.thumb.Resize(fyne.NewSize(14, 14))
+}
+
+func (r *autoSwitchToggleRenderer) Refresh() {
+	if r.toggle.isOn {
+		r.toggle.track.FillColor = r.toggle.palette.Primary
+	} else {
+		r.toggle.track.FillColor = r.toggle.palette.BorderSubtle
+	}
+	r.toggle.track.Refresh()
+	r.toggle.thumb.Refresh()
+	r.Layout(r.toggle.Size())
+}
+
+func (r *autoSwitchToggleRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.toggle.track, r.toggle.thumb}
+}
+
+func (r *autoSwitchToggleRenderer) Destroy() {}
