@@ -38,7 +38,7 @@ type MockLangServer struct {
 	retryCalls    atomic.Int32
 	lastRetryReq  []byte
 	streamClients map[chan connector.AgentStateUpdate]struct{}
-}
+	emailGetter   func() string}
 
 func NewMockLangServer(t *testing.T) *MockLangServer {
 	t.Helper()
@@ -133,6 +133,25 @@ func NewMockLangServer(t *testing.T) *MockLangServer {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	// 4. GetUserStatus endpoint (for AccountManager identity verification)
+	userStatusHandler := func(w http.ResponseWriter, r *http.Request) {
+		mls.mu.Lock()
+		fn := mls.emailGetter
+		mls.mu.Unlock()
+		email := ""
+		if fn != nil {
+			email = fn()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"email": email,
+			"name":  "Test User",
+		})
+	}
+	mux.HandleFunc(connector.EndpointGetUserStatus, userStatusHandler)
+	mux.HandleFunc("/GetUserStatus", userStatusHandler)
+	mux.HandleFunc("/user_status", userStatusHandler)
+
 	server := httptest.NewServer(mux)
 	mls.server = server
 
@@ -141,6 +160,12 @@ func NewMockLangServer(t *testing.T) *MockLangServer {
 	mls.port = port
 
 	return mls
+}
+
+func (mls *MockLangServer) SetEmailGetter(fn func() string) {
+	mls.mu.Lock()
+	defer mls.mu.Unlock()
+	mls.emailGetter = fn
 }
 
 func (mls *MockLangServer) ServerInfo() *connector.ServerInfo {
@@ -388,6 +413,7 @@ func NewE2ETestHarness(t *testing.T, activeEmail string, otherAccounts []string)
 		Store:        accStore,
 		CurrentEmail: activeEmail,
 	}
+	mls.SetEmailGetter(func() string { return harness.GetActiveEmail() })
 
 	// Save active account
 	if activeEmail != "" {
@@ -552,6 +578,302 @@ func TestMockHarnessInit(t *testing.T) {
 	if harness.LangServer.GetRetryCalls() != 1 {
 		t.Errorf("expected 1 retry call recorded, got %d", harness.LangServer.GetRetryCalls())
 	}
+}
+
+
+
+
+
+
+// -----------------------------------------------------------------------------
+// Task 1.2: Verification Condition - Edge Cases 1 to 7
+// -----------------------------------------------------------------------------
+
+func TestEdgeCases1To7(t *testing.T) {
+	// Case 1: Gemini đang dùng, 5h <= 2% -> Chuyển một lần
+	t.Run("EdgeCase1_Gemini5hLow_SwitchesOnce", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", 0.015, 0.50, false, 0.80, 0.50, false)
+		harness.Telemetry.SetAccountQuota("refresh-cand1@example.com", 0.80, 0.70, false, 0.80, 0.70, false)
+
+		// Seed cache
+		qActive, _ := harness.Pool.PollAccount(ctx, "active@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "cand1@example.com")
+
+		decision, err := harness.Controller.EvaluateProactiveTrigger(ctx, []*telemetry.AccountQuotaData{qActive})
+		if err != nil {
+			t.Fatalf("EvaluateProactiveTrigger failed: %v", err)
+		}
+		if !decision.ShouldSwitch {
+			t.Fatalf("expected ShouldSwitch=true for 5h <= 2%%, got false: %s", decision.Reason)
+		}
+
+		res, err := harness.Controller.TriggerSwitch(ctx, decision.Reason)
+		if err != nil {
+			t.Fatalf("TriggerSwitch failed: %v", err)
+		}
+		if res == nil || !res.Success {
+			t.Fatalf("expected successful switch, got: %+v", res)
+		}
+		if harness.GetActiveEmail() != "cand1@example.com" {
+			t.Fatalf("expected active email switched to cand1@example.com, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 2: Claude tuần = 0, phiên dùng Gemini còn quota -> Không chuyển do Claude
+	t.Run("EdgeCase2_ClaudeWeeklyDepleted_GeminiActive_NoSwitch", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		// Active model is Gemini; Claude weekly is 0%, but Gemini has 5h=80%, weekly=50%
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", 0.80, 0.50, false, 0.0, 0.0, false)
+		qActive, _ := harness.Pool.PollAccount(ctx, "active@example.com")
+
+		harness.Controller.SetEnabled(true)
+		decision, err := harness.Controller.EvaluateProactiveTrigger(ctx, []*telemetry.AccountQuotaData{qActive})
+		if err != nil {
+			t.Fatalf("EvaluateProactiveTrigger failed: %v", err)
+		}
+		if decision.ShouldSwitch {
+			t.Fatalf("expected ShouldSwitch=false because Gemini is active and healthy, got true: %s", decision.Reason)
+		}
+		if harness.GetActiveEmail() != "active@example.com" {
+			t.Fatalf("expected active email unchanged, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 3: Chỉ tuần, tuần = 1% -> Dùng tiếp
+	t.Run("EdgeCase3_WeeklyOnly_1Percent_Continues", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		// Only weekly bucket present, 5h is missing (-1), weekly = 0.01 (1%)
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", -1, 0.01, false, -1, 0.50, false)
+		qActive, _ := harness.Pool.PollAccount(ctx, "active@example.com")
+
+		harness.Controller.SetEnabled(true)
+		decision, err := harness.Controller.EvaluateProactiveTrigger(ctx, []*telemetry.AccountQuotaData{qActive})
+		if err != nil {
+			t.Fatalf("EvaluateProactiveTrigger failed: %v", err)
+		}
+		if decision.ShouldSwitch {
+			t.Fatalf("expected ShouldSwitch=false for weekly=1%% > 0%%, got true: %s", decision.Reason)
+		}
+		if !decision.Evaluation.IsEligible {
+			t.Fatalf("expected IsEligible=true for weekly=1%% > 0%%, got false")
+		}
+		if harness.GetActiveEmail() != "active@example.com" {
+			t.Fatalf("expected active email unchanged, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 4: Chỉ tuần, tuần = 0% -> Chuyển
+	t.Run("EdgeCase4_WeeklyOnly_0Percent_Switches", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+
+		// Only weekly bucket present, 5h is missing (-1), weekly = 0.00 (0%)
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", -1, 0.00, false, -1, 0.50, false)
+		harness.Telemetry.SetAccountQuota("refresh-cand1@example.com", 0.80, 0.60, false, 0.80, 0.60, false)
+
+		qActive, _ := harness.Pool.PollAccount(ctx, "active@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "cand1@example.com")
+
+		decision, err := harness.Controller.EvaluateProactiveTrigger(ctx, []*telemetry.AccountQuotaData{qActive})
+		if err != nil {
+			t.Fatalf("EvaluateProactiveTrigger failed: %v", err)
+		}
+		if !decision.ShouldSwitch {
+			t.Fatalf("expected ShouldSwitch=true for weekly=0%%, got false: %s", decision.Reason)
+		}
+
+		res, err := harness.Controller.TriggerSwitch(ctx, decision.Reason)
+		if err != nil {
+			t.Fatalf("TriggerSwitch failed: %v", err)
+		}
+		if res == nil || !res.Success {
+			t.Fatalf("expected successful switch, got: %+v", res)
+		}
+		if harness.GetActiveEmail() != "cand1@example.com" {
+			t.Fatalf("expected active email switched to cand1@example.com, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 5: API bucket 5h disabled -> Cờ đi qua parser/cache, bỏ qua 5h và xét tuần
+	t.Run("EdgeCase5_Disabled5hBucket_Ignored_EvaluatesWeekly", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		// 5h bucket disabled: true, remainingFraction: 0.01 (1%), but Weekly: 0.50 (50%)
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", 0.01, 0.50, true, 0.40, 0.60, false)
+		qActive, _ := harness.Pool.PollAccount(ctx, "active@example.com")
+
+		if !qActive.Gemini.FiveHourDisabled {
+			t.Fatalf("expected Gemini 5h bucket to have FiveHourDisabled=true")
+		}
+
+		harness.Controller.SetEnabled(true)
+		decision, err := harness.Controller.EvaluateProactiveTrigger(ctx, []*telemetry.AccountQuotaData{qActive})
+		if err != nil {
+			t.Fatalf("EvaluateProactiveTrigger failed: %v", err)
+		}
+		if decision.ShouldSwitch {
+			t.Fatalf("expected ShouldSwitch=false because 5h is disabled and weekly=50%% > 0%%, got true: %s", decision.Reason)
+		}
+		if harness.GetActiveEmail() != "active@example.com" {
+			t.Fatalf("expected active email unchanged, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 6: Recovery 1 hoặc 2 kết thúc không lỗi -> Dừng recovery, không switch
+	t.Run("EdgeCase6_RecoveryOutcomeSuccess_Resets_NoSwitch", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+		_ = harness.Controller.Start(ctx)
+
+		rc := harness.Controller.RetryCoordinator()
+		if rc == nil {
+			t.Fatal("expected non-nil RetryCoordinator")
+		}
+
+		// 1. First error: Rate limit
+		update1 := connector.AgentStateUpdate{
+			ConversationID:    "conv-e2e-1",
+			ExecutionID:       "exec-6-1",
+			StepID:            "step-1",
+			Status:            "IDLE",
+			TerminationReason: "RESOURCE_EXHAUSTED",
+			Attempt:           1,
+		}
+		if err := rc.HandleAgentStateUpdate(ctx, update1); err != nil {
+			t.Fatalf("HandleAgentStateUpdate err: %v", err)
+		}
+		if !rc.IsRecovering() || rc.GetRecoveryAttempts() != 1 {
+			t.Fatalf("expected recovering=true, attempts=1, got recovering=%v attempts=%d", rc.IsRecovering(), rc.GetRecoveryAttempts())
+		}
+
+		// Wait briefly for asynchronous retry dispatch
+		time.Sleep(50 * time.Millisecond)
+		if harness.LangServer.GetRetryCalls() < 1 {
+			t.Errorf("expected empty-items retry sent to Language Server, got %d", harness.LangServer.GetRetryCalls())
+		}
+
+		// 2. Recovery succeeds on next turn (IsSuccessfulCompletion)
+		updateSuccess := connector.AgentStateUpdate{
+			ConversationID:    "conv-e2e-1",
+			ExecutionID:       "exec-6-2",
+			StepID:            "step-2",
+			Status:            "IDLE",
+			TerminationReason: "COMPLETED",
+			Attempt:           2,
+		}
+		if err := rc.HandleAgentStateUpdate(ctx, updateSuccess); err != nil {
+			t.Fatalf("HandleAgentStateUpdate success err: %v", err)
+		}
+
+		// 3. Assert recovery state is cleared and no switch was performed
+		if rc.IsRecovering() || rc.GetRecoveryAttempts() != 0 {
+			t.Fatalf("expected recovery cleared, got recovering=%v attempts=%d", rc.IsRecovering(), rc.GetRecoveryAttempts())
+		}
+		if harness.GetActiveEmail() != "active@example.com" {
+			t.Fatalf("expected active email unchanged, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 7: Ba recovery actions kết thúc lỗi giới hạn -> Một quyết định switch
+	t.Run("EdgeCase7_ThreeRecoveryFailures_TriggersOneSwitch", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Telemetry.SetAccountQuota("refresh-cand1@example.com", 0.90, 0.80, false, 0.90, 0.80, false)
+		_, _ = harness.Pool.PollAccount(ctx, "cand1@example.com")
+
+		harness.Controller.SetEnabled(true)
+		_ = harness.Controller.Start(ctx)
+
+		rc := harness.Controller.RetryCoordinator()
+
+		// Attempt 1 fails with rate limit
+		_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
+			ConversationID:    "conv-e2e-1",
+			ExecutionID:       "exec-7-1",
+			StepID:            "step-1",
+			Status:            "IDLE",
+			TerminationReason: "429 RATE_LIMIT",
+			Attempt:           1,
+		})
+		if rc.GetRecoveryAttempts() != 1 {
+			t.Fatalf("expected attempt 1, got %d", rc.GetRecoveryAttempts())
+		}
+
+		// Attempt 2 fails with rate limit
+		_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
+			ConversationID:    "conv-e2e-1",
+			ExecutionID:       "exec-7-2",
+			StepID:            "step-2",
+			Status:            "IDLE",
+			TerminationReason: "429 RATE_LIMIT",
+			Attempt:           2,
+		})
+		if rc.GetRecoveryAttempts() != 2 {
+			t.Fatalf("expected attempt 2, got %d", rc.GetRecoveryAttempts())
+		}
+
+		// Attempt 3 fails with rate limit
+		_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
+			ConversationID:    "conv-e2e-1",
+			ExecutionID:       "exec-7-3",
+			StepID:            "step-3",
+			Status:            "IDLE",
+			TerminationReason: "429 RATE_LIMIT",
+			Attempt:           3,
+		})
+		if rc.GetRecoveryAttempts() != 3 {
+			t.Fatalf("expected attempt 3, got %d", rc.GetRecoveryAttempts())
+		}
+
+		// Attempt 4 triggers switch because 3 retries are exhausted
+		err := rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
+			ConversationID:    "conv-e2e-1",
+			ExecutionID:       "exec-7-4",
+			StepID:            "step-4",
+			Status:            "IDLE",
+			TerminationReason: "429 RATE_LIMIT",
+			Attempt:           4,
+		})
+		if err != ErrMaxRetriesExceeded {
+			t.Fatalf("expected ErrMaxRetriesExceeded, got %v", err)
+		}
+
+		// Wait up to 2 seconds for asynchronous switch to finish
+		deadline := time.Now().Add(2 * time.Second)
+		switched := false
+		for time.Now().Before(deadline) {
+			if harness.GetActiveEmail() == "cand1@example.com" {
+				switched = true
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if !switched {
+			t.Fatalf("expected account to switch to cand1@example.com after 3 recovery failures, current: %s", harness.GetActiveEmail())
+		}
+	})
 }
 
 
