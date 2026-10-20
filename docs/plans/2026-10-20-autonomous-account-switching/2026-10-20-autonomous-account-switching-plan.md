@@ -26,8 +26,6 @@ Bản R1 sửa các điểm nối còn thiếu trong kế hoạch; không mở �
 - Record benchmarkable counts or measurements when they are taken.
 - Update later phase status assumptions, next actions, and work steps when actual-status evidence changes the repo state.
 - After completing a phase or implementation slice and refreshing `actual-status.md`, update the next affected phase's work steps as needed to match the latest repo reality, while preserving that phase's original goal, scope, acceptance criteria, and major phase order.
-- Anvien only helps localize candidate boundaries; relationships and blast radius must be cross-checked against imports, call paths, and actual code before deciding scope.
-- Nếu Anvien có index đúng repo thì dùng hỗ trợ impact/detect-changes. Baseline không có index cho repo này; dùng diff, imports và call paths, ghi rõ thay thế, không dùng graph repo khác.
 - Với thay đổi GUI, build và chạy cửa sổ Fyne native để kiểm tra binding thực. Headless component test chỉ là kiểm tra bổ sung. Docker và browser Playwright không áp dụng cho Fyne.
 - Các lệnh build/test trong kế hoạch chỉ thực hiện khi triển khai các slice code. Sửa tài liệu R1 chỉ kiểm tra nội dung, links và diff, không chạy build/test sản phẩm.
 - Keep the standard planner structure. These detail rules only make phase checklist items concrete enough to implement safely.

@@ -19,7 +19,7 @@ Ghi đúng phần có sẵn để tái dùng và phần cần nối cho automati
 - Trước slice kế tiếp, đối chiếu source hiện tại; không tạo lại chức năng đã được lane khác triển khai.
 - Phần preserve-only được giữ nguyên; ngoại lệ hẹp phải nằm trong touch map của plan.
 - Evidence chứa nguồn/command/kết quả; bảng này chứa phân loại và hành động tiếp theo. Không ghi trước PASS.
-- Relationship counts bên dưới là số đường dẫn trực tiếp được liệt kê trong bảng, không phải số đo graph hoặc toàn bộ blast radius. Không có Anvien index cho repo ở lần review; đã dùng source/import/call-site inspection.
+- Relationship counts bên dưới là số đường dẫn trực tiếp được liệt kê trong bảng, không phải số đo graph hoặc toàn bộ blast radius.
 
 ## Scope
 
