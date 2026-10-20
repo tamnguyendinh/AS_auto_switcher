@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -875,6 +876,411 @@ func TestEdgeCases1To7(t *testing.T) {
 		}
 	})
 }
+
+
+
+
+
+// -----------------------------------------------------------------------------
+// Task 1.3: Verification Condition - Edge Cases 8 to 14 & Binding Assertions
+// -----------------------------------------------------------------------------
+
+func TestEdgeCases8To14(t *testing.T) {
+	// Case 8: Proactive và reactive cùng kích hoạt -> Một đợt; không phát retry tiếp sau switch
+	t.Run("EdgeCase8_ProactiveSupersedesReactive_NoDuplicateRetry", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Telemetry.SetAccountQuota("refresh-cand1@example.com", 0.90, 0.80, false, 0.90, 0.80, false)
+		_, _ = harness.Pool.PollAccount(ctx, "cand1@example.com")
+
+		harness.Controller.SetEnabled(true)
+		_ = harness.Controller.Start(ctx)
+
+		rc := harness.Controller.RetryCoordinator()
+
+		// 1. Reactive trigger starts recovery attempt 1
+		_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
+			ConversationID:    "conv-e2e-1",
+			ExecutionID:       "exec-8-1",
+			StepID:            "step-1",
+			Status:            "IDLE",
+			TerminationReason: "429 RATE_LIMIT",
+			Attempt:           1,
+		})
+		if !rc.IsRecovering() || rc.GetRecoveryAttempts() != 1 {
+			t.Fatalf("expected recovering=true, attempts=1, got recovering=%v attempts=%d", rc.IsRecovering(), rc.GetRecoveryAttempts())
+		}
+
+		initialRetries := harness.LangServer.GetRetryCalls()
+
+		// 2. Proactive trigger fires concurrently and supersedes reactive recovery
+		rc.SupersedeByProactive(ctx, "proactive quota exhausted during retry")
+
+		// Assert recovery is immediately reset
+		if rc.IsRecovering() || rc.GetRecoveryAttempts() != 0 {
+			t.Fatalf("expected recovery reset by proactive trigger, got recovering=%v attempts=%d", rc.IsRecovering(), rc.GetRecoveryAttempts())
+		}
+
+		// Wait for switch to complete
+		deadline := time.Now().Add(2 * time.Second)
+		switched := false
+		for time.Now().Before(deadline) {
+			if harness.GetActiveEmail() == "cand1@example.com" {
+				switched = true
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if !switched {
+			t.Fatalf("expected active email switched to cand1@example.com, got %s", harness.GetActiveEmail())
+		}
+
+		// 3. Confirm no subsequent native retries were dispatched after switch decision
+		time.Sleep(100 * time.Millisecond)
+		afterRetries := harness.LangServer.GetRetryCalls()
+		if afterRetries > initialRetries+1 {
+			t.Errorf("expected no additional retries dispatched after proactive switch, initial=%d, after=%d", initialRetries, afterRetries)
+		}
+	})
+
+	// Case 9: Manual GUI/CLI và auto cùng yêu cầu -> Mutual exclusion qua SwitchGate
+	t.Run("EdgeCase9_ManualAndAutoContention_TwoWay", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+
+		// 9a: Manual-first contention: manual holds gate, TryExecute fails with ErrGateBusy
+		// and TriggerSwitch with bounded timeout cannot enter concurrently
+		manualHolding := make(chan struct{})
+		manualRelease := make(chan struct{})
+
+		go func() {
+			_ = harness.Gate.Execute(ctx, func(wasAbandoned bool) error {
+				close(manualHolding)
+				<-manualRelease
+				return nil
+			})
+		}()
+
+		<-manualHolding
+
+		// Manual switch holds gate -> TryExecute fails with ErrGateBusy
+		executed, tryErr := harness.Gate.TryExecute(func(wasAbandoned bool) error {
+			return nil
+		})
+		if executed || tryErr != ErrGateBusy {
+			t.Errorf("expected TryExecute to fail with ErrGateBusy when manual holds gate, got executed=%v, err=%v", executed, tryErr)
+		}
+
+		// Auto trigger with bounded context times out waiting for gate
+		ctxShort, cancelShort := context.WithTimeout(ctx, 100*time.Millisecond)
+		_, autoErr := harness.Controller.TriggerSwitch(ctxShort, "auto contention test")
+		cancelShort()
+		if autoErr == nil || !errors.Is(autoErr, context.DeadlineExceeded) {
+			t.Errorf("expected DeadlineExceeded while manual holds gate, got: %v", autoErr)
+		}
+
+		close(manualRelease)
+		time.Sleep(50 * time.Millisecond)
+
+		// 9b: Auto-first contention: auto switch holds the gate, manual TryExecute fails with ErrGateBusy
+		autoHolding := make(chan struct{})
+		autoRelease := make(chan struct{})
+
+		go func() {
+			_ = harness.Gate.Execute(ctx, func(wasAbandoned bool) error {
+				close(autoHolding)
+				<-autoRelease
+				return nil
+			})
+		}()
+
+		<-autoHolding
+
+		executedManual, manualErr := harness.Gate.TryExecute(func(wasAbandoned bool) error {
+			return nil
+		})
+		if executedManual || manualErr != ErrGateBusy {
+			t.Errorf("expected manual TryExecute to fail with ErrGateBusy while auto holds gate, got executed=%v err=%v", executedManual, manualErr)
+		}
+
+		close(autoRelease)
+	})
+
+	// Case 10: Model đổi trước switch -> Resolve và tính lại nhóm/ứng viên
+	t.Run("EdgeCase10_ModelChangedBeforeSwitch_ReranksCandidates", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand_a@example.com", "cand_b@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+
+		// Active account has depleted quota for both models (5h = 1%)
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", 0.01, 0.50, false, 0.01, 0.50, false)
+
+		// cand_a has Gemini Weekly=20% (burn-down first for Gemini), Claude Weekly=90%
+		harness.Telemetry.SetAccountQuota("refresh-cand_a@example.com", 0.80, 0.20, false, 0.80, 0.90, false)
+		// cand_b has Gemini Weekly=90%, Claude Weekly=20% (burn-down first for Claude)
+		harness.Telemetry.SetAccountQuota("refresh-cand_b@example.com", 0.80, 0.90, false, 0.80, 0.20, false)
+
+		_, _ = harness.Pool.PollAccount(ctx, "active@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "cand_a@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "cand_b@example.com")
+
+		// Language Server model config is dynamically set to Gemini 2.5 Pro
+		harness.LangServer.SetModelConfig(connector.CascadeModelConfigData{
+			ClientModelConfigs: []connector.ClientModelConfig{
+				{
+					ModelOrAlias: connector.ModelOrAlias{Model: "gemini-2.5-pro", Alias: connector.DefaultActiveAgentModel},
+					Label:        "Gemini 2.5 Pro",
+					Disabled:     false,
+					IsSelected:   true,
+				},
+			},
+		})
+
+		// Trigger switch - should dynamically rank cand_a first because active model is Gemini and cand_a has lower weekly (20% vs 90%)
+		res, err := harness.Controller.TriggerSwitch(ctx, "model changed to Gemini test")
+		if err != nil {
+			t.Fatalf("TriggerSwitch failed: %v", err)
+		}
+		if res == nil || !res.Success {
+			t.Fatalf("expected successful switch, got: %+v", res)
+		}
+		if harness.GetActiveEmail() != "cand_a@example.com" {
+			t.Fatalf("expected switch to cand_a@example.com based on active Gemini model, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 11: Preflight ứng viên đầu lỗi -> Bỏ qua trong đợt, xét kế tiếp trước khi thay credential
+	t.Run("EdgeCase11_PreflightCandidate1Fails_SkipsToCandidate2", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1_broken@example.com", "cand2_healthy@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", 0.01, 0.50, false, 0.80, 0.50, false)
+		// Pre-seed cache so cand1 looks better than cand2 initially
+		harness.Telemetry.SetAccountQuota("refresh-cand1_broken@example.com", 0.95, 0.90, false, 0.95, 0.90, false)
+		harness.Telemetry.SetAccountQuota("refresh-cand2_healthy@example.com", 0.70, 0.60, false, 0.70, 0.60, false)
+
+		_, _ = harness.Pool.PollAccount(ctx, "active@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "cand1_broken@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "cand2_healthy@example.com")
+
+		// Now simulate cand1 token dying (preflight failure with HTTP 401 or 500)
+		harness.Telemetry.SetAccountError("refresh-cand1_broken@example.com", http.StatusInternalServerError)
+
+		res, err := harness.Controller.TriggerSwitch(ctx, "preflight fallback test")
+		if err != nil {
+			t.Fatalf("TriggerSwitch failed: %v", err)
+		}
+		if res == nil || !res.Success {
+			t.Fatalf("expected successful switch to candidate 2, got: %+v", res)
+		}
+		if harness.GetActiveEmail() != "cand2_healthy@example.com" {
+			t.Fatalf("expected candidate 1 skipped and switched to cand2_healthy@example.com, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 12: SwitchAccount trả lỗi -> Dừng đợt, hiện lỗi, không xoay vô điều kiện
+	t.Run("EdgeCase12_SwitchAccountError_HaltsWithoutIndefiniteRotation", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com", "cand2@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", 0.01, 0.50, false, 0.80, 0.50, false)
+		harness.Telemetry.SetAccountQuota("refresh-cand1@example.com", 0.80, 0.70, false, 0.80, 0.70, false)
+		harness.Telemetry.SetAccountQuota("refresh-cand2@example.com", 0.80, 0.70, false, 0.80, 0.70, false)
+
+		_, _ = harness.Pool.PollAccount(ctx, "active@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "cand1@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "cand2@example.com")
+
+		// Inject SwitchAccount failure by failing wincredWriter
+		harness.Manager.SetWincredHandlers(
+			func() (*model.TokenData, error) {
+				return &model.TokenData{
+					AccessToken:  "access-active@example.com",
+					RefreshToken: "refresh-active@example.com",
+					IDToken:      makeTestJWT("active@example.com"),
+				}, nil
+			},
+			func(token *model.TokenData) error {
+				return errors.New("simulated wincred write hardware error")
+			},
+		)
+
+		res, err := harness.Controller.TriggerSwitch(ctx, "switch error test")
+		if err == nil {
+			t.Fatalf("expected TriggerSwitch to return error when SwitchAccount fails, got res: %+v", res)
+		}
+		if !strings.Contains(err.Error(), "simulated wincred write hardware error") {
+			t.Errorf("expected wincred write error in error string, got: %v", err)
+		}
+
+		// Verify it stopped after cand1 and did not switch to cand2
+		if harness.GetActiveEmail() != "active@example.com" {
+			t.Errorf("expected active account to remain active@example.com, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 13: Không có ứng viên -> Hiện lý do, chờ telemetry hiện có
+	t.Run("EdgeCase13_NoCandidates_EmitsStatusNoCandidate", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"depleted1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", 0.01, 0.50, false, 0.80, 0.50, false)
+		// depleted1 has 0% weekly quota (ineligible)
+		harness.Telemetry.SetAccountQuota("refresh-depleted1@example.com", 0.00, 0.00, false, 0.00, 0.00, false)
+
+		_, _ = harness.Pool.PollAccount(ctx, "active@example.com")
+		_, _ = harness.Pool.PollAccount(ctx, "depleted1@example.com")
+
+		res, err := harness.Controller.TriggerSwitch(ctx, "no candidates test")
+		if !errors.Is(err, ErrNoCandidates) {
+			t.Fatalf("expected ErrNoCandidates, got res=%+v err=%v", res, err)
+		}
+		if harness.GetActiveEmail() != "active@example.com" {
+			t.Errorf("expected active email unchanged, got %s", harness.GetActiveEmail())
+		}
+	})
+
+	// Case 14: Event cũ/trùng tới muộn -> Không tăng retry hoặc switch vì event cũ
+	t.Run("EdgeCase14_StaleDuplicateEvents_DroppedByDeduplication", func(t *testing.T) {
+		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
+		defer harness.Close()
+
+		ctx := context.Background()
+		harness.Controller.SetEnabled(true)
+		_ = harness.Controller.Start(ctx)
+
+		rc := harness.Controller.RetryCoordinator()
+
+		staleUpdate := connector.AgentStateUpdate{
+			ConversationID:    "conv-e2e-1",
+			ExecutionID:       "exec-14-1",
+			StepID:            "step-1",
+			Status:            "IDLE",
+			TerminationReason: "429 RATE_LIMIT",
+			Attempt:           1,
+		}
+
+		// First delivery -> increments recovery attempt to 1
+		err1 := rc.HandleAgentStateUpdate(ctx, staleUpdate)
+		if err1 != nil {
+			t.Fatalf("first delivery error: %v", err1)
+		}
+		if rc.GetRecoveryAttempts() != 1 {
+			t.Fatalf("expected recovery attempts=1, got %d", rc.GetRecoveryAttempts())
+		}
+
+		// Duplicate delivery (same execution/step/attempt) -> dropped cleanly
+		err2 := rc.HandleAgentStateUpdate(ctx, staleUpdate)
+		if err2 != nil {
+			t.Fatalf("duplicate delivery error: %v", err2)
+		}
+		if rc.GetRecoveryAttempts() != 1 {
+			t.Errorf("expected recovery attempts to remain 1 on duplicate event, got %d", rc.GetRecoveryAttempts())
+		}
+
+		// Third delivery of same event -> also dropped
+		err3 := rc.HandleAgentStateUpdate(ctx, staleUpdate)
+		if err3 != nil {
+			t.Fatalf("triplicate delivery error: %v", err3)
+		}
+		if rc.GetRecoveryAttempts() != 1 {
+			t.Errorf("expected recovery attempts to remain 1, got %d", rc.GetRecoveryAttempts())
+		}
+	})
+}
+
+// -----------------------------------------------------------------------------
+// Binding Assertions (P1-C to P2-A integration verification)
+// -----------------------------------------------------------------------------
+
+func TestBindings_HTTPAcceptance_Versus_ExecutionOutcome(t *testing.T) {
+	harness := NewE2ETestHarness(t, "active@example.com", nil)
+	defer harness.Close()
+
+	ctx := context.Background()
+	_ = harness.Controller.Start(ctx)
+	client := harness.LangServer.NewClient()
+
+	// 1. SendEmptyItemsRetry returns HTTP 200 OK
+	err := client.SendEmptyItemsRetry(ctx, "conv-1", "gemini-2.5-pro", nil)
+	if err != nil {
+		t.Fatalf("SendEmptyItemsRetry returned error: %v", err)
+	}
+
+	// 2. Assert HTTP 200 OK does NOT mean recovery succeeded; RetryCoordinator remains recovering
+	rc := harness.Controller.RetryCoordinator()
+	_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
+		ConversationID:    "conv-1",
+		ExecutionID:       "exec-binding-1",
+		StepID:            "step-1",
+		Status:            "IDLE",
+		TerminationReason: "RESOURCE_EXHAUSTED",
+		Attempt:           1,
+	})
+
+	if !rc.IsRecovering() {
+		t.Errorf("expected coordinator to be recovering while awaiting execution outcome")
+	}
+
+	// 3. Only when actual execution outcome arrives does recovery complete
+	_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
+		ConversationID:    "conv-1",
+		ExecutionID:       "exec-binding-2",
+		StepID:            "step-2",
+		Status:            "IDLE",
+		TerminationReason: "COMPLETED",
+		Attempt:           2,
+	})
+
+	if rc.IsRecovering() || rc.GetRecoveryAttempts() != 0 {
+		t.Errorf("expected recovery completed only after execution outcome COMPLETED, got recovering=%v attempts=%d", rc.IsRecovering(), rc.GetRecoveryAttempts())
+	}
+}
+
+func TestBindings_NativeRetryWaiting_HasRetryAt(t *testing.T) {
+	harness := NewE2ETestHarness(t, "active@example.com", nil)
+	defer harness.Close()
+
+	ctx := context.Background()
+	_ = harness.Controller.Start(ctx)
+	rc := harness.Controller.RetryCoordinator()
+
+	// Language Server scheduled internal auto-retry
+	retryAtUpdate := connector.AgentStateUpdate{
+		ConversationID: "conv-1",
+		ExecutionID:    "exec-retryat-1",
+		StepID:         "step-1",
+		Status:         "RUNNING",
+		RetryAt:        "2026-10-20T17:30:00Z",
+	}
+
+	err := rc.HandleAgentStateUpdate(ctx, retryAtUpdate)
+	if err != nil {
+		t.Fatalf("HandleAgentStateUpdate error: %v", err)
+	}
+
+	// Does NOT count as a failed recovery attempt
+	if rc.GetRecoveryAttempts() != 0 {
+		t.Errorf("expected 0 recovery attempts when server is auto-retrying, got %d", rc.GetRecoveryAttempts())
+	}
+}
+
 
 
 

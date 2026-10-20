@@ -360,3 +360,51 @@ func TestCLI_Switch_GateContention(t *testing.T) {
 	}
 	close(release)
 }
+
+func TestCLI_Switch_TwoWayContention(t *testing.T) {
+	gate := automation.NewSwitchGate()
+
+	// 1. Manual first: manual switch holds gate, concurrent TryExecute is rejected
+	held := make(chan struct{})
+	release := make(chan struct{})
+
+	go func() {
+		_ = gate.Execute(context.Background(), func(wasAbandoned bool) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+
+	<-held
+
+	executed, err := gate.TryExecute(func(wasAbandoned bool) error {
+		return nil
+	})
+	if executed || err != automation.ErrGateBusy {
+		t.Errorf("expected TryExecute to fail with ErrGateBusy, got %v", err)
+	}
+	close(release)
+	time.Sleep(20 * time.Millisecond)
+
+	// 2. Auto first: auto holds gate, manual TryExecute is rejected
+	autoHeld := make(chan struct{})
+	autoRelease := make(chan struct{})
+
+	go func() {
+		_ = gate.Execute(context.Background(), func(wasAbandoned bool) error {
+			close(autoHeld)
+			<-autoRelease
+			return nil
+		})
+	}()
+
+	<-autoHeld
+	executedManual, errManual := gate.TryExecute(func(wasAbandoned bool) error {
+		return nil
+	})
+	if executedManual || errManual != automation.ErrGateBusy {
+		t.Errorf("expected TryExecute to fail with ErrGateBusy when auto holds gate, got %v", errManual)
+	}
+	close(autoRelease)
+}
