@@ -89,11 +89,15 @@ func TestUIBinding_TelemetryCallback_DualDispatchWithoutOverwrite(t *testing.T) 
 	}
 
 	_ = results
+	app.mu.RLock()
+	prevRefresh := app.lastQuotaRefresh
+	app.mu.RUnlock()
+
 	app.autoLoop.TriggerNow()
-	end := time.Now().Add(time.Second)
+	end := time.Now().Add(5 * time.Second)
 	for time.Now().Before(end) {
 		app.mu.RLock()
-		done := !app.lastQuotaRefresh.IsZero()
+		done := !app.lastQuotaRefresh.IsZero() && !app.lastQuotaRefresh.Equal(prevRefresh)
 		app.mu.RUnlock()
 		if done {
 			break
@@ -105,7 +109,7 @@ func TestUIBinding_TelemetryCallback_DualDispatchWithoutOverwrite(t *testing.T) 
 	app.mu.RLock()
 	lastRefresh := app.lastQuotaRefresh
 	app.mu.RUnlock()
-	if lastRefresh.IsZero() {
+	if lastRefresh.IsZero() || lastRefresh.Equal(prevRefresh) {
 		t.Fatal("telemetry callback did not refresh UI")
 	}
 }
