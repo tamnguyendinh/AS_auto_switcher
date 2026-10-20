@@ -131,11 +131,22 @@ Bước 5: Kết quả = string(runes[0]) + "***" + domain.
    - Nếu TẮT: "🔓 Đã hiển thị đầy đủ tài khoản"
 ```
 
-### 3.3 Hành Vi Tooltip Hover Khi Rê Chuột
-- `emailLabelWithTooltip` lưu trữ thuộc tính `fullText: string` cố định luôn là **email thật**.
-- Khi `mask_accounts = true`, nhãn hiển thị thông qua `SetText` là `t***@gmail.com`.
-- Khi người dùng rê chuột vào (`MouseIn`), popup tooltip bung ra đọc từ `fullText` $\rightarrow$ **hiển thị đầy đủ email thật**.
-- Khi rời chuột (`MouseOut`), popup lập tức biến mất.
+### 3.3 Tận Dụng 100% Widget Tooltip Sẵn Có (Zero-Code Tooltip Reuse)
+> [!IMPORTANT]
+> **TẬN DỤNG NGUYÊN VẸN MÃ NGUỒN CÓ SẴN (DO NOT REINVENT THE WHEEL):**
+> Trong codebase (`internal/ui/widgets.go`, lines 153–202), widget `emailLabelWithTooltip` **ĐÃ TỒN TẠI VÀ HOẠT ĐỘNG HOÀN HẢO**. Coder **TUYỆT ĐỐI KHÔNG VIẾT MỚI HAY SỬA ĐỔI BẤT KỲ CODE SỰ KIỆN HOVER/POPUP NÀO!**
+
+- **Cơ chế hoạt động có sẵn:**
+  - `emailLabelWithTooltip` kế thừa `widget.Label` và lưu trữ trường `fullText string` (chính là địa chỉ email thật nguyên bản khi khởi tạo).
+  - Khi chế độ ẩn được kích hoạt: gọi `emailLabel.SetText(MaskEmail(email))`. Hàm `SetText` của Fyne **CHỈ THAY ĐỔI** nội dung hiển thị `l.Text` trên màn hình, **HOÀN TOÀN KHÔNG CHẠM VÀO** trường `l.fullText`.
+  - Khi người dùng rê chuột vào (`MouseIn`), phương thức có sẵn của `emailLabelWithTooltip` tự động tạo popup đọc từ `l.fullText`:
+    ```go
+    tip := widget.NewLabel(l.fullText)
+    l.popup = widget.NewPopUp(tip, c)
+    ```
+    Do đó, tooltip tự động bung ra hiển thị **email thật nguyên bản** mà không cần can thiệp một dòng code nào!
+  - Khi rời chuột (`MouseOut`), popup tự động đóng lại.
+- **Kết luận:** Tính năng hover xem email thật hoạt động "miễn phí" 100% nhờ kiến trúc sẵn có của widget!
 
 ### 3.4 Bảo Vệ Thanh Trạng Thái (Status Bar Protection)
 - Trong các luồng `SwitchAccount()`, `handleAutomationStatus()`, khi hiển thị thông báo chuyển đổi:
@@ -207,7 +218,13 @@ func (w *AccountCardWidget) SetMasked(masked bool) {
 	}
 }
 ```
-*(Lưu ý: Giữ nguyên 100% signature của `NewAccountCardWidgetWithQuota` và `NewAccountCardWithQuota`).*
+
+> [!NOTE]
+> **TẬN DỤNG WIDGET TOOLTIP CÓ SẴN (ZERO NEW HOVER CODE):**
+> - `w.emailLabel` vốn dĩ đã là kiểu `*emailLabelWithTooltip` (định nghĩa tại lines 153–202 của `internal/ui/widgets.go`).
+> - Khi `w.emailLabel.SetText(...)` được gọi, Fyne chỉ cập nhật chuỗi hiển thị `Text` trên giao diện, trong khi `emailLabel.fullText` vẫn giữ nguyên email đầy đủ.
+> - Khi rê chuột, `MouseIn` đọc từ `fullText` nên tự động bung tooltip email thật. Coder **tuyệt đối không viết thêm code hover/tooltip nào nữa**!
+> - *(Lưu ý thêm: Giữ nguyên 100% signature của `NewAccountCardWidgetWithQuota` và `NewAccountCardWithQuota` để tránh gãy unit test).*
 
 ### 5.3 Cập nhật `internal/ui/window.go`
 #### A. Chuẩn hóa `CapsuleToggle`
