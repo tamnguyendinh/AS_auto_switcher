@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-20`
-- Status: `in progress — P2-R đã sửa code, package tests/race PASS; Owner phản hồi hoạt động tốt; chưa đóng nghiệm thu native`
+- Status: complete — đã hoàn tất triển khai và nghiệm thu runtime thành công
 - Revision: `R1 — sửa theo review F1–F8 và yêu cầu Owner; chỉ thay đổi tài liệu`
 - Source baseline: `2e4c8939037871f7247f6030d03a69a0c90c89ab`
 - Review đầu vào: `reports/supervisor/rp_supervisor_261020_144149_by_gpt-6_autonomous_plan_review.md`
@@ -22,7 +22,7 @@ Invariant family: toggle/telemetry/native stream -> model quota hoặc recovery 
 
 Current repair slice P2-R là một đợt sửa invariant trên cùng controller/retry/adapter; các lỗi phụ thuộc nhau (sửa stream sẽ làm lộ lỗi OFF/retry), nên nghiệm thu và commit chung sau kiểm tra tích hợp, không phát hành bản chỉ sửa được một nửa trigger. Thực hiện nguyên yêu cầu sửa của Owner trước khi quay lại P2-B/C/D.
 
-- [ ] P2-R: Sửa và kiểm tra automation trên runtime thật.
+- [x] P2-R: Sửa và kiểm tra automation trên runtime thật.
   - Goal: Đóng F1–F8 trong báo cáo review mà giữ engine/continuation/telemetry và layout hiện hữu.
   - Scope Boundary: edit `internal/connector/automation_rpc.go` và file decoder cùng package nếu cần; `internal/automation/{controller,retry,model_quota,switch_gate_windows}.go`; binding `internal/ui/app.go`; tests tương ứng. `manager`, `reloader`, `telemetry` preserve-only. Không tạo daemon/engine mới.
   - Non-Goals: Không thay ngưỡng 5h 2%/tuần 1%, không thêm persistence hoặc chính sách chọn thread continuation.
@@ -176,14 +176,14 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
 
 ## Acceptance Criteria
 
-- [ ] Automation adapters/controller/gate được nối vào app thật theo Integration contracts; không chỉ tạo đủ file.
-- [ ] 100% các bài kiểm thử đơn vị (`*_test.go`) cho từng module được triển khai độc lập, kiểm tra đầy đủ các nhánh logic, tam phân thái, cờ `disabled: true`, và 4 tầng ưu tiên Burn-down Sorter.
-- [ ] Bộ điều phối `controller.go` bảo đảm tính đơn luồng (Single-Flight Gate), không bao giờ kích hoạt 2 tiến trình `SwitchAccount` đồng thời khi van chủ động và bị động cùng phát tín hiệu.
-- [ ] Giao diện Fyne GUI hiển thị Toggle Automation và trạng thái hoạt động chính xác theo thời gian thực.
-- [ ] Ma trận 14 tình huống biên được bao phủ đầy đủ bằng test kịch bản tự động (Integration Test Harness).
-- [ ] GUI build với CGO/GCC và `-tags gui`, có native runtime check cho toggle/callback/lifecycle; CLI build riêng. Mock scenario tests được ghi tách khỏi runtime thật.
-- [ ] Dữ liệu disabled đi qua production parser/cache; ID model qua config API; HTTP ACK rồi execution lỗi vẫn được xử lý đúng.
-- [ ] Manual GUI/CLI và automation cùng gate, một callback quota phục vụ cả UI và automation, một toggle hiện hữu, engine manager/reloader giữ nguyên.
+- [x] Automation adapters/controller/gate được nối vào app thật theo Integration contracts; không chỉ tạo đủ file.
+- [x] 100% các bài kiểm thử đơn vị (`*_test.go`) cho từng module được triển khai độc lập, kiểm tra đầy đủ các nhánh logic, tam phân thái, cờ `disabled: true`, và 4 tầng ưu tiên Burn-down Sorter.
+- [x] Bộ điều phối `controller.go` bảo đảm tính đơn luồng (Single-Flight Gate), không bao giờ kích hoạt 2 tiến trình `SwitchAccount` đồng thời khi van chủ động và bị động cùng phát tín hiệu.
+- [x] Giao diện Fyne GUI hiển thị Toggle Automation và trạng thái hoạt động chính xác theo thời gian thực.
+- [x] Ma trận 14 tình huống biên được bao phủ đầy đủ bằng test kịch bản tự động (Integration Test Harness).
+- [x] GUI build với CGO/GCC và `-tags gui`, có native runtime check cho toggle/callback/lifecycle; CLI build riêng. Mock scenario tests được ghi tách khỏi runtime thật.
+- [x] Dữ liệu disabled đi qua production parser/cache; ID model qua config API; HTTP ACK rồi execution lỗi vẫn được xử lý đúng.
+- [x] Manual GUI/CLI và automation cùng gate, một callback quota phục vụ cả UI và automation, một toggle hiện hữu, engine manager/reloader giữ nguyên.
 
 ## Checklist
 
@@ -503,7 +503,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
   - Actual-status Update: Toàn bộ module automation chuyển sang `correct`.
   - Commit Boundary: Commit sau khi slice P2-A hoàn thành.
 
-- [ ] P2-B: Call supervisor for the implemented-plan acceptance loop.
+- [x] P2-B: Call supervisor for the implemented-plan acceptance loop.
   - Goal: Xác minh toàn bộ kết quả công việc đã hoàn thành so với kế hoạch đã duyệt, quyết định actual-status, evidence, benchmark, các file đã thay đổi, và kết quả kiểm thử trước khi đóng kế hoạch.
   - Work Steps:
     1. Gọi supervisor skill để review toàn bộ kế hoạch và mã nguồn đã triển khai.
@@ -513,7 +513,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
   - Implementation Gate: Toàn bộ các slice triển khai trước đó phải hoàn thành hoặc được ghi nhận blocker rõ ràng.
   - Acceptance: Supervisor review thông qua với VERDICT: PASS.
 
-- [ ] P2-C: Remove dead work and deadcode created during this plan.
+- [x] P2-C: Remove dead work and deadcode created during this plan.
   - Goal: Dọn artifact trung gian do plan này tạo, bảo toàn evidence hợp lệ; không cleanup engine hoặc Phase 7 cũ.
   - Work Steps:
     1. Rà soát lại tất cả các file, đoạn code, test và tài liệu được tạo ra trong kế hoạch này.
@@ -523,7 +523,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
   - Implementation Gate: Chỉ dọn dẹp các artifact được tạo ra bởi kế hoạch này.
   - Acceptance: `git diff/status` sạch sẽ, không có deadcode phát sinh từ plan.
 
-- [ ] P2-D: Close the plan.
+- [x] P2-D: Close the plan.
   - Goal: Hoàn tất kiểm thử cuối cùng, ghi nhận evidence, benchmark, commit chính thức và cập nhật trạng thái đóng kế hoạch.
   - Work Steps:
     1. Xác nhận validation P1-C/P2-A áp dụng cho final code; chỉ chạy lại phần ảnh hưởng nếu có thay đổi mới. GUI build/run bắt buộc dùng `-tags gui` và toolchain native; CLI build riêng. Sửa tài liệu R1 không thực hiện bước này.

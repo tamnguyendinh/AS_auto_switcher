@@ -11,5 +11,5 @@ bin/
 *.syso
 .tmp/
 .playwright-mcp/
-
+docs/
 reports/
