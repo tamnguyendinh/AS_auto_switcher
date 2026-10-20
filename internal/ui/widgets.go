@@ -2,6 +2,8 @@ package ui
 
 import (
 	"image/color"
+	"regexp"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -150,6 +152,33 @@ func lightenColor(c color.NRGBA, delta int) color.NRGBA {
 	}
 }
 
+// MaskEmail transforms an email like "user@domain.com" into "u***@domain.com".
+// If email format is invalid or has no @, original string is returned unchanged.
+func MaskEmail(email string) string {
+	trimmed := strings.TrimSpace(email)
+	atIdx := strings.Index(trimmed, "@")
+	if atIdx <= 0 {
+		return trimmed
+	}
+	username := trimmed[:atIdx]
+	domain := trimmed[atIdx:]
+	runes := []rune(username)
+	if len(runes) == 0 {
+		return trimmed
+	}
+	return string(runes[0]) + "***" + domain
+}
+
+var emailPattern = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+
+// maskMessageEmails scans a string for email addresses and replaces them with their masked forms.
+func maskMessageEmails(msg string) string {
+	if !strings.Contains(msg, "@") {
+		return msg
+	}
+	return emailPattern.ReplaceAllStringFunc(msg, MaskEmail)
+}
+
 // emailLabelWithTooltip implements an ellipsis-truncated email label with desktop hover tooltip.
 type emailLabelWithTooltip struct {
 	widget.Label
@@ -235,6 +264,34 @@ func (w *AccountCardWidget) CanvasObject() fyne.CanvasObject {
 		return nil
 	}
 	return w.Root
+}
+
+// SetMasked toggles the email label between masked and full text in-place.
+func (w *AccountCardWidget) SetMasked(masked bool) {
+	if w == nil || w.emailLabel == nil {
+		return
+	}
+	if masked {
+		w.emailLabel.SetText(MaskEmail(w.Email))
+	} else {
+		w.emailLabel.SetText(w.Email)
+	}
+}
+
+// EmailLabelText returns the currently displayed text of the email label.
+func (w *AccountCardWidget) EmailLabelText() string {
+	if w == nil || w.emailLabel == nil {
+		return ""
+	}
+	return w.emailLabel.Text
+}
+
+// EmailFullText returns the underlying full email preserved for hover tooltip.
+func (w *AccountCardWidget) EmailFullText() string {
+	if w == nil || w.emailLabel == nil {
+		return ""
+	}
+	return w.emailLabel.fullText
 }
 
 // UpdateQuota performs in-place reactive updates of Quota percentage labels and progress bars

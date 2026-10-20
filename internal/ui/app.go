@@ -380,9 +380,14 @@ func (a *App) handleAutomationStatus(evt automation.StatusEvent) {
 		return
 	}
 
+	msg := evt.Message
+	if a.IsMaskAccounts() {
+		msg = maskMessageEmails(msg)
+	}
+
 	switch evt.Code {
 	case automation.StatusSwitched:
-		a.showStatusBar(fmt.Sprintf("⚡ %s", evt.Message))
+		a.showStatusBar(fmt.Sprintf("⚡ %s", msg))
 		a.autoHideStatusBar(4 * time.Second)
 		// Cập nhật overview sau auto switch
 		go func() {
@@ -399,28 +404,28 @@ func (a *App) handleAutomationStatus(evt automation.StatusEvent) {
 		}()
 
 	case automation.StatusSwitching:
-		a.showStatusBar(fmt.Sprintf("⏳ %s", evt.Message))
+		a.showStatusBar(fmt.Sprintf("⏳ %s", msg))
 
 	case automation.StatusRetrying:
-		a.showStatusBar(fmt.Sprintf("🔄 %s", evt.Message))
+		a.showStatusBar(fmt.Sprintf("🔄 %s", msg))
 
 	case automation.StatusEvaluating:
-		a.showStatusBar(fmt.Sprintf("🔍 %s", evt.Message))
+		a.showStatusBar(fmt.Sprintf("🔍 %s", msg))
 
 	case automation.StatusNoCandidate:
-		a.showStatusBar(fmt.Sprintf("⚠️ %s", evt.Message))
+		a.showStatusBar(fmt.Sprintf("⚠️ %s", msg))
 		a.autoHideStatusBar(4 * time.Second)
 
 	case automation.StatusError:
-		a.showStatusBar(fmt.Sprintf("❌ %s", evt.Message))
+		a.showStatusBar(fmt.Sprintf("❌ %s", msg))
 		a.autoHideStatusBar(5 * time.Second)
 
 	case automation.StatusIdle:
-		a.showStatusBar(evt.Message)
+		a.showStatusBar(msg)
 		a.autoHideStatusBar(3 * time.Second)
 
 	default:
-		a.showStatusBar(evt.Message)
+		a.showStatusBar(msg)
 		a.autoHideStatusBar(3 * time.Second)
 	}
 }
@@ -600,6 +605,9 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 						a.SaveSession,
 						a.RefreshSingleAccountQuota,
 					)
+					if a.maskAccounts {
+						cardWidget.SetMasked(true)
+					}
 					if targetIdx < len(a.accountCards) {
 						a.accountCards[targetIdx] = cardWidget
 					}
@@ -677,8 +685,13 @@ func (a *App) SwitchAccount(targetEmail string) {
 	mgr := a.mgr
 	a.mu.Unlock()
 
+	displayEmail := targetEmail
+	if a.IsMaskAccounts() {
+		displayEmail = MaskEmail(targetEmail)
+	}
+
 	fyne.Do(func() {
-		a.showStatusBar(fmt.Sprintf("⏳ Đang chuyển sang %s...", targetEmail))
+		a.showStatusBar(fmt.Sprintf("⏳ Đang chuyển sang %s...", displayEmail))
 	})
 
 	go func() {
@@ -727,9 +740,17 @@ func (a *App) SwitchAccount(targetEmail string) {
 
 		fyne.Do(func() {
 			a.updateUI(overview)
-			msg := fmt.Sprintf("✅ Đã chuyển sang %s", targetEmail)
+			successEmail := targetEmail
+			if a.IsMaskAccounts() {
+				successEmail = MaskEmail(targetEmail)
+			}
+			msg := fmt.Sprintf("✅ Đã chuyển sang %s", successEmail)
 			if res != nil && res.Message != "" {
-				msg = fmt.Sprintf("✅ %s", res.Message)
+				if a.IsMaskAccounts() {
+					msg = fmt.Sprintf("✅ %s", maskMessageEmails(res.Message))
+				} else {
+					msg = fmt.Sprintf("✅ %s", res.Message)
+				}
 			}
 			a.showStatusBar(msg)
 			a.autoHideStatusBar(3 * time.Second)
@@ -873,7 +894,7 @@ func (a *App) IsMaskAccounts() bool {
 	return a.maskAccounts
 }
 
-// SetMaskAccounts updates the privacy masking state and persists it.
+// SetMaskAccounts updates the privacy masking state and updates all cards in-place.
 func (a *App) SetMaskAccounts(mask bool) {
 	a.mu.Lock()
 	if a.maskAccounts == mask {
@@ -894,6 +915,17 @@ func (a *App) SetMaskAccounts(mask bool) {
 		toggle.SetOn(mask)
 	}
 
+	// Update cards in-place (Zero layout jank)
+	a.mu.RLock()
+	cards := append([]*AccountCardWidget(nil), a.accountCards...)
+	a.mu.RUnlock()
+	for _, card := range cards {
+		if card != nil {
+			card.SetMasked(mask)
+		}
+	}
+
+	// Non-blocking disk persistence
 	go func() {
 		pref, err := LoadUIPreferences(path)
 		if err != nil || pref == nil {
@@ -902,6 +934,14 @@ func (a *App) SetMaskAccounts(mask bool) {
 		pref.MaskAccounts = mask
 		_ = SaveUIPreferences(path, pref)
 	}()
+
+	// Status bar transient feedback
+	if mask {
+		a.showStatusBar("🔒 Đã ẩn thông tin tài khoản")
+	} else {
+		a.showStatusBar("🔓 Đã hiển thị đầy đủ tài khoản")
+	}
+	a.autoHideStatusBar(2 * time.Second)
 }
 
 // ToggleMaskAccounts flips the account privacy masking state.
@@ -964,6 +1004,9 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 						quotaData, _ = a.quotaCache.Get(acc.Email)
 					}
 					cardWidget := NewAccountCardWidgetWithQuota(acc, quotaData, palette, a.SwitchAccount, a.SaveSession, a.RefreshSingleAccountQuota)
+					if a.maskAccounts {
+						cardWidget.SetMasked(true)
+					}
 					a.accountCards = append(a.accountCards, cardWidget)
 					a.accountListContainer.Add(cardWidget.Root)
 				}

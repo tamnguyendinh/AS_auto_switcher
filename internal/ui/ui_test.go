@@ -4021,14 +4021,262 @@ func TestArchitectSpec_MaskAccounts_Persistence(t *testing.T) {
 
 	// Change to false and verify persistence
 	app.SetMaskAccounts(false)
-	time.Sleep(100 * time.Millisecond)
+	var loaded *UIPreferences
+	for i := 0; i < 20; i++ {
+		time.Sleep(50 * time.Millisecond)
+		loaded, _ = LoadUIPreferences(prefFile)
+		if loaded != nil && loaded.MaskAccounts == false {
+			break
+		}
+	}
+	if loaded == nil || loaded.MaskAccounts != false {
+		t.Errorf("expected persisted MaskAccounts == false, got %v", loaded)
+	}
+}
 
-	loaded, err := LoadUIPreferences(prefFile)
+func TestMaskEmail_AlgorithmConformance(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+		desc     string
+	}{
+		{"tamnguyen@gmail.com", "t***@gmail.com", "Standard gmail"},
+		{"developer.ai@antigravity.io", "d***@antigravity.io", "Dotted username and io domain"},
+		{"a@gmail.com", "a***@gmail.com", "Single character username"},
+		{"admin+tag@sub.domain.com", "a***@sub.domain.com", "Plus tag and multi-level domain"},
+		{"invalid-email-string", "invalid-email-string", "Invalid format without @"},
+		{"", "", "Empty string"},
+		{"@domain.com", "@domain.com", "No username before @"},
+		{"  tamnguyen@gmail.com  ", "t***@gmail.com", "Whitespace trimmed"},
+		{"đặng@example.com", "đ***@example.com", "UTF-8 rune safe"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.desc, func(t *testing.T) {
+			actual := MaskEmail(tc.input)
+			if actual != tc.expected {
+				t.Errorf("MaskEmail(%q) = %q; expected %q", tc.input, actual, tc.expected)
+			}
+		})
+	}
+}
+
+func TestArchitectSpec_MaskAccountsToggle_Behavior(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	app.SetPreferencesPath(filepath.Join(t.TempDir(), "prefs.json"))
+	defer app.Close()
+	app.Init()
+
+	overview := &manager.AccountOverview{
+		ActiveEmail: "tamnguyen@gmail.com",
+		Accounts: []manager.AccountDisplayItem{
+			{
+				Email:    "tamnguyen@gmail.com",
+				IsActive: true,
+				State:    model.StateReady,
+			},
+			{
+				Email:    "developer.ai@antigravity.io",
+				IsActive: false,
+				State:    model.StateReady,
+			},
+		},
+	}
+	app.updateUI(overview)
+
+	cards := app.AccountCards()
+	if len(cards) != 2 {
+		t.Fatalf("expected 2 account cards, got %d", len(cards))
+	}
+	card0 := cards[0]
+	card1 := cards[1]
+
+	// 1. Initial State: maskAccounts = false
+	if app.IsMaskAccounts() {
+		t.Fatal("expected IsMaskAccounts() initially false")
+	}
+	if card0.EmailLabelText() != "tamnguyen@gmail.com" {
+		t.Errorf("expected card0 text 'tamnguyen@gmail.com', got %q", card0.EmailLabelText())
+	}
+	if card0.EmailFullText() != "tamnguyen@gmail.com" {
+		t.Errorf("expected card0 fullText 'tamnguyen@gmail.com', got %q", card0.EmailFullText())
+	}
+
+	// 2. Toggle ON: SetMaskAccounts(true)
+	maskToggle := app.MaskAccountsToggleWidget()
+	if maskToggle == nil {
+		t.Fatal("expected non-nil MaskAccountsToggleWidget")
+	}
+	maskToggle.Tapped(&fyne.PointEvent{})
+
+	if !app.IsMaskAccounts() {
+		t.Fatal("expected IsMaskAccounts() true after toggle tap")
+	}
+	if !maskToggle.IsOn() {
+		t.Fatal("expected maskToggle.IsOn() true after tap")
+	}
+
+	// In-place reactive check: card pointers must be preserved (zero layout churn)
+	currentCards := app.AccountCards()
+	if len(currentCards) != 2 || currentCards[0] != card0 || currentCards[1] != card1 {
+		t.Fatal("expected identical in-place card widget pointers after masking toggle")
+	}
+
+	// Verify masked text
+	if card0.EmailLabelText() != "t***@gmail.com" {
+		t.Errorf("expected card0 masked text 't***@gmail.com', got %q", card0.EmailLabelText())
+	}
+	if card1.EmailLabelText() != "d***@antigravity.io" {
+		t.Errorf("expected card1 masked text 'd***@antigravity.io', got %q", card1.EmailLabelText())
+	}
+
+	// CRITICAL: Verify tooltip fullText is 100% preserved
+	if card0.EmailFullText() != "tamnguyen@gmail.com" {
+		t.Errorf("expected card0 tooltip fullText preserved 'tamnguyen@gmail.com', got %q", card0.EmailFullText())
+	}
+	if card1.EmailFullText() != "developer.ai@antigravity.io" {
+		t.Errorf("expected card1 tooltip fullText preserved 'developer.ai@antigravity.io', got %q", card1.EmailFullText())
+	}
+
+	// Verify status bar feedback
+	if app.statusBar != nil && !strings.Contains(app.statusBar.Text, "🔒 Đã ẩn thông tin tài khoản") {
+		t.Errorf("expected status bar to contain mask feedback, got %q", app.statusBar.Text)
+	}
+
+	// 3. Toggle OFF: SetMaskAccounts(false)
+	maskToggle.Tapped(&fyne.PointEvent{})
+
+	if app.IsMaskAccounts() {
+		t.Fatal("expected IsMaskAccounts() false after second toggle tap")
+	}
+	if maskToggle.IsOn() {
+		t.Fatal("expected maskToggle.IsOn() false after second tap")
+	}
+
+	// Verify unmasked text restored
+	if card0.EmailLabelText() != "tamnguyen@gmail.com" {
+		t.Errorf("expected card0 unmasked text 'tamnguyen@gmail.com', got %q", card0.EmailLabelText())
+	}
+	if card1.EmailLabelText() != "developer.ai@antigravity.io" {
+		t.Errorf("expected card1 unmasked text 'developer.ai@antigravity.io', got %q", card1.EmailLabelText())
+	}
+
+	// Verify status bar feedback
+	if app.statusBar != nil && !strings.Contains(app.statusBar.Text, "🔓 Đã hiển thị đầy đủ tài khoản") {
+		t.Errorf("expected status bar to contain unmask feedback, got %q", app.statusBar.Text)
+	}
+
+	// Allow goroutines to settle
+	time.Sleep(150 * time.Millisecond)
+}
+
+func TestArchitectSpec_MaskAccounts_StatusBarMasking(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	app.SetPreferencesPath(filepath.Join(t.TempDir(), "prefs.json"))
+	defer app.Close()
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	// 1. Enable mask mode
+	app.SetMaskAccounts(true)
+	time.Sleep(50 * time.Millisecond)
+
+	// 2. Test automation status event masking
+	app.handleAutomationStatus(automation.StatusEvent{
+		Code:    automation.StatusSwitching,
+		Message: "Đang chuyển đổi sang user@example.com...",
+	})
+
+	if app.statusBar == nil {
+		t.Fatal("expected non-nil statusBar")
+	}
+	if !strings.Contains(app.statusBar.Text, "u***@example.com") {
+		t.Errorf("expected status bar text to mask email to u***@example.com, got: %q", app.statusBar.Text)
+	}
+	if strings.Contains(app.statusBar.Text, "user@example.com") {
+		t.Errorf("status bar text leaked raw email user@example.com: %q", app.statusBar.Text)
+	}
+
+	// 3. Test SwitchAccount status bar masking
+	err := mgr.Store().SaveAccount("target@gmail.com", &model.TokenData{
+		AccessToken: "target_access",
+		IDToken:     makeTestJWT("target@gmail.com"),
+	})
 	if err != nil {
-		t.Fatalf("failed loading updated ui preferences: %v", err)
+		t.Fatalf("failed saving target account: %v", err)
 	}
-	if loaded.MaskAccounts != false {
-		t.Errorf("expected persisted MaskAccounts == false, got %v", loaded.MaskAccounts)
+
+	app.SwitchAccount("target@gmail.com")
+	waitForIdle(app, 3*time.Second)
+	if !strings.Contains(app.statusBar.Text, "t***@gmail.com") {
+		t.Errorf("expected SwitchAccount status bar text to mask email to t***@gmail.com, got: %q", app.statusBar.Text)
 	}
+	if strings.Contains(app.statusBar.Text, "target@gmail.com") {
+		t.Errorf("SwitchAccount status bar text leaked raw email target@gmail.com: %q", app.statusBar.Text)
+	}
+
+	// 4. Test unmasked mode
+	app.SetMaskAccounts(false)
+	time.Sleep(50 * time.Millisecond)
+
+	app.handleAutomationStatus(automation.StatusEvent{
+		Code:    automation.StatusSwitching,
+		Message: "Đang chuyển đổi sang user@example.com...",
+	})
+	if !strings.Contains(app.statusBar.Text, "user@example.com") {
+		t.Errorf("expected unmasked status bar text to contain user@example.com, got: %q", app.statusBar.Text)
+	}
+
+	// Allow goroutines to settle
+	time.Sleep(150 * time.Millisecond)
+}
+
+func TestArchitectSpec_MaskAccounts_NewCardInitialMask(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	app.SetPreferencesPath(filepath.Join(t.TempDir(), "prefs.json"))
+	defer app.Close()
+	app.Init()
+
+	// Enable mask before cards are created
+	app.SetMaskAccounts(true)
+	time.Sleep(50 * time.Millisecond)
+
+	overview := &manager.AccountOverview{
+		ActiveEmail: "tamnguyen@gmail.com",
+		Accounts: []manager.AccountDisplayItem{
+			{
+				Email:    "tamnguyen@gmail.com",
+				IsActive: true,
+				State:    model.StateReady,
+			},
+		},
+	}
+	app.updateUI(overview)
+
+	cards := app.AccountCards()
+	if len(cards) != 1 {
+		t.Fatalf("expected 1 card, got %d", len(cards))
+	}
+	if cards[0].EmailLabelText() != "t***@gmail.com" {
+		t.Errorf("expected new card to be initially masked 't***@gmail.com', got %q", cards[0].EmailLabelText())
+	}
+	if cards[0].EmailFullText() != "tamnguyen@gmail.com" {
+		t.Errorf("expected new card fullText to be 'tamnguyen@gmail.com', got %q", cards[0].EmailFullText())
+	}
+
+	// Allow goroutines to settle
+	time.Sleep(150 * time.Millisecond)
 }
 
