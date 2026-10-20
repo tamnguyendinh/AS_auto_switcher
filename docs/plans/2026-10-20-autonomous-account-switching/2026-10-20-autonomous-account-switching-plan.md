@@ -14,7 +14,7 @@
 
 ## Goal
 
-Nối automation vào telemetry, model discovery, GUI toggle và engine chuyển tài khoản hiện có. Tự chuyển khi quota của model đang dùng đạt 5h <= 2% hoặc tuần = 0%; khi gặp lỗi giới hạn thì khôi phục tối đa ba lần theo kết quả thực thi của Antigravity trước khi chuyển. Chọn tài khoản theo tuần tăng dần, ưu tiên có 5h khi tuần bằng nhau, sau đó 5h giảm dần và thứ tự cố định. Giữ nguyên `SwitchAccount`, khoảng chờ 8 giây và continuation hai giờ đã nằm trong engine.
+Nối automation vào telemetry, model discovery, GUI toggle và engine chuyển tài khoản hiện có. Tự chuyển khi quota của model đang dùng đạt 5h <= 2% hoặc tuần <= 1%; khi gặp lỗi giới hạn thì khôi phục tối đa ba lần theo kết quả thực thi của Antigravity trước khi chuyển. Chọn tài khoản theo tuần tăng dần, ưu tiên có 5h khi tuần bằng nhau, sau đó 5h giảm dần và thứ tự cố định. Giữ nguyên `SwitchAccount`, khoảng chờ 8 giây và continuation hai giờ đã nằm trong engine.
 
 Bản R1 sửa các điểm nối còn thiếu trong kế hoạch; không mở đợt audit, refactor hoặc sửa lỗi engine. Quyết định Owner trong cuộc thảo luận và R1 này được ưu tiên hơn các mô tả trái nhau trong báo cáo kiến trúc nguồn. Không sửa SPEC nguồn hoặc bộ Phase 7 cũ trong lượt sửa tài liệu này.
 
@@ -108,12 +108,12 @@ Trong phiên bản Antigravity v2.24.0, người dùng lập trình gặp phải
 1. **Active Model Binding (R1):** Mọi quyết định kiểm tra ngưỡng quota và xếp hạng ứng viên phải dựa trên model của phiên làm việc hiện tại (`Gemini` -> Nhóm Gemini 5h & Tuần; `Claude/GPT-OSS` -> Nhóm Claude 5h & Tuần).
    - Adapter gọi resolver hiện có lấy ID rồi join với `clientModelConfigs[].modelOrAlias.model`/label từ API. Hàm classifier nhận cấu hình đã resolve, không đoán `M318` bằng bảng cố định. Model đổi thì tính lại, kiểm tra lại trước switch.
 2. **Tam Phân Thái Quota (R2):** Dữ liệu quota từ Google API được chuẩn hóa thành 3 trạng thái:
-   - `APPLICABLE_VALID`: Có bucket 5h đang mở, fraction hợp lệ ($0.0 \le \text{fraction} \le 1.0$), kiểm tra cả $5\text{h} \le 2\%$ và $\text{Tuần} = 0\%$.
-   - `NOT_APPLICABLE`: Chỉ có bucket tuần hoặc bucket 5h có cờ `disabled: true`, bỏ qua điều kiện 5h, chỉ theo dõi $\text{Tuần} = 0\%$.
+   - `APPLICABLE_VALID`: Có bucket 5h đang mở, fraction hợp lệ ($0.0 \le \text{fraction} \le 1.0$), kiểm tra cả $5\text{h} \le 2\%$ và $\text{Tuần} \le 1\%$.
+   - `NOT_APPLICABLE`: Chỉ có bucket tuần hoặc bucket 5h có cờ `disabled: true`, bỏ qua điều kiện 5h, chỉ theo dõi $\text{Tuần} \le 1\%$.
    - `UNKNOWN_UNCERTAIN`: Dữ liệu khuyết/lỗi không tạo trigger từ quota đó. Nhánh reactive vẫn hoạt động với lỗi thực thi đủ điều kiện và ứng viên dùng được; không chặn toàn bộ automation vì telemetry lỗi.
    - Luồng metadata: provider response -> `rawQuotaBucket.disabled` -> `ModelQuotaBucket.Disabled`/`RawBuckets` -> cache/callback -> classifier. Cache cũ vẫn đọc được; sau bật dùng `TriggerNow`/callback hoặc `PollAccount` trước quyết định, không tạo TTL/polling engine mới. Khi phản hồi thành công chỉ có tuần thì dùng tuần; khi disabled thì bỏ qua 5h trong lần đánh giá đó. So sánh fraction gốc, không dùng badge hoặc số làm tròn.
 3. **Dual-Trigger Architecture & Single-Flight Gate (R3):**
-   - Van chủ động (Proactive): Telemetry quét định kỳ 60s, kích hoạt chuyển khi $5\text{h} \le 2\%$ hoặc $\text{Tuần} = 0\%$.
+   - Van chủ động (Proactive): Telemetry quét định kỳ 60s, kích hoạt chuyển khi $5\text{h} \le 2\%$ hoặc $\text{Tuần} \le 1\%$.
    - Van bị động (Reactive): Bắt lỗi thực thi `429`/`RESOURCE_EXHAUSTED`, kích hoạt 3 lần Native Retry. Thất bại cả 3 lần -> Kích hoạt chuyển khẩn cấp.
    - Single-Flight Gate: Hợp nhất các tín hiệu xảy ra đồng thời thành 1 đợt chuyển duy nhất.
 4. **Native Retry theo execution outcome (R4):** Gửi đúng `items: []` tới conversation ID lỗi, đợi cập nhật thực thi mới rồi quyết định lần kế tiếp; tối đa ba recovery actions của automation. Không tính HTTP ACK hoặc số update lặp thành kết quả thành công/thất bại. Antigravity đang native retry thì đợi theo `attempt/maxAttempts/retryAt`, không thêm lịch gửi cách nhau cố định. Không restart trong retry. Nếu proactive đã đủ điều kiện thì ngừng phát retry và hợp nhất một đợt switch.
@@ -129,7 +129,7 @@ Trong phiên bản Antigravity v2.24.0, người dùng lập trình gặp phải
 - **Shared switch gate:** GUI chuyển tay, CLI --switch và auto cùng wrapper acquire -> gọi nguyên `mgr.SwitchAccount(ctx, email, false)` -> trả kết quả -> release. Guard đồng bộ cả manual-first và auto-first, giữ qua continuation. Named mutex dùng user/credential scope, wait không xếp hàng lệnh cũ; bảo đảm OS-thread ownership của acquire/release trong Go, release/close bằng defer. Abandoned lock đọc lại session trước thao tác. Retry không gửi khi switch đang diễn ra; manual thay phiên invalidates recovery cũ.
 - **App lifecycle:** App tạo controller từ manager/pool/cache hiện hữu. Trong callback duy nhất đang đặt ở `App.Init`, giữ quota UI refresh và chuyển cùng results tới controller theo đường không chặn. Không gọi SetUpdateCallback lần hai làm mất UI callback, không tạo ticker/pool mới. App.Close cancel stream/controller/status listener rồi dừng loop sẵn có.
 - **Toggle/status:** Callback toggle hiện có và SetAutoSwitchEnabled dùng chung setter, tránh đệ quy. Bật gọi TriggerNow; tắt ngừng trigger/recovery mới nhưng không cắt engine đã bắt đầu thay phiên. Status cập nhật bằng fyne.Do vào status bar hiện có; sau auto switch cập nhật overview/card như manual. Không đổi layout/theme hoặc persist toggle.
-- **Ứng viên:** Có 5h thì 5h > 2% và tuần > 0%; chỉ tuần thì tuần > 0%. Loại chính active account, credential không dùng được và ứng viên vừa thất bại. Dùng thứ tự store cố định làm tie-break. PollAccount ứng viên trước khi thay phiên; không ghi thử token vào WinCred. Không có ứng viên thì báo lý do và chờ vòng telemetry cũ; không suy ra tất cả hết quota.
+- **Ứng viên:** Có 5h thì 5h > 2% và tuần > 1%; chỉ tuần thì tuần > 1%. Loại chính active account, credential không dùng được và ứng viên vừa thất bại. Dùng thứ tự store cố định làm tie-break. PollAccount ứng viên trước khi thay phiên; không ghi thử token vào WinCred. Không có ứng viên thì báo lý do và chờ vòng telemetry cũ; không suy ra tất cả hết quota.
 - **Kết quả switch:** Lỗi từ engine kết thúc đợt và hiển thị lỗi, không tự xoay vô điều kiện sau thao tác đã thay credential. Continuation đã nằm trong engine và chỉ được gọi một lần. Event/ý định đã xử lý không được phát lại ngay khi mở gate.
 
 Ví dụ sorter (mọi số liệu cùng nhóm model đang dùng):
@@ -140,8 +140,8 @@ Ví dụ sorter (mọi số liệu cùng nhóm model đang dùng):
 | B | 3% | 40% | 2 |
 | C | 3% | Không áp dụng | 3 |
 | D | 20% | 90% | 4 |
-| E | 1% | 1% | Loại vì 5h <= 2% |
-| F | 0% | 100% | Loại vì tuần = 0% |
+| E | 1% | 1% | Loại vì 5h <= 2% (và tuần <= 1%) |
+| F | 0% | 100% | Loại vì tuần <= 1% |
 
 Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp vụ, không phải kết quả test đã chạy.
 
@@ -435,7 +435,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
          + Outputs: Structs `MockLangServer` và `MockTelemetry`.
          + Verification Condition: `go test -run TestMockHarnessInit ./internal/automation/...`
          + Task Checkpoint: `wip(P2-A): task 1.1 - build mock e2e harness for 14 edge cases`
-       - Task 1.2: Viết test case mô phỏng lần lượt các biên 1 đến 7 (Gemini 5h <= 2%, Claude hết tuần khi đang chạy Gemini, Tuần 1% vs 0%, disabled bucket, retry thành công lần 1/2 vs thất bại lần 3).
+       - Task 1.2: Viết test case mô phỏng lần lượt các biên 1 đến 7 (Gemini 5h <= 2%, Claude hết tuần khi đang chạy Gemini, Tuần > 1% vs <= 1% (ví dụ: 2% vs 1% và 0%), disabled bucket, retry thành công lần 1/2 vs thất bại lần 3).
          + Action: Cài đặt bài test cho Biên 1 - 7.
          + Inputs: Ma trận 14 tình huống ở cuối plan R1.
          + Allowed Edit Scope: `internal/automation/automation_e2e_test.go`.
@@ -507,7 +507,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
 ## Risk Notes
 
 1. **Khoảng chờ của engine:** Giữ 8 giây hiện có rồi kiểm tra email. Đây là cấu hình source, không phải số đo tổng switch hay bằng chứng mọi socket đều chưa sẵn sàng trước 8s. Continuation còn có pacing 3s giữa threads.
-2. **Native Retry:** Đợi kết quả thực thi, không coi HTTP ACK là phục hồi. Ba recovery actions thất bại hết ngân sách thử của đợt, không chứng minh mọi quota đã cạn. Telemetry xác nhận tuần = 0 hoặc 5h <= 2% thì dùng proactive, không chờ thêm ba lần.
+2. **Native Retry:** Đợi kết quả thực thi, không coi HTTP ACK là phục hồi. Ba recovery actions thất bại hết ngân sách thử của đợt, không chứng minh mọi quota đã cạn. Telemetry xác nhận tuần <= 1% hoặc 5h <= 2% thì dùng proactive, không chờ thêm ba lần.
 3. **Mất kết nối mạng hoặc lỗi Google API:** Khi telemetry trả về dữ liệu rỗng hoặc timeout (`UNKNOWN_UNCERTAIN`), controller tuyệt đối không được phép suy diễn thành hết quota để chuyển tài khoản mù quáng, tránh làm cạn kiệt tài nguyên của người dùng.
 4. **Xung đột callers:** Shared wrapper ở caller boundary bảo vệ GUI/CLI/auto. Cờ atomic trong controller hoặc disable nút qua UI event không tự bảo vệ process CLI. Giữ manager/reloader nguyên vẹn.
 
@@ -516,9 +516,9 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
 | ID | Tình huống | Kết quả mong đợi — chưa phải kết quả đã chạy |
 |---|---|---|
 | 1 | Gemini đang dùng, 5h <= 2% | Chuyển một lần. |
-| 2 | Claude tuần = 0, phiên dùng Gemini còn quota | Không chuyển do Claude. |
-| 3 | Chỉ tuần, tuần = 1% | Dùng tiếp. |
-| 4 | Chỉ tuần, tuần = 0% | Chuyển. |
+| 2 | Claude tuần <= 1%, phiên dùng Gemini còn quota | Không chuyển do Claude. |
+| 3 | Chỉ tuần, tuần > 1% (ví dụ: tuần = 2%) | Dùng tiếp. |
+| 4 | Chỉ tuần, tuần <= 1% (ví dụ: tuần = 1% hoặc 0%) | Chuyển. |
 | 5 | API bucket 5h disabled | Cờ đi qua parser/cache, bỏ qua 5h và xét tuần. |
 | 6 | Recovery 1 hoặc 2 kết thúc không lỗi | Dừng recovery, không switch. |
 | 7 | Ba recovery actions kết thúc lỗi giới hạn | Một quyết định switch. |
