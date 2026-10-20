@@ -94,11 +94,11 @@ func FilterEligibleCandidates(candidates []CandidateAccount, activeEmail string,
 				if cand.Evaluation.FiveHourFraction <= Threshold5hLow {
 					reason = "5h quota <= 2%"
 				} else if cand.Evaluation.WeeklyFraction <= ThresholdWeeklyDepleted {
-					reason = "weekly quota = 0%"
+					reason = "weekly quota <= 1%"
 				}
 			} else if cand.Evaluation.State == NotApplicable {
 				if cand.Evaluation.WeeklyFraction <= ThresholdWeeklyDepleted {
-					reason = "weekly quota = 0%"
+					reason = "weekly quota <= 1%"
 				}
 			}
 			exclusions = append(exclusions, CandidateExclusion{
@@ -174,3 +174,4 @@ func BuildCandidateAccount(email string, index int, tokenValid bool, refreshToke
 		RawQuota:     quota,
 	}
 }
+

@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-10-20T18:15:00Z",
+  "timestamp": "2026-10-20T18:35:00Z",
   "slice": "P2-A",
   "evidenceId": "E2-P2A-TEST14",
-  "summary": "14/14 Edge cases in Matrix R1 passed successfully with race detector enabled and hermetic mock harness.",
+  "summary": "14/14 Edge cases in Matrix R1 passed successfully with race detector enabled and hermetic mock harness, updated to Owner weekly quota policy (tuần <= 1% chuyển, tuần > 1% dùng tiếp).",
   "results": [
     {
       "id": 1,
@@ -10,31 +10,31 @@
       "expected": "Chuyển một lần",
       "test": "TestEdgeCases1To7/EdgeCase1_Gemini5hLow_SwitchesOnce",
       "status": "PASS",
-      "duration": "1.24s"
+      "duration": "0.83s"
     },
     {
       "id": 2,
-      "scenario": "Claude tuần = 0, phiên dùng Gemini còn quota",
+      "scenario": "Claude tuần <= 1%, phiên dùng Gemini còn quota",
       "expected": "Không chuyển do Claude",
       "test": "TestEdgeCases1To7/EdgeCase2_ClaudeWeeklyDepleted_GeminiActive_NoSwitch",
       "status": "PASS",
-      "duration": "0.50s"
+      "duration": "0.55s"
     },
     {
       "id": 3,
-      "scenario": "Chỉ tuần, tuần = 1%",
+      "scenario": "Chỉ tuần, tuần > 1% (ví dụ: tuần = 2%)",
       "expected": "Dùng tiếp",
-      "test": "TestEdgeCases1To7/EdgeCase3_WeeklyOnly_1Percent_Continues",
+      "test": "TestEdgeCases1To7/EdgeCase3_WeeklyOnly_Above1Percent_Continues",
       "status": "PASS",
-      "duration": "0.51s"
+      "duration": "0.55s"
     },
     {
       "id": 4,
-      "scenario": "Chỉ tuần, tuần = 0%",
+      "scenario": "Chỉ tuần, tuần <= 1% (ví dụ: tuần = 1% hoặc 0%)",
       "expected": "Chuyển",
-      "test": "TestEdgeCases1To7/EdgeCase4_WeeklyOnly_0Percent_Switches",
+      "test": "TestEdgeCases1To7/EdgeCase4_WeeklyOnly_AtOrBelow1Percent_Switches",
       "status": "PASS",
-      "duration": "0.72s"
+      "duration": "0.75s"
     },
     {
       "id": 5,
@@ -42,7 +42,7 @@
       "expected": "Cờ đi qua parser/cache, bỏ qua 5h và xét tuần",
       "test": "TestEdgeCases1To7/EdgeCase5_Disabled5hBucket_Ignored_EvaluatesWeekly",
       "status": "PASS",
-      "duration": "0.58s"
+      "duration": "0.54s"
     },
     {
       "id": 6,
@@ -58,7 +58,7 @@
       "expected": "Một quyết định switch",
       "test": "TestEdgeCases1To7/EdgeCase7_ThreeRecoveryFailures_TriggersOneSwitch",
       "status": "PASS",
-      "duration": "0.68s"
+      "duration": "0.77s"
     },
     {
       "id": 8,
@@ -66,7 +66,7 @@
       "expected": "Một đợt; không phát retry tiếp sau quyết định switch",
       "test": "TestEdgeCases8To14/EdgeCase8_ProactiveSupersedesReactive_NoDuplicateRetry",
       "status": "PASS",
-      "duration": "1.35s"
+      "duration": "0.86s"
     },
     {
       "id": 9,
@@ -82,7 +82,7 @@
       "expected": "Resolve và tính lại nhóm/ứng viên",
       "test": "TestEdgeCases8To14/EdgeCase10_ModelChangedBeforeSwitch_ReranksCandidates",
       "status": "PASS",
-      "duration": "0.75s"
+      "duration": "0.79s"
     },
     {
       "id": 11,
@@ -90,7 +90,7 @@
       "expected": "Bỏ qua trong đợt, xét kế tiếp trước khi thay credential",
       "test": "TestEdgeCases8To14/EdgeCase11_PreflightCandidate1Fails_SkipsToCandidate2",
       "status": "PASS",
-      "duration": "0.73s"
+      "duration": "0.75s"
     },
     {
       "id": 12,
@@ -98,7 +98,7 @@
       "expected": "Dừng đợt, hiện lỗi, không xoay vô điều kiện",
       "test": "TestEdgeCases8To14/EdgeCase12_SwitchAccountError_HaltsWithoutIndefiniteRotation",
       "status": "PASS",
-      "duration": "0.70s"
+      "duration": "0.76s"
     },
     {
       "id": 13,
@@ -106,7 +106,7 @@
       "expected": "Hiện lý do, chờ telemetry hiện có",
       "test": "TestEdgeCases8To14/EdgeCase13_NoCandidates_EmitsStatusNoCandidate",
       "status": "PASS",
-      "duration": "0.53s"
+      "duration": "0.56s"
     },
     {
       "id": 14,

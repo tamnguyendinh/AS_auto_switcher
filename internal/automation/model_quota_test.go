@@ -106,6 +106,28 @@ func TestClassifyQuotaState_TernaryAndSwitchConditions(t *testing.T) {
 		}
 	})
 
+	t.Run("ApplicableValid - Weekly <= 1% (1%) triggers switch even if 5h is high", func(t *testing.T) {
+		data := &telemetry.AccountQuotaData{
+			Email: "user@example.com",
+			Gemini: telemetry.ModelQuotaBucket{
+				ModelID:           "gemini-2.5",
+				FiveHourFraction:  0.90,
+				WeeklyFraction:    0.01,
+				RemainingFraction: 0.01,
+			},
+		}
+		eval := ClassifyQuotaState(data, CategoryGemini)
+		if eval.State != ApplicableValid {
+			t.Errorf("expected state %s, got %s", ApplicableValid, eval.State)
+		}
+		if !eval.ShouldSwitch {
+			t.Errorf("expected ShouldSwitch=true for weekly=1%% (<= 1%%), got false")
+		}
+		if eval.IsEligible {
+			t.Errorf("expected IsEligible=false for weekly=1%% (<= 1%%), got true")
+		}
+	})
+
 	t.Run("ApplicableValid - Weekly = 0% triggers switch even if 5h is high", func(t *testing.T) {
 		data := &telemetry.AccountQuotaData{
 			Email: "user@example.com",
@@ -125,6 +147,28 @@ func TestClassifyQuotaState_TernaryAndSwitchConditions(t *testing.T) {
 		}
 		if eval.IsEligible {
 			t.Errorf("expected IsEligible=false for weekly=0%%, got true")
+		}
+	})
+
+	t.Run("ApplicableValid - Weekly > 1% (2%) does NOT trigger switch if 5h is high", func(t *testing.T) {
+		data := &telemetry.AccountQuotaData{
+			Email: "user@example.com",
+			Gemini: telemetry.ModelQuotaBucket{
+				ModelID:           "gemini-2.5",
+				FiveHourFraction:  0.80,
+				WeeklyFraction:    0.02,
+				RemainingFraction: 0.02,
+			},
+		}
+		eval := ClassifyQuotaState(data, CategoryGemini)
+		if eval.State != ApplicableValid {
+			t.Errorf("expected state %s, got %s", ApplicableValid, eval.State)
+		}
+		if eval.ShouldSwitch {
+			t.Errorf("expected ShouldSwitch=false for weekly=2%% (> 1%%), got true")
+		}
+		if !eval.IsEligible {
+			t.Errorf("expected IsEligible=true for weekly=2%% (> 1%%), got false")
 		}
 	})
 
@@ -171,6 +215,29 @@ func TestClassifyQuotaState_TernaryAndSwitchConditions(t *testing.T) {
 		}
 		if !eval.IsEligible {
 			t.Errorf("expected IsEligible=true because weekly=5%% > 0%%, got false")
+		}
+	})
+
+	t.Run("NotApplicable - 5h Disabled: true, Weekly=1%", func(t *testing.T) {
+		data := &telemetry.AccountQuotaData{
+			Email: "user@example.com",
+			Gemini: telemetry.ModelQuotaBucket{
+				ModelID:           "gemini-2.5",
+				FiveHourFraction:  0.80,
+				FiveHourDisabled:  true,
+				WeeklyFraction:    0.01,
+				RemainingFraction: 0.01,
+			},
+		}
+		eval := ClassifyQuotaState(data, CategoryGemini)
+		if eval.State != NotApplicable {
+			t.Errorf("expected state %s, got %s", NotApplicable, eval.State)
+		}
+		if !eval.ShouldSwitch {
+			t.Errorf("expected ShouldSwitch=true because weekly=1%% (<= 1%%), got false")
+		}
+		if eval.IsEligible {
+			t.Errorf("expected IsEligible=false because weekly=1%% (<= 1%%), got true")
 		}
 	})
 
@@ -289,3 +356,5 @@ func TestActiveModelBinding_ModelIsolation(t *testing.T) {
 		t.Fatalf("expected Claude to be ineligible when exhausted, got true")
 	}
 }
+
+

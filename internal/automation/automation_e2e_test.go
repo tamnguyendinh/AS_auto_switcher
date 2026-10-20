@@ -650,14 +650,14 @@ func TestEdgeCases1To7(t *testing.T) {
 		}
 	})
 
-	// Case 3: Chỉ tuần, tuần = 1% -> Dùng tiếp
-	t.Run("EdgeCase3_WeeklyOnly_1Percent_Continues", func(t *testing.T) {
+	// Case 3: Chỉ tuần, tuần > 1% (ví dụ: tuần = 2%) -> Dùng tiếp
+	t.Run("EdgeCase3_WeeklyOnly_Above1Percent_Continues", func(t *testing.T) {
 		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
 		defer harness.Close()
 
 		ctx := context.Background()
-		// Only weekly bucket present, 5h is missing (-1), weekly = 0.01 (1%)
-		harness.Telemetry.SetAccountQuota("refresh-active@example.com", -1, 0.01, false, -1, 0.50, false)
+		// Only weekly bucket present, 5h is missing (-1), weekly = 0.02 (2% > 1%)
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", -1, 0.02, false, -1, 0.50, false)
 		qActive, _ := harness.Pool.PollAccount(ctx, "active@example.com")
 
 		harness.Controller.SetEnabled(true)
@@ -676,16 +676,16 @@ func TestEdgeCases1To7(t *testing.T) {
 		}
 	})
 
-	// Case 4: Chỉ tuần, tuần = 0% -> Chuyển
-	t.Run("EdgeCase4_WeeklyOnly_0Percent_Switches", func(t *testing.T) {
+	// Case 4: Chỉ tuần, tuần <= 1% (ví dụ: tuần = 1% hoặc 0%) -> Chuyển
+	t.Run("EdgeCase4_WeeklyOnly_AtOrBelow1Percent_Switches", func(t *testing.T) {
 		harness := NewE2ETestHarness(t, "active@example.com", []string{"cand1@example.com"})
 		defer harness.Close()
 
 		ctx := context.Background()
 		harness.Controller.SetEnabled(true)
 
-		// Only weekly bucket present, 5h is missing (-1), weekly = 0.00 (0%)
-		harness.Telemetry.SetAccountQuota("refresh-active@example.com", -1, 0.00, false, -1, 0.50, false)
+		// Only weekly bucket present, 5h is missing (-1), weekly = 0.01 (1% <= 1%)
+		harness.Telemetry.SetAccountQuota("refresh-active@example.com", -1, 0.01, false, -1, 0.50, false)
 		harness.Telemetry.SetAccountQuota("refresh-cand1@example.com", 0.80, 0.60, false, 0.80, 0.60, false)
 
 		qActive, _ := harness.Pool.PollAccount(ctx, "active@example.com")
@@ -696,7 +696,7 @@ func TestEdgeCases1To7(t *testing.T) {
 			t.Fatalf("EvaluateProactiveTrigger failed: %v", err)
 		}
 		if !decision.ShouldSwitch {
-			t.Fatalf("expected ShouldSwitch=true for weekly=0%%, got false: %s", decision.Reason)
+			t.Fatalf("expected ShouldSwitch=true for weekly=1%% (<= 1%%), got false: %s", decision.Reason)
 		}
 
 		res, err := harness.Controller.TriggerSwitch(ctx, decision.Reason)
@@ -1281,6 +1281,7 @@ func TestBindings_NativeRetryWaiting_HasRetryAt(t *testing.T) {
 		t.Errorf("expected 0 recovery attempts when server is auto-retrying, got %d", rc.GetRecoveryAttempts())
 	}
 }
+
 
 
 

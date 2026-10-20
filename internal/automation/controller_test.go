@@ -155,6 +155,7 @@ func TestAutomationController_EvaluateProactiveTrigger(t *testing.T) {
 	activeEmail := "active@example.com"
 	mgr, cache, _ := setupTestEnvironment(t, activeEmail, nil)
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_Eval_%d", time.Now().UnixNano()))
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) { return nil, nil })
 	ctrl := NewAutomationController(mgr, nil, cache, gate)
 	ctrl.SetEnabled(true)
 
@@ -239,7 +240,7 @@ func TestAutomationController_EvaluateProactiveTrigger(t *testing.T) {
 			Gemini: telemetry.ModelQuotaBucket{
 				ModelID:          "gemini-2.5-pro",
 				FiveHourDisabled: true,
-				WeeklyFraction:   0.01, // 1% > 0%
+				WeeklyFraction:   0.02, // 2% > 1%
 			},
 		},
 	}
@@ -248,7 +249,7 @@ func TestAutomationController_EvaluateProactiveTrigger(t *testing.T) {
 		t.Fatalf("eval 3 failed: %v", err)
 	}
 	if dec3.ShouldSwitch {
-		t.Errorf("expected ShouldSwitch=false when weekly=1%% and 5h disabled")
+		t.Errorf("expected ShouldSwitch=false when weekly=2%% and 5h disabled")
 	}
 
 	// Case 4: Weekly-only account, weekly = 0% -> ShouldSwitch = true
@@ -305,6 +306,7 @@ func TestAutomationController_SingleFlightGate_100ConcurrentTriggers(t *testing.
 	})
 
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_100Concurrent_%d", time.Now().UnixNano()))
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) { return nil, nil })
 	ctrl := NewAutomationController(mgr, nil, cache, gate)
 	ctrl.SetEnabled(true)
 
@@ -501,6 +503,7 @@ func TestAutomationController_NoCandidates(t *testing.T) {
 	mgr, cache, _ := setupTestEnvironment(t, activeEmail, nil)
 
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_NoCand_%d", time.Now().UnixNano()))
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) { return nil, nil })
 	ctrl := NewAutomationController(mgr, nil, cache, gate)
 	ctrl.SetEnabled(true)
 
@@ -531,3 +534,5 @@ func TestAutomationController_NonBlockingStatusChannel(t *testing.T) {
 		t.Fatalf("EmitStatus blocked when statusChan was full")
 	}
 }
+
+

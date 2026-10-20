@@ -28,7 +28,7 @@ const (
 // Threshold constants for proactive switching and candidate eligibility.
 const (
 	Threshold5hLow          = 0.02 // 5h <= 2% (0.02)
-	ThresholdWeeklyDepleted = 0.0  // Weekly = 0% (0.0)
+	ThresholdWeeklyDepleted = 0.01 // Weekly <= 1% (0.01)
 )
 
 // ModelQuotaEvaluation encapsulates the evaluation of an account quota against the active model category.
@@ -158,12 +158,12 @@ func ClassifyQuotaState(quota *telemetry.AccountQuotaData, category QuotaCategor
 
 	if is5hDisabled || !has5hFraction {
 		eval.State = NotApplicable
-		// Proactive switch condition for NOT_APPLICABLE: weekly <= 0.0
+		// Proactive switch condition for NOT_APPLICABLE: weekly <= 0.01
 		eval.ShouldSwitch = eval.WeeklyFraction <= ThresholdWeeklyDepleted
-		// Candidate eligibility condition for NOT_APPLICABLE: weekly > 0.0
+		// Candidate eligibility condition for NOT_APPLICABLE: weekly > 0.01
 		eval.IsEligible = eval.WeeklyFraction > ThresholdWeeklyDepleted
 		if eval.ShouldSwitch {
-			eval.Reason = fmt.Sprintf("weekly quota depleted (%.1f%%)", eval.WeeklyFraction*100)
+			eval.Reason = fmt.Sprintf("weekly quota depleted (%.1f%% <= 1%%)", eval.WeeklyFraction*100)
 		} else {
 			eval.Reason = fmt.Sprintf("weekly quota active (%.1f%%, 5h not applicable)", eval.WeeklyFraction*100)
 		}
@@ -172,20 +172,20 @@ func ClassifyQuotaState(quota *telemetry.AccountQuotaData, category QuotaCategor
 
 	// Otherwise, 5h is applicable and valid
 	eval.State = ApplicableValid
-	// Proactive switch condition for APPLICABLE_VALID: 5h <= 2% OR weekly <= 0%
+	// Proactive switch condition for APPLICABLE_VALID: 5h <= 2% OR weekly <= 1%
 	is5hLow := eval.FiveHourFraction <= Threshold5hLow
 	isWeeklyDepleted := eval.WeeklyFraction <= ThresholdWeeklyDepleted
 	eval.ShouldSwitch = is5hLow || isWeeklyDepleted
 
-	// Candidate eligibility condition for APPLICABLE_VALID: 5h > 2% AND weekly > 0%
+	// Candidate eligibility condition for APPLICABLE_VALID: 5h > 2% AND weekly > 1%
 	eval.IsEligible = (eval.FiveHourFraction > Threshold5hLow) && (eval.WeeklyFraction > ThresholdWeeklyDepleted)
 
 	if is5hLow && isWeeklyDepleted {
-		eval.Reason = fmt.Sprintf("5h quota low (%.1f%% <= 2%%) and weekly depleted (%.1f%%)", eval.FiveHourFraction*100, eval.WeeklyFraction*100)
+		eval.Reason = fmt.Sprintf("5h quota low (%.1f%% <= 2%%) and weekly depleted (%.1f%% <= 1%%)", eval.FiveHourFraction*100, eval.WeeklyFraction*100)
 	} else if is5hLow {
 		eval.Reason = fmt.Sprintf("5h quota low (%.1f%% <= 2%%)", eval.FiveHourFraction*100)
 	} else if isWeeklyDepleted {
-		eval.Reason = fmt.Sprintf("weekly quota depleted (%.1f%%)", eval.WeeklyFraction*100)
+		eval.Reason = fmt.Sprintf("weekly quota depleted (%.1f%% <= 1%%)", eval.WeeklyFraction*100)
 	} else {
 		eval.Reason = fmt.Sprintf("quota healthy (5h: %.1f%%, weekly: %.1f%%)", eval.FiveHourFraction*100, eval.WeeklyFraction*100)
 	}
@@ -201,3 +201,4 @@ func EvaluateAccountQuota(quota *telemetry.AccountQuotaData, modelID string, mod
 	eval.ModelLabel = modelLabel
 	return eval
 }
+
