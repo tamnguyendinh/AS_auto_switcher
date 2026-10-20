@@ -58,7 +58,7 @@ Không tạo automation_view.go hoặc toggle thứ hai. Không thêm persistenc
 | telemetry/loop.go, pool.go, cache.go | Có 60s loop, một callback, PollAccount, TriggerNow và cache | Reuse nguyên cơ chế; App mở rộng callback | correct / preserve-only | E0-P0A-SRC2 | Binding ở P1-C, không viết loop mới |
 | connector/api_client.go | DiscoverActiveAgentModel trả ID; text sender luôn tạo một item | Reuse model resolver/text sender; method mới bổ sung trong file riêng | correct / preserve-only | E0-P0A-SRC4 | Không sửa behavior hiện có |
 | connector/automation_rpc.go | Chưa có | Model config reader, empty-items sender, state stream adapter | missing | E0-P0A-DIR1, E0-P0A-SRC4 | P1-A phần model; P1-B retry/stream |
-| automation/model_quota.go, sorter.go | Chưa có | Dynamic model mapping, classifier, thứ tự Owner đã chốt | missing | E0-P0A-DIR1 | P1-A |
+| automation/model_quota.go, sorter.go | Đã triển khai model quota mapping, ternary classifier, 5 tiêu chí lọc, 4 tầng Burn-down sorter | Tái dùng cho controller P1-B và coordinator P1-C | correct | E1-P1A-SRC1, E1-P1A-TEST1, E1-P1A-BENCH1 | Hoàn tất P1-A; bảo lưu cho P1-B |
 | automation/retry.go, controller.go, switch_gate_windows.go | Chưa có | Outcome-driven recovery/controller/shared caller guard | missing | E0-P0A-DIR1 | P1-B |
 | ui/window.go AutoSwitchToggle | Đã có toggle và label Tự động; callback chỉ đặt autoSwitchEnabled | Giữ widget và nối common setter/controller | unbound | E0-P0A-SRC5 | Bind P1-C; không tạo mới |
 | ui/app.go | Có Set/IsAutoSwitchEnabled, App.Init quota callback và App.Close | Khởi tạo controller bằng dependencies sẵn có, mở rộng callback, cancel lifecycle | unbound to automation | E0-P0A-SRC5 | P1-C |
@@ -71,6 +71,7 @@ Không tạo automation_view.go hoặc toggle thứ hai. Không thêm persistenc
 |---|---|---|---|---|---|
 | R0 | 2026-10-20 | Bản draft trước review | Đã ghi automation missing nhưng nhầm toggle missing và thiếu metadata/binding surfaces. Kết luận proceed unchanged của R0 bị R1 thay thế. | E0-P0A-SPEC1 | Không thực hiện nguyên draft |
 | R1 | 2026-10-20 | HEAD 2e4c893, review F1–F8 và yêu cầu sửa plan | Toggle -> unbound; quota metadata -> partial; thêm RPC/gate/App/CLI paths; giữ engine; E1/E2 -> planned/not run | E0-P0A-REV1, E0-P0A-SRC1..7, E0-P0A-DOC1 | Slice đầu tiên là P1-A; chưa bắt đầu |
+| R2 | 2026-10-20 | Commit c01b16f, nghiệm thu 9633470 | Hoàn thành Slice P1-A: Model Quota Resolver & Burn-down Sorter. model_quota.go, sorter.go chuyển sang correct. | E1-P1A-SRC1, E1-P1A-TEST1, E1-P1A-BENCH1 | Chuyển sang Slice P1-B |
 
 ## Phase Touch Map
 
@@ -122,7 +123,7 @@ GUI entrypoint dùng build tag gui. Script build có danh sách test cố địn
 - [x] Touch map nêu ngoại lệ metadata và các điểm gọi thực tế.
 - [x] R1 xử lý hướng sửa F1–F8 trong tasks, requirements, evidence và benchmark.
 - [x] P1/P2 còn chưa thực hiện; không có claim build/test/runtime acceptance sản phẩm.
-- [ ] Khi thực hiện P1-A, cập nhật trạng thái/ledgers sau acceptance của slice.
+- [x] Khi thực hiện P1-A, cập nhật trạng thái/ledgers sau acceptance của slice.
 - [ ] Các slice tiếp theo chỉ bắt đầu theo gate đã ghi trong plan.
 
 ## Final P0 Decision

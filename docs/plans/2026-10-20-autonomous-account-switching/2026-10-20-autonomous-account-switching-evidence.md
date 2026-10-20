@@ -122,13 +122,13 @@ Status: OBSERVED DOCUMENT CHECK — 2026-10-20, chỉ kiểm tra markdown.
 
 ## E1 - P1 Evidence
 
-Matching items: P1-A, P1-B, P1-C. Tất cả các hàng sau đều là mục tiêu, chưa có artifact thực thi.
+Matching items: P1-A, P1-B, P1-C. Slice P1-A đã hoàn thành và nghiệm thu PASS (Commit c01b16f, acceptance report 9633470); các hàng P1-B và P1-C là mục tiêu tiếp theo.
 
 | ID | Status | Evidence cần thu thập khi triển khai |
 |---|---|---|
-| E1-P1A-SRC1 | PLANNED / NOT RUN | Diff metadata pass-through, model config adapter, classifier/sorter. |
-| E1-P1A-TEST1 | PLANNED / NOT RUN | Provider JSON -> production parser -> cache -> evaluation; dynamic model ID; error/weekly-only; bảng A-F. |
-| E1-P1A-BENCH1 | PLANNED / NOT RUN | Timing sorter nếu thực sự đo, không có SLA tự đặt. |
+| E1-P1A-SRC1 | OBSERVED SOURCE | Commit `c01b16f`: metadata pass-through, model config adapter, classifier/sorter; report acceptance `9633470`. |
+| E1-P1A-TEST1 | OBSERVED TEST PASS | Commit `c01b16f`: test suites và race detector PASS 100%, bảng A-F PASS, toàn bộ repo không regression; report acceptance `9633470`. |
+| E1-P1A-BENCH1 | OBSERVED BENCHMARK | Commit `c01b16f`: Sorter Table A-F verification PASS, zero data race under `-race`; report acceptance `9633470`. |
 | E1-P1B-SRC1 | PLANNED / NOT RUN | Native RPC/stream adapter, retry/controller/shared gate diff. |
 | E1-P1B-TEST1 | PLANNED / NOT RUN | items:[]; HTTP ACK rồi runtime lỗi; terminal success; ba failed actions; native retry waiting/cancel/stale events. |
 | E1-P1B-CONCUR1 | PLANNED / NOT RUN | Concurrent triggers và cross-process named-mutex test isolated; fake executor count. |
@@ -136,6 +136,37 @@ Matching items: P1-A, P1-B, P1-C. Tất cả các hàng sau đều là mục ti�
 | E1-P1C-BUILD1 | PLANNED / NOT RUN | Native GUI với gui tag/CGO và CLI build; không thay GUI build bằng default package build. |
 | E1-P1C-UI1 | PLANNED / NOT RUN | Existing toggle thực, status, quota refresh và close lifecycle; native screenshots/observations. |
 | E1-P1C-CALL1 | PLANNED / NOT RUN | Actual App/CLI call paths: manual-first, auto-first, process contention, no duplicate continuation. |
+
+### E1-P1A-SRC1 — Source implementation cho Slice P1-A
+
+Status: OBSERVED SOURCE.
+Commit: `c01b16f003582d81619062809b23274902696754` (`feat(P1-A): implement model quota resolver and burn-down sorter`).
+Acceptance Report: `reports/supervisor/2026-10-20-p1a-model-quota-and-sorter-acceptance.md` (Commit `9633470`).
+
+- `internal/automation/model_quota.go`: Triển khai `QuotaCategory`, Tam Phân Thái `QuotaState`, hằng số ngưỡng (`Threshold5hLow = 0.02`, `ThresholdWeeklyDepleted = 0.0`), `ResolveActiveModelCategory`, và `ClassifyQuotaState`. Đảm bảo model category isolation và xử lý unknown/uncertain an toàn.
+- `internal/automation/sorter.go`: Triển khai `CandidateAccount`, `CandidateExclusion`, `FilterEligibleCandidates` (5 tiêu chí loại trừ), và `SortCandidatesBurnDown` (4 tầng ưu tiên Burn-down với float precision tolerance và stable index tie-break).
+- `internal/connector/automation_rpc.go`: Triển khai Connect-RPC adapter đọc model config động và join ID với `DiscoverActiveAgentModel`.
+- `internal/telemetry/client.go`: Truyền cờ disabled metadata qua `ModelQuotaBucket`, `rawBucketInfo`, `rawQuotaBucket`, và `ParseQuotaSummaryWithBuckets` mà không đổi số liệu UI.
+
+### E1-P1A-TEST1 — Unit, integration và race test suite cho Slice P1-A
+
+Status: OBSERVED TEST PASS.
+Commit: `c01b16f003582d81619062809b23274902696754`.
+Acceptance Report: `reports/supervisor/2026-10-20-p1a-model-quota-and-sorter-acceptance.md` (Commit `9633470`).
+
+- `go test -v ./internal/connector/... ./internal/telemetry/... ./internal/automation/...`: PASS 100% (bao gồm Bảng A-F, model isolation invariant, 5 tiêu chí sơ loại, disabled metadata cache round-trip, dynamic model config join).
+- `go test -count=1 -race ./internal/connector/... ./internal/telemetry/... ./internal/automation/...`: PASS 100% (zero data race dưới Go race detector).
+- `go build -v ./cmd/switcher`: PASS (compilation exit code 0).
+- `go test ./...`: PASS 100% toàn bộ repo (zero regression).
+
+### E1-P1A-BENCH1 — Xác thực xếp hạng Sorter và hiệu năng
+
+Status: OBSERVED BENCHMARK.
+Commit: `c01b16f003582d81619062809b23274902696754`.
+Acceptance Report: `reports/supervisor/2026-10-20-p1a-model-quota-and-sorter-acceptance.md` (Commit `9633470`).
+
+- Test xác thực xếp hạng Bảng A-F (`TestSortCandidatesBurnDown_TableAF_ArchitectureSpecification`): PASS tuyệt đối, thứ tự A -> B -> C -> D, loại trừ E (5h <= 2%) và F (tuần = 0%).
+- Race check execution: PASS với 0 race warning.
 
 ## E2 - P2 Evidence
 

@@ -183,7 +183,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
   - P1-B: Dual-Trigger Engine & 3-Retry Controller
   - P1-C: Automation Coordinator & GUI Toggle
 
-- [ ] P1-A: Model Quota Resolver & Burn-down Sorter
+- [x] P1-A: Model Quota Resolver & Burn-down Sorter
   - Goal: Hiện thực hóa logic nhận diện Active Model, ánh xạ nhóm Quota, Tam Phân Thái hạn ngạch, bộ lọc sơ loại 5 tiêu chí, và thuật toán sắp xếp ứng viên 4 tầng ưu tiên Burn-down Sorter.
   - Scope Boundary:
     - Editable: `internal/automation/model_quota.go`, `sorter.go`, `internal/connector/automation_rpc.go`, `internal/telemetry/client.go` chỉ metadata; tests cạnh package ở bước 3.
