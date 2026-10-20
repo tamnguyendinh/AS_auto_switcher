@@ -122,16 +122,16 @@ Status: OBSERVED DOCUMENT CHECK — 2026-10-20, chỉ kiểm tra markdown.
 
 ## E1 - P1 Evidence
 
-Matching items: P1-A, P1-B, P1-C. Slice P1-A đã hoàn thành và nghiệm thu PASS (Commit c01b16f, acceptance report 9633470); các hàng P1-B và P1-C là mục tiêu tiếp theo.
+Matching items: P1-A, P1-B, P1-C. Slice P1-A và P1-B đã hoàn thành và nghiệm thu PASS (P1-A: Commit c01b16f, acceptance report 9633470; P1-B: Commit 2c837b1, acceptance report e0ac3b2); hàng P1-C là mục tiêu tiếp theo.
 
 | ID | Status | Evidence cần thu thập khi triển khai |
 |---|---|---|
 | E1-P1A-SRC1 | OBSERVED SOURCE | Commit `c01b16f`: metadata pass-through, model config adapter, classifier/sorter; report acceptance `9633470`. |
 | E1-P1A-TEST1 | OBSERVED TEST PASS | Commit `c01b16f`: test suites và race detector PASS 100%, bảng A-F PASS, toàn bộ repo không regression; report acceptance `9633470`. |
 | E1-P1A-BENCH1 | OBSERVED BENCHMARK | Commit `c01b16f`: Sorter Table A-F verification PASS, zero data race under `-race`; report acceptance `9633470`. |
-| E1-P1B-SRC1 | PLANNED / NOT RUN | Native RPC/stream adapter, retry/controller/shared gate diff. |
-| E1-P1B-TEST1 | PLANNED / NOT RUN | items:[]; HTTP ACK rồi runtime lỗi; terminal success; ba failed actions; native retry waiting/cancel/stale events. |
-| E1-P1B-CONCUR1 | PLANNED / NOT RUN | Concurrent triggers và cross-process named-mutex test isolated; fake executor count. |
+| E1-P1B-SRC1 | OBSERVED SOURCE | Commit `2c837b1`: Connect-RPC streaming/empty-items adapter, RetryCoordinator, AutomationController, Windows Named Mutex gate; report acceptance `e0ac3b2`. |
+| E1-P1B-TEST1 | OBSERVED TEST PASS | Commit `2c837b1`: test suites và race detector PASS 100%, 3-retry outcome exhaustion, event deduplication, preflight fallback, non-blocking status channel; report acceptance `e0ac3b2`. |
+| E1-P1B-CONCUR1 | OBSERVED CONCURRENCY PASS | Commit `2c837b1`: 100 concurrent triggers atomic single-flight gate test và cross-process Windows Named Mutex contention test PASS; report acceptance `e0ac3b2`. |
 | E1-P1C-SRC1 | PLANNED / NOT RUN | Existing toggle/lifecycle/callback/GUI-CLI caller binding diff. |
 | E1-P1C-BUILD1 | PLANNED / NOT RUN | Native GUI với gui tag/CGO và CLI build; không thay GUI build bằng default package build. |
 | E1-P1C-UI1 | PLANNED / NOT RUN | Existing toggle thực, status, quota refresh và close lifecycle; native screenshots/observations. |
@@ -167,6 +167,38 @@ Acceptance Report: `reports/supervisor/2026-10-20-p1a-model-quota-and-sorter-acc
 
 - Test xác thực xếp hạng Bảng A-F (`TestSortCandidatesBurnDown_TableAF_ArchitectureSpecification`): PASS tuyệt đối, thứ tự A -> B -> C -> D, loại trừ E (5h <= 2%) và F (tuần = 0%).
 - Race check execution: PASS với 0 race warning.
+
+### E1-P1B-SRC1 — Source implementation cho Slice P1-B
+
+Status: OBSERVED SOURCE.
+Commit: `2c837b190428da10a3d3584cd5306161dbc2b80a` (`feat(P1-B): implement dual-trigger engine and 3-retry controller`).
+Acceptance Report: `reports/supervisor/2026-10-20-p1b-dual-trigger-and-retry-acceptance.md` (Commit `e0ac3b2`).
+
+- `internal/automation/switch_gate_windows.go`: Triển khai `SwitchGate`, user-scoped mutex identifier `Local\AntigravitySwitch_CallerBoundary_<USER>`, OS-thread locking (`runtime.LockOSThread` / `defer runtime.UnlockOSThread`), xử lý `WAIT_ABANDONED` và context cancellation, `ExecuteSwitchWithGate` bọc an toàn quanh `SwitchAccount` mà không sửa đổi `account_manager.go`.
+- `internal/automation/retry.go`: Triển khai `RetryCoordinator`, `MaxRecoveryAttempts = 3`, event deduplication key 6-tuple (`ConversationID:ExecutionID:StepID:Status:Attempt:TerminationReason`), outcome-driven state transitions (`retryAt`, reset on success), proactive supersede, và reset on session email change.
+- `internal/automation/controller.go`: Triển khai `AutomationController`, atomic flags (`enabled`, `isSwitching`), non-blocking ring-buffer status channel emission (`EmitStatus`), `EvaluateProactiveTrigger` với model quota classification, `TriggerSwitch` single-flight concurrency enforcement, candidate preflight polling via `TelemetryPool.PollAccount`, và fallback sang ứng viên hợp lệ kế tiếp.
+- `internal/connector/automation_rpc.go`: Bổ sung Connect-RPC frame encoding/decoding (`ConnectFlagMessage`, `ConnectFlagEndOfStream`), `SendEmptyItemsRetry` (`"items":[]` payload kèm active model config), và `StreamAgentStateUpdates` với client timeout không giới hạn, phụ thuộc hoàn toàn vào context lifetime.
+
+### E1-P1B-TEST1 — Unit, integration và race test suite cho Slice P1-B
+
+Status: OBSERVED TEST PASS.
+Commit: `2c837b190428da10a3d3584cd5306161dbc2b80a`.
+Acceptance Report: `reports/supervisor/2026-10-20-p1b-dual-trigger-and-retry-acceptance.md` (Commit `e0ac3b2`).
+
+- `go test -v -count=1 ./internal/connector/... ./internal/automation/...`: PASS 100% (toàn bộ 31 test functions và subtests pass sạch sẽ).
+- `go test -count=1 -race ./internal/connector/... ./internal/automation/...`: PASS (0 data race warnings dưới Go race detector).
+- `go build ./cmd/switcher`: PASS (compilation exit code 0).
+- `go vet ./internal/connector/... ./internal/automation/... ./cmd/switcher/...`: PASS (0 warnings).
+- Kiểm thử hành vi: 3-retry exhaustion (`TestRetryCoordinator_ThreeRetriesThenSwitch`), deduplication (`TestRetryCoordinator_HandleAgentStateUpdate_Deduplication`), candidate preflight fallback (`TestAutomationController_CandidatePreflightAndFallback`), và non-blocking channel overflow (`TestAutomationController_NonBlockingStatusChannel`) đều PASS.
+
+### E1-P1B-CONCUR1 — Kiểm thử tương tranh và Windows Named Mutex caller boundary
+
+Status: OBSERVED CONCURRENCY PASS.
+Commit: `2c837b190428da10a3d3584cd5306161dbc2b80a`.
+Acceptance Report: `reports/supervisor/2026-10-20-p1b-dual-trigger-and-retry-acceptance.md` (Commit `e0ac3b2`).
+
+- In-process single-flight gate: `TestAutomationController_SingleFlightGate_100ConcurrentTriggers` chạy 100 goroutine đồng thời, xác minh đúng 1 trigger được thực thi và 99 trigger bị drop an toàn với `ErrSwitchInProgress`.
+- Cross-process Named Mutex contention: `TestSwitchGate_ProcessContention` spawn process con độc lập chiếm giữ mutex, xác minh process cha fail `TryExecute` với `ErrGateBusy`.
 
 ## E2 - P2 Evidence
 

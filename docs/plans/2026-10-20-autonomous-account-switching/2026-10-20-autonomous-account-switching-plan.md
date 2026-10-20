@@ -252,7 +252,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
   - Actual-status Update: Cập nhật dòng `model_quota.go` và `sorter.go` sang `correct`.
   - Commit Boundary: Commit sau khi slice P1-A hoàn thành và pass toàn bộ acceptance.
 
-- [ ] P1-B: Dual-Trigger Engine & 3-Retry Controller
+- [x] P1-B: Dual-Trigger Engine & 3-Retry Controller
   - Goal: Nối native Retry/state stream với controller, tối đa ba recovery actions theo outcome; cả hai trigger gọi lại engine qua shared switch gate. Không triển khai app binding trong slice này.
   - Scope Boundary:
     - Editable: `internal/automation/retry.go`, `controller.go`, `switch_gate_windows.go`, `internal/connector/automation_rpc.go`; tests tương ứng ở bước 3.
