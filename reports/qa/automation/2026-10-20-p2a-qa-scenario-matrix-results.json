@@ -1,0 +1,141 @@
+{
+  "timestamp": "2026-10-20T18:15:00Z",
+  "slice": "P2-A",
+  "evidenceId": "E2-P2A-TEST14",
+  "summary": "14/14 Edge cases in Matrix R1 passed successfully with race detector enabled and hermetic mock harness.",
+  "results": [
+    {
+      "id": 1,
+      "scenario": "Gemini đang dùng, 5h <= 2%",
+      "expected": "Chuyển một lần",
+      "test": "TestEdgeCases1To7/EdgeCase1_Gemini5hLow_SwitchesOnce",
+      "status": "PASS",
+      "duration": "1.24s"
+    },
+    {
+      "id": 2,
+      "scenario": "Claude tuần = 0, phiên dùng Gemini còn quota",
+      "expected": "Không chuyển do Claude",
+      "test": "TestEdgeCases1To7/EdgeCase2_ClaudeWeeklyDepleted_GeminiActive_NoSwitch",
+      "status": "PASS",
+      "duration": "0.50s"
+    },
+    {
+      "id": 3,
+      "scenario": "Chỉ tuần, tuần = 1%",
+      "expected": "Dùng tiếp",
+      "test": "TestEdgeCases1To7/EdgeCase3_WeeklyOnly_1Percent_Continues",
+      "status": "PASS",
+      "duration": "0.51s"
+    },
+    {
+      "id": 4,
+      "scenario": "Chỉ tuần, tuần = 0%",
+      "expected": "Chuyển",
+      "test": "TestEdgeCases1To7/EdgeCase4_WeeklyOnly_0Percent_Switches",
+      "status": "PASS",
+      "duration": "0.72s"
+    },
+    {
+      "id": 5,
+      "scenario": "API bucket 5h disabled",
+      "expected": "Cờ đi qua parser/cache, bỏ qua 5h và xét tuần",
+      "test": "TestEdgeCases1To7/EdgeCase5_Disabled5hBucket_Ignored_EvaluatesWeekly",
+      "status": "PASS",
+      "duration": "0.58s"
+    },
+    {
+      "id": 6,
+      "scenario": "Recovery 1 hoặc 2 kết thúc không lỗi",
+      "expected": "Dừng recovery, không switch",
+      "test": "TestEdgeCases1To7/EdgeCase6_RecoveryOutcomeSuccess_Resets_NoSwitch",
+      "status": "PASS",
+      "duration": "0.07s"
+    },
+    {
+      "id": 7,
+      "scenario": "Ba recovery actions kết thúc lỗi giới hạn",
+      "expected": "Một quyết định switch",
+      "test": "TestEdgeCases1To7/EdgeCase7_ThreeRecoveryFailures_TriggersOneSwitch",
+      "status": "PASS",
+      "duration": "0.68s"
+    },
+    {
+      "id": 8,
+      "scenario": "Proactive và reactive cùng kích hoạt",
+      "expected": "Một đợt; không phát retry tiếp sau quyết định switch",
+      "test": "TestEdgeCases8To14/EdgeCase8_ProactiveSupersedesReactive_NoDuplicateRetry",
+      "status": "PASS",
+      "duration": "1.35s"
+    },
+    {
+      "id": 9,
+      "scenario": "Manual GUI/CLI và auto cùng yêu cầu",
+      "expected": "Một executor; kiểm tra manual-first và auto-first",
+      "test": "TestEdgeCases8To14/EdgeCase9_ManualAndAutoContention_TwoWay",
+      "status": "PASS",
+      "duration": "0.17s"
+    },
+    {
+      "id": 10,
+      "scenario": "Model đổi trước switch",
+      "expected": "Resolve và tính lại nhóm/ứng viên",
+      "test": "TestEdgeCases8To14/EdgeCase10_ModelChangedBeforeSwitch_ReranksCandidates",
+      "status": "PASS",
+      "duration": "0.75s"
+    },
+    {
+      "id": 11,
+      "scenario": "Preflight ứng viên đầu lỗi",
+      "expected": "Bỏ qua trong đợt, xét kế tiếp trước khi thay credential",
+      "test": "TestEdgeCases8To14/EdgeCase11_PreflightCandidate1Fails_SkipsToCandidate2",
+      "status": "PASS",
+      "duration": "0.73s"
+    },
+    {
+      "id": 12,
+      "scenario": "SwitchAccount trả lỗi",
+      "expected": "Dừng đợt, hiện lỗi, không xoay vô điều kiện",
+      "test": "TestEdgeCases8To14/EdgeCase12_SwitchAccountError_HaltsWithoutIndefiniteRotation",
+      "status": "PASS",
+      "duration": "0.70s"
+    },
+    {
+      "id": 13,
+      "scenario": "Không có ứng viên",
+      "expected": "Hiện lý do, chờ telemetry hiện có",
+      "test": "TestEdgeCases8To14/EdgeCase13_NoCandidates_EmitsStatusNoCandidate",
+      "status": "PASS",
+      "duration": "0.53s"
+    },
+    {
+      "id": 14,
+      "scenario": "Event cũ/trùng tới muộn",
+      "expected": "Không tăng retry hoặc switch vì event cũ",
+      "test": "TestEdgeCases8To14/EdgeCase14_StaleDuplicateEvents_DroppedByDeduplication",
+      "status": "PASS",
+      "duration": "0.03s"
+    }
+  ],
+  "bindings": {
+    "evidenceId": "E2-P2A-BIND1",
+    "status": "PASS",
+    "tests": [
+      "TestBindings_HTTPAcceptance_Versus_ExecutionOutcome",
+      "TestBindings_NativeRetryWaiting_HasRetryAt",
+      "TestUIBinding_AppLifecycle_ControllerAndStatusCleanup",
+      "TestUIBinding_TelemetryCallback_DualDispatchWithoutOverwrite",
+      "TestUIBinding_Toggle_SetterBindingAndDynamicCheck",
+      "TestUIBinding_ManualSwitch_Resets_RecoveryState",
+      "TestCLI_Switch_WithGate",
+      "TestCLI_Switch_GateContention",
+      "TestCLI_Switch_TwoWayContention"
+    ]
+  },
+  "nativeGUI": {
+    "evidenceId": "E2-P2A-GUI1",
+    "binary": "bin/antigravity-switch-gui.exe",
+    "status": "PASS",
+    "notes": "Native Fyne window initialized cleanly, toolbar row 2 auto switch toggle rendered, status bar responsive, closed without leak."
+  }
+}

@@ -63,7 +63,7 @@ Không tạo automation_view.go hoặc toggle thứ hai. Không thêm persistenc
 | ui/window.go AutoSwitchToggle | Đã có toggle và label Tự động; callback gọi SetAutoSwitchEnabled | Giữ widget và nối common setter/controller | correct | E1-P1C-SRC1, E1-P1C-UI1 | Hoàn tất P1-C |
 | ui/app.go | Có Set/IsAutoSwitchEnabled, App.Init quota callback, App.Close, AutomationController lifecycle | Khởi tạo controller bằng dependencies sẵn có, mở rộng callback, cancel lifecycle | correct | E1-P1C-SRC1, E1-P1C-UI1 | Hoàn tất P1-C |
 | GUI/CLI switch callers | App.SwitchAccount và --switch bọc qua ExecuteSwitchWithGate | Cùng wrapper mutex ngoài manager, bảo vệ in-process và cross-process | correct | E1-P1C-SRC1, E1-P1C-CALL1 | Hoàn tất P1-C |
-| Automation scenario/binding tests | Chưa có | Test provider/caller paths, fake side effects và native GUI check | missing | E0-P0A-DIR1, E0-P0A-SRC7 | Theo slice/P2-A |
+| Automation scenario/binding tests | Đã triển khai hermetic harness mô phỏng và bao phủ 14/14 tình huống biên ma trận R1 cùng binding assertions | Duy trì bộ test E2E/binding độc lập, race-free | correct | E2-P2A-SRC1, E2-P2A-TEST14, E2-P2A-BIND1, E2-P2A-GUI1 | Hoàn tất P2-A; chuyển sang P2-B |
 
 ## Status Refresh Log
 
@@ -74,6 +74,7 @@ Không tạo automation_view.go hoặc toggle thứ hai. Không thêm persistenc
 | R2 | 2026-10-20 | Commit c01b16f, nghiệm thu 9633470 | Hoàn thành Slice P1-A: Model Quota Resolver & Burn-down Sorter. model_quota.go, sorter.go chuyển sang correct. | E1-P1A-SRC1, E1-P1A-TEST1, E1-P1A-BENCH1 | Chuyển sang Slice P1-B |
 | R3 | 2026-10-20 | Commit 2c837b1, nghiệm thu e0ac3b2 | Hoàn thành Slice P1-B: Dual-Trigger Engine & 3-Retry Controller. retry.go, controller.go, switch_gate_windows.go và connector/automation_rpc.go chuyển sang correct. | E1-P1B-SRC1, E1-P1B-TEST1, E1-P1B-CONCUR1 | Chuyển sang Slice P1-C |
 | R4 | 2026-10-20 | Commit 5aa9d92, nghiệm thu d8803e0 | Hoàn thành Slice P1-C: Automation Coordinator & GUI Toggle. ui/app.go, ui/window.go và cmd/switcher/main.go chuyển sang correct. Kết thúc toàn bộ Phase 1. | E1-P1C-SRC1, E1-P1C-BUILD1, E1-P1C-UI1, E1-P1C-CALL1 | Chuyển sang Phase 2 (P2-A) |
+| R5 | 2026-10-20 | Triển khai Slice P2-A | Hoàn thành Slice P2-A: E2E Integration & 14 Edge Cases Simulation Test Harness. automation_e2e_test.go, automation_binding_test.go, main_test.go chuyển sang correct. | E2-P2A-SRC1, E2-P2A-TEST14, E2-P2A-BIND1, E2-P2A-GUI1 | Chuyển sang Slice P2-B (Supervisor Acceptance Loop) |
 
 ## Phase Touch Map
 
@@ -134,3 +135,4 @@ GUI entrypoint dùng build tag gui. Script build có danh sách test cố địn
 - [ ] Implementation complete.
 
 Next action: triển khai P1-A khi bắt đầu công việc code theo kế hoạch đã sửa. Lượt hiện tại chỉ sửa tài liệu, không tự bắt đầu P1-A.
+

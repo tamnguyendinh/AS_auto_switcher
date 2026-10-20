@@ -405,7 +405,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
   - P2-C: Remove dead work and deadcode created during this plan
   - P2-D: Close the plan
 
-- [ ] P2-A: E2E Integration & 14 Edge Cases Simulation Test Harness
+- [x] P2-A: E2E Integration & 14 Edge Cases Simulation Test Harness
   - Goal: Kiểm tra 14 tình huống trong ma trận R1 và các binding thực tế; mock side effects đi qua production adapters/callers, native GUI check riêng.
   - Scope Boundary:
     - Editable: `internal/automation/automation_e2e_test.go`, `internal/ui/automation_binding_test.go`, `cmd/switcher/main_test.go` và fixtures/testdata tương ứng.
@@ -531,3 +531,4 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
 | 14 | Event cũ/trùng tới muộn | Không tăng retry hoặc switch vì event cũ. |
 
 Ngoài 14 hàng, nghiệm thu phải kiểm tra các bindings đã giao ở P1-C: callback quota không bị ghi đè, toggle/lifecycle thật, dynamic model config, provider-to-cache disabled, HTTP acceptance khác execution outcome, cross-process gate và GUI build tag. Đây là kiểm tra tính năng mới, không mở audit engine cũ.
+

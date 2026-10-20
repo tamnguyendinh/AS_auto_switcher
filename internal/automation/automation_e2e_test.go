@@ -370,14 +370,15 @@ func (syntheticOAuthRefresher) RefreshToken(ctx context.Context, refreshToken st
 }
 
 func (mt *MockTelemetry) NewQuotaClient() *telemetry.QuotaClient {
-	return telemetry.NewQuotaClientWithEndpoint(
+	qc := telemetry.NewQuotaClientWithEndpoint(
 		syntheticOAuthRefresher{},
 		mt.URL(),
 		mt.Client(),
 	)
+	qc.SetUserAgent("antigravity/2.24.0")
+	telemetry.SetDiscoveredUserAgent("antigravity/2.24.0")
+	return qc
 }
-
-// -----------------------------------------------------------------------------
 // E2ETestHarness: Orchestrates hermetic end-to-end testing with real components
 // -----------------------------------------------------------------------------
 
@@ -1280,6 +1281,7 @@ func TestBindings_NativeRetryWaiting_HasRetryAt(t *testing.T) {
 		t.Errorf("expected 0 recovery attempts when server is auto-retrying, got %d", rc.GetRecoveryAttempts())
 	}
 }
+
 
 
 

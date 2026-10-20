@@ -263,3 +263,4 @@ Ma trận scenario và acceptance nằm trong plan; bảng này không lặp l�
 - R1: sửa tài liệu theo yêu cầu Owner; chưa triển khai P1/P2.
 - Product build/tests/native switch/retry: NOT RUN trong lượt sửa tài liệu.
 - Implementation final commit: NOT CREATED.
+
