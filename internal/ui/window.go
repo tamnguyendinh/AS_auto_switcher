@@ -179,9 +179,7 @@ func (a *App) setupLayout() {
 	headerRow2AutoLabel = lblAuto
 
 	a.autoSwitchToggle = newAutoSwitchToggle(a.autoSwitchEnabled, func(isOn bool) {
-		a.mu.Lock()
-		a.autoSwitchEnabled = isOn
-		a.mu.Unlock()
+		a.SetAutoSwitchEnabled(isOn)
 	}, palette)
 
 	rightCluster := container.New(row2RightClusterLayout{}, lblAuto, a.autoSwitchToggle, themeSelectWrap)

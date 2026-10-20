@@ -200,6 +200,38 @@ Acceptance Report: `reports/supervisor/2026-10-20-p1b-dual-trigger-and-retry-acc
 - In-process single-flight gate: `TestAutomationController_SingleFlightGate_100ConcurrentTriggers` chạy 100 goroutine đồng thời, xác minh đúng 1 trigger được thực thi và 99 trigger bị drop an toàn với `ErrSwitchInProgress`.
 - Cross-process Named Mutex contention: `TestSwitchGate_ProcessContention` spawn process con độc lập chiếm giữ mutex, xác minh process cha fail `TryExecute` với `ErrGateBusy`.
 
+### E1-P1C-SRC1 — Source implementation cho Slice P1-C
+
+Status: OBSERVED SOURCE.
+Báo cáo thi công: eports/coder/2026-10-20-p1c-automation-coordinator-and-gui-toggle-report.md.
+
+- internal/ui/app.go: Khởi tạo và quản lý vòng đời AutomationController trong NewAppWithFyne, Init, và Close; mở rộng callback duy nhất của AutoTelemetryLoop cấp quota data cho controller không chặn; bọc SwitchAccount qua utomation.ExecuteSwitchWithGate và invalidate recovery khi đổi session.
+- internal/ui/window.go: Nối toggle callback vào .SetAutoSwitchEnabled(isOn) thread-safe.
+- cmd/switcher/main.go: Bọc nhánh CLI --switch qua utomation.ExecuteSwitchWithGate.
+- internal/manager/account_manager_test.go: Tiêm mock el.ServerDiscoverer hermetic cho 3 unit tests theo quyết định kiến trúc eports/architect/2026-10-20-p1c-fast-block-resolution.md.
+
+### E1-P1C-BUILD1 — Biên dịch nhị phân toàn diện
+
+Status: OBSERVED BUILD PASS.
+Command: powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Mode all.
+Exit Code: 0 (BUILD SUCCESSFUL).
+Outputs:
+- in/antigravity-switch.exe: 10.53 MB (11,036,672 bytes)
+- in/antigravity-switch-gui.exe: 27.72 MB (29,067,776 bytes)
+- Embedded PE application icon: verified (32x32)
+
+### E1-P1C-UI1 — Kiểm thử giao diện & Controller Binding
+
+Status: OBSERVED UI TEST PASS.
+Command: go test -v -tags gui ./internal/ui/....
+Result: PASS (36/36 tests pass, 0 warnings).
+
+### E1-P1C-CALL1 — Kiểm thử Callers & Switch Gate
+
+Status: OBSERVED CALLER PASS.
+Command: go test -v ./cmd/switcher/....
+Result: PASS (6/6 tests pass, 0 warnings).
+
 ## E2 - P2 Evidence
 
 Matching items: P2-A, P2-B, P2-C, P2-D.

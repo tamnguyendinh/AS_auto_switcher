@@ -321,7 +321,7 @@ Không thêm tầng Pristine riêng. Các hàng này là kỳ vọng nghiệp v�
   - Actual-status Update: Dòng `retry.go` và `controller.go` chuyển sang `correct`.
   - Commit Boundary: Commit sau khi slice P1-B hoàn thành.
 
-- [ ] P1-C: Automation Coordinator & GUI Toggle
+- [x] P1-C: Automation Coordinator & GUI Toggle
   - Goal: Nối toggle Tự động đã có và status bar với controller, callback telemetry, lifecycle và các caller chuyển tay GUI/CLI.
   - Scope Boundary:
     - Editable: `internal/ui/app.go`, `internal/ui/window.go` chỉ callback, `cmd/switcher/main.go` chỉ --switch; `internal/ui/automation_binding_test.go`, `cmd/switcher/main_test.go` ở bước 3.

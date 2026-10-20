@@ -60,9 +60,9 @@ Không tạo automation_view.go hoặc toggle thứ hai. Không thêm persistenc
 | connector/automation_rpc.go | Đã triển khai model config reader (P1-A), empty-items retry sender và Connect-RPC stream frame adapter (P1-B) | Tái dùng cho coordinator P1-C | correct | E1-P1A-SRC1, E1-P1B-SRC1 | Hoàn tất P1-B |
 | automation/model_quota.go, sorter.go | Đã triển khai model quota mapping, ternary classifier, 5 tiêu chí lọc, 4 tầng Burn-down sorter | Tái dùng cho controller P1-B và coordinator P1-C | correct | E1-P1A-SRC1, E1-P1A-TEST1, E1-P1A-BENCH1 | Hoàn tất P1-A; bảo lưu cho P1-B |
 | automation/retry.go, controller.go, switch_gate_windows.go | Đã triển khai Single-Flight Gate, RetryCoordinator (tối đa 3 lần theo outcome), AutomationController (dual-trigger + preflight fallback), Windows Named Mutex caller boundary | Tái dùng cho coordinator và binding P1-C | correct | E1-P1B-SRC1, E1-P1B-TEST1, E1-P1B-CONCUR1 | Hoàn tất P1-B; chuyển sang P1-C |
-| ui/window.go AutoSwitchToggle | Đã có toggle và label Tự động; callback chỉ đặt autoSwitchEnabled | Giữ widget và nối common setter/controller | unbound | E0-P0A-SRC5 | Bind P1-C; không tạo mới |
-| ui/app.go | Có Set/IsAutoSwitchEnabled, App.Init quota callback và App.Close | Khởi tạo controller bằng dependencies sẵn có, mở rộng callback, cancel lifecycle | unbound to automation | E0-P0A-SRC5 | P1-C |
-| GUI/CLI switch callers | App.SwitchAccount và --switch gọi manager trực tiếp; GUI isBusy riêng | Cùng wrapper mutex ngoài manager, cả hai thứ tự contention | unbound to shared gate | E0-P0A-SRC6 | P1-C |
+| ui/window.go AutoSwitchToggle | Đã có toggle và label Tự động; callback gọi SetAutoSwitchEnabled | Giữ widget và nối common setter/controller | correct / bound | E1-P1C-SRC1, E1-P1C-UI1 | Hoàn tất P1-C |
+| ui/app.go | Có Set/IsAutoSwitchEnabled, App.Init quota callback, App.Close, AutomationController lifecycle | Khởi tạo controller bằng dependencies sẵn có, mở rộng callback, cancel lifecycle | correct / bound | E1-P1C-SRC1, E1-P1C-UI1 | Hoàn tất P1-C |
+| GUI/CLI switch callers | App.SwitchAccount và --switch bọc qua ExecuteSwitchWithGate | Cùng wrapper mutex ngoài manager, bảo vệ in-process và cross-process | correct / bound | E1-P1C-SRC1, E1-P1C-CALL1 | Hoàn tất P1-C |
 | Automation scenario/binding tests | Chưa có | Test provider/caller paths, fake side effects và native GUI check | missing | E0-P0A-DIR1, E0-P0A-SRC7 | Theo slice/P2-A |
 
 ## Status Refresh Log

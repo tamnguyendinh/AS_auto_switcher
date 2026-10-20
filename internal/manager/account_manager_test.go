@@ -312,6 +312,15 @@ func TestSwitchAccount(t *testing.T) {
 		return client, nil
 	})
 
+	// Mock ServerDiscoverer to avoid probing real OS language_server.exe processes
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       9999,
+			Port:      port,
+			CSRFToken: "test-csrf-token",
+		}, nil
+	}
+
 	// 1. Switch to missing account -> fails
 	_, errMissing := mgr.SwitchAccount(context.Background(), "non-existent@example.com", false)
 	if errMissing == nil {
@@ -754,6 +763,14 @@ func TestSwitchAccount_AtomicAppStorageSync(t *testing.T) {
 		return connector.NewClientWithHTTP(&connector.ServerInfo{PID: 1234, Port: portAtomic, CSRFToken: "tok"}, atomicServer.Client()), nil
 	})
 
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       1234,
+			Port:      portAtomic,
+			CSRFToken: "tok",
+		}, nil
+	}
+
 	// Verify that SyncAppStorageToS runs BEFORE wincredWriter
 	var appStorageDuringWincred map[string]interface{}
 	mgr.SetWincredHandlers(
@@ -860,6 +877,13 @@ func TestSwitchAccount_CivilizedReAuth_HotSwapped(t *testing.T) {
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
 		return client, nil
 	})
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       8888,
+			Port:      port,
+			CSRFToken: "test-reauth-csrf",
+		}, nil
+	}
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
 			return &model.TokenData{
@@ -942,6 +966,13 @@ func TestSwitchAccount_ReAuthFallback_TriggerReauthError(t *testing.T) {
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
 		return client, nil
 	})
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       8888,
+			Port:      port,
+			CSRFToken: "test-reauth-csrf",
+		}, nil
+	}
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
 			return &model.TokenData{
@@ -1017,6 +1048,13 @@ func TestSwitchAccount_ReAuthFallback_EmailMismatch(t *testing.T) {
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
 		return client, nil
 	})
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       8888,
+			Port:      port,
+			CSRFToken: "test-reauth-csrf",
+		}, nil
+	}
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
 			return &model.TokenData{

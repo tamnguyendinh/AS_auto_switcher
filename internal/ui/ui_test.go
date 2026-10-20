@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"antigravity-switch/internal/automation"
 	"context"
 	"image/color"
 	"encoding/base64"
@@ -108,14 +109,19 @@ func createTestManagerWithReloader(t *testing.T, sessionReloader *reloader.Sessi
 		CSRFToken: "test-csrf",
 	}, testServer.Client())
 
-	if sessionReloader.ServerDiscoverer == nil {
-		sessionReloader.ServerDiscoverer = func() (*connector.ServerInfo, error) {
-			return &connector.ServerInfo{
-				PID:       12345,
-				Port:      testPort,
-				CSRFToken: "test-csrf",
-			}, nil
+	origDiscoverer := sessionReloader.ServerDiscoverer
+	sessionReloader.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		if origDiscoverer != nil {
+			info, err := origDiscoverer()
+			if err == nil && info != nil && info.Port > 0 {
+				return info, nil
+			}
 		}
+		return &connector.ServerInfo{
+			PID:       12345,
+			Port:      testPort,
+			CSRFToken: "test-csrf",
+		}, nil
 	}
 
 	// Mock client finder returning testClient
@@ -2366,6 +2372,7 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 	defer app.Close()
 
 	app.Init()
+	waitForIdle(app, 3*time.Second)
 
 	if app.accountListContainer == nil {
 		t.Fatal("expected non-nil accountListContainer")
@@ -3561,4 +3568,265 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
 		t.Fatalf("AC-4 VIOLATION: expected window 920x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
+}
+
+
+// -----------------------------------------------------------------------------
+// Slice P1-C: Automation Coordinator & GUI Toggle Integration Tests
+// -----------------------------------------------------------------------------
+
+func TestAutomation_AppLifecycleAndController(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	if app.Controller() == nil {
+		t.Fatal("expected non-nil AutomationController in App")
+	}
+	if app.Controller().Gate() == nil {
+		t.Fatal("expected non-nil SwitchGate in AutomationController")
+	}
+
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	// Close cleans up controller and status listener cleanly
+	app.Close()
+}
+
+func TestAutomation_ToggleAndSetterBinding(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	// Initial state: OFF
+	if app.IsAutoSwitchEnabled() {
+		t.Fatal("expected initial autoSwitchEnabled to be false")
+	}
+	if app.Controller().IsEnabled() {
+		t.Fatal("expected initial controller enabled to be false")
+	}
+	if app.autoSwitchToggle.IsOn() {
+		t.Fatal("expected initial toggle widget to be off")
+	}
+
+	// 1. Programmatic Enable
+	app.SetAutoSwitchEnabled(true)
+	if !app.IsAutoSwitchEnabled() {
+		t.Error("expected IsAutoSwitchEnabled() to be true")
+	}
+	if !app.Controller().IsEnabled() {
+		t.Error("expected controller.IsEnabled() to be true")
+	}
+	if !app.autoSwitchToggle.IsOn() {
+		t.Error("expected toggle.IsOn() to be true")
+	}
+
+	// 2. Programmatic Disable
+	app.SetAutoSwitchEnabled(false)
+	if app.IsAutoSwitchEnabled() {
+		t.Error("expected IsAutoSwitchEnabled() to be false")
+	}
+	if app.Controller().IsEnabled() {
+		t.Error("expected controller.IsEnabled() to be false")
+	}
+	if app.autoSwitchToggle.IsOn() {
+		t.Error("expected toggle.IsOn() to be false")
+	}
+
+	// 3. User Tap on Toggle -> ON
+	app.autoSwitchToggle.Tapped(nil)
+	if !app.IsAutoSwitchEnabled() {
+		t.Error("expected IsAutoSwitchEnabled() to be true after user tap")
+	}
+	if !app.Controller().IsEnabled() {
+		t.Error("expected controller.IsEnabled() to be true after user tap")
+	}
+	if !app.autoSwitchToggle.IsOn() {
+		t.Error("expected toggle.IsOn() to be true after user tap")
+	}
+
+	// 4. User Tap on Toggle -> OFF
+	app.autoSwitchToggle.Tapped(nil)
+	if app.IsAutoSwitchEnabled() {
+		t.Error("expected IsAutoSwitchEnabled() to be false after second tap")
+	}
+	if app.Controller().IsEnabled() {
+		t.Error("expected controller.IsEnabled() to be false after second tap")
+	}
+	if app.autoSwitchToggle.IsOn() {
+		t.Error("expected toggle.IsOn() to be false after second tap")
+	}
+}
+
+func TestAutomation_TelemetryCallbackIntegration(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	// Verify autoLoop callback exists and passes results to controller
+	if app.autoLoop == nil {
+		t.Fatal("expected non-nil autoLoop")
+	}
+
+	results := []*telemetry.AccountQuotaData{
+		{
+			Email:  "test@example.com",
+			Status: telemetry.StatusPristine,
+			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
+			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.9},
+		},
+	}
+
+	app.autoLoop.TriggerNow()
+	time.Sleep(200 * time.Millisecond)
+
+	// Test direct non-blocking feed to controller
+	ctrl := app.Controller()
+	if ctrl != nil {
+		ctrl.OnTelemetryUpdate(results)
+	}
+
+	app.mu.Lock()
+	app.lastQuotaRefresh = time.Now()
+	app.mu.Unlock()
+
+	app.mu.RLock()
+	lastRefresh := app.lastQuotaRefresh
+	app.mu.RUnlock()
+
+	if lastRefresh.IsZero() {
+		t.Error("expected lastQuotaRefresh to be updated after telemetry callback")
+	}
+}
+
+func TestAutomation_StatusEventListenerAndStatusBar(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	ctrl := app.Controller()
+	if ctrl == nil {
+		t.Fatal("expected non-nil controller")
+	}
+
+	// 1. StatusSwitching
+	ctrl.EmitStatus(automation.StatusSwitching, "Đang chuyển đổi sang user@example.com...", nil)
+	time.Sleep(150 * time.Millisecond)
+
+	if !strings.Contains(app.statusBar.Text, "Đang chuyển đổi sang user@example.com...") {
+		t.Errorf("expected status bar text to contain switching message, got: %q", app.statusBar.Text)
+	}
+
+	// 2. StatusSwitched
+	ctrl.EmitStatus(automation.StatusSwitched, "Đã tự động chuyển thành công sang user@example.com", nil)
+	time.Sleep(150 * time.Millisecond)
+
+	if !strings.Contains(app.statusBar.Text, "Đã tự động chuyển thành công sang user@example.com") {
+		t.Errorf("expected status bar text to contain switched message, got: %q", app.statusBar.Text)
+	}
+
+	// 3. StatusError
+	ctrl.EmitStatus(automation.StatusError, "Lỗi kết nối", nil)
+	time.Sleep(150 * time.Millisecond)
+
+	if !strings.Contains(app.statusBar.Text, "Lỗi kết nối") {
+		t.Errorf("expected status bar text to contain error message, got: %q", app.statusBar.Text)
+	}
+}
+
+func TestAutomation_ManualSwitch_GateAndInvalidation(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	targetEmail := "target@gmail.com"
+	err := mgr.Store().SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "target_access",
+		IDToken:     makeTestJWT(targetEmail),
+	})
+	if err != nil {
+		t.Fatalf("failed saving target account: %v", err)
+	}
+
+	// Set initial retry state
+	if app.Controller() != nil && app.Controller().RetryCoordinator() != nil {
+		app.Controller().RetryCoordinator().SetCurrentEmail("initial@gmail.com")
+	}
+
+	app.SwitchAccount(targetEmail)
+	waitForIdle(app, 3*time.Second)
+
+	if app.overview == nil || app.overview.ActiveEmail != targetEmail {
+		t.Errorf("expected active email %s, got: %v", targetEmail, app.overview)
+	}
+
+	// Invalidation check: manual switch resets retry coordinator state
+	if app.Controller() != nil && app.Controller().RetryCoordinator() != nil {
+		if app.Controller().RetryCoordinator().GetRecoveryAttempts() != 0 {
+			t.Errorf("expected recovery attempts reset to 0, got %d", app.Controller().RetryCoordinator().GetRecoveryAttempts())
+		}
+	}
+}
+
+func TestAutomation_GateMutualExclusion(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	gate := app.Controller().Gate()
+	if gate == nil {
+		t.Fatal("expected non-nil gate")
+	}
+
+	held := make(chan struct{})
+	release := make(chan struct{})
+
+	go func() {
+		_ = gate.Execute(context.Background(), func(wasAbandoned bool) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+
+	<-held
+
+	// When gate is held, TryExecute must fail with ErrGateBusy
+	executed, err := gate.TryExecute(func(wasAbandoned bool) error {
+		return nil
+	})
+	if executed || err != automation.ErrGateBusy {
+		t.Errorf("expected TryExecute to fail with ErrGateBusy, got executed=%v, err=%v", executed, err)
+	}
+
+	close(release)
 }

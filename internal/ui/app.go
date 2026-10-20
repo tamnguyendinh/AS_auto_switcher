@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"antigravity-switch/internal/automation"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -56,6 +57,10 @@ type App struct {
 
 	// Auto-switch UI State (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
 	autoSwitchEnabled bool
+
+	// Automation (Slice P1-C)
+	controller         *automation.AutomationController
+	statusCancel       context.CancelFunc
 
 	// In-place update state
 	accountCards []*AccountCardWidget
@@ -116,6 +121,11 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 		}
 	}
 
+		// 4. Initialize Automation Controller
+	if mgr != nil {
+		a.controller = automation.NewAutomationController(mgr, a.telemetryPool, a.quotaCache, nil)
+	}
+
 	return a
 }
 
@@ -138,6 +148,13 @@ func (a *App) SetTelemetryPool(pool *telemetry.TelemetryPool) {
 	if pool != nil && pool.Cache() != nil {
 		a.quotaCache = pool.Cache()
 	}
+	if a.mgr != nil {
+		var gate *automation.SwitchGate
+		if a.controller != nil {
+			gate = a.controller.Gate()
+		}
+		a.controller = automation.NewAutomationController(a.mgr, a.telemetryPool, a.quotaCache, gate)
+	}
 }
 
 // SetQuotaCache allows injecting a custom QuotaCache.
@@ -145,7 +162,29 @@ func (a *App) SetQuotaCache(cache *telemetry.QuotaCache) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.quotaCache = cache
+	if a.mgr != nil {
+		var gate *automation.SwitchGate
+		if a.controller != nil {
+			gate = a.controller.Gate()
+		}
+		a.controller = automation.NewAutomationController(a.mgr, a.telemetryPool, a.quotaCache, gate)
+	}
 }
+
+// Controller returns the active AutomationController instance.
+func (a *App) Controller() *automation.AutomationController {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.controller
+}
+
+// SetController allows injecting a custom or mock AutomationController.
+func (a *App) SetController(c *automation.AutomationController) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.controller = c
+}
+
 
 // CurrentTheme returns the active theme name.
 func (a *App) CurrentTheme() string {
@@ -229,9 +268,48 @@ func (a *App) Init() {
 		setWindowAlwaysOnTop(windowTitle, true)
 	}
 
+	// Start automation controller and status event listener (Slice P1-C)
+	a.mu.RLock()
+	ctrl := a.controller
+	a.mu.RUnlock()
+	if ctrl != nil {
+		statusCtx, cancel := context.WithCancel(context.Background())
+		a.mu.Lock()
+		a.statusCancel = cancel
+		a.mu.Unlock()
+
+		_ = ctrl.Start(statusCtx)
+
+		statusChan := ctrl.StatusChannel()
+		go func() {
+			for {
+				select {
+				case <-statusCtx.Done():
+					return
+				case evt, ok := <-statusChan:
+					if !ok {
+						return
+					}
+					fyne.Do(func() {
+						a.handleAutomationStatus(evt)
+					})
+				}
+			}
+		}()
+	}
+
 	// 60s background auto-telemetry loop
 	if a.autoLoop != nil {
 		a.autoLoop.SetUpdateCallback(func(results []*telemetry.AccountQuotaData) {
+			// 1. Pass telemetry results to automation controller (non-blocking)
+			a.mu.RLock()
+			c := a.controller
+			a.mu.RUnlock()
+			if c != nil {
+				go c.OnTelemetryUpdate(results)
+			}
+
+			// 2. Refresh UI in main Fyne thread
 			fyne.Do(func() {
 				a.mu.Lock()
 				a.lastQuotaRefresh = time.Now()
@@ -243,8 +321,6 @@ func (a *App) Init() {
 				if overview != nil {
 					a.updateUI(overview)
 				}
-
-
 			})
 		})
 		_ = a.autoLoop.Start(context.Background())
@@ -255,8 +331,76 @@ func (a *App) Init() {
 
 // Close cleans up background loops and resources.
 func (a *App) Close() {
-	if a.autoLoop != nil {
-		a.autoLoop.Stop()
+	a.mu.Lock()
+	if a.statusCancel != nil {
+		a.statusCancel()
+		a.statusCancel = nil
+	}
+	ctrl := a.controller
+	loop := a.autoLoop
+	timer := a.statusBarHideTimer
+	a.mu.Unlock()
+
+	if ctrl != nil {
+		ctrl.Stop()
+	}
+	if loop != nil {
+		loop.Stop()
+	}
+	if timer != nil {
+		timer.Stop()
+	}
+}
+
+// handleAutomationStatus handles state transitions dispatched from the AutomationController
+// and displays transient or persistent feedback on the status bar.
+func (a *App) handleAutomationStatus(evt automation.StatusEvent) {
+	if evt.Message == "" {
+		return
+	}
+
+	switch evt.Code {
+	case automation.StatusSwitched:
+		a.showStatusBar(fmt.Sprintf("⚡ %s", evt.Message))
+		a.autoHideStatusBar(4 * time.Second)
+		// Cập nhật overview sau auto switch
+		go func() {
+			if a.mgr != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+				overview, err := a.mgr.GetAccountStates(ctx)
+				if err == nil && overview != nil {
+					fyne.Do(func() {
+						a.updateUI(overview)
+					})
+				}
+			}
+		}()
+
+	case automation.StatusSwitching:
+		a.showStatusBar(fmt.Sprintf("⏳ %s", evt.Message))
+
+	case automation.StatusRetrying:
+		a.showStatusBar(fmt.Sprintf("🔄 %s", evt.Message))
+
+	case automation.StatusEvaluating:
+		a.showStatusBar(fmt.Sprintf("🔍 %s", evt.Message))
+
+	case automation.StatusNoCandidate:
+		a.showStatusBar(fmt.Sprintf("⚠️ %s", evt.Message))
+		a.autoHideStatusBar(4 * time.Second)
+
+	case automation.StatusError:
+		a.showStatusBar(fmt.Sprintf("❌ %s", evt.Message))
+		a.autoHideStatusBar(5 * time.Second)
+
+	case automation.StatusIdle:
+		a.showStatusBar(evt.Message)
+		a.autoHideStatusBar(3 * time.Second)
+
+	default:
+		a.showStatusBar(evt.Message)
+		a.autoHideStatusBar(3 * time.Second)
 	}
 }
 
@@ -502,7 +646,8 @@ func (a *App) Refresh() {
 	}()
 }
 
-// SwitchAccount initiates an asynchronous 4-step hot-swap to the specified email.
+// SwitchAccount initiates an asynchronous 4-step hot-swap to the specified email
+// wrapped through the shared SwitchGate.
 func (a *App) SwitchAccount(targetEmail string) {
 	a.mu.Lock()
 	if a.isBusy {
@@ -510,6 +655,8 @@ func (a *App) SwitchAccount(targetEmail string) {
 		return
 	}
 	a.isBusy = true
+	ctrl := a.controller
+	mgr := a.mgr
 	a.mu.Unlock()
 
 	fyne.Do(func() {
@@ -523,11 +670,16 @@ func (a *App) SwitchAccount(targetEmail string) {
 			a.mu.Unlock()
 		}()
 
-		if a.mgr == nil {
+		if mgr == nil {
 			return
 		}
 
-		_, err := a.mgr.SwitchAccount(context.Background(), targetEmail, false)
+		var gate *automation.SwitchGate
+		if ctrl != nil {
+			gate = ctrl.Gate()
+		}
+
+		res, err := automation.ExecuteSwitchWithGate(context.Background(), gate, mgr, targetEmail, false)
 
 		if err != nil {
 			fyne.Do(func() {
@@ -539,20 +691,29 @@ func (a *App) SwitchAccount(targetEmail string) {
 			return
 		}
 
+		// Invalidate recovery state on manual session change
+		if ctrl != nil && ctrl.RetryCoordinator() != nil {
+			ctrl.RetryCoordinator().Reset()
+			ctrl.RetryCoordinator().SetCurrentEmail(targetEmail)
+		}
+
 		// Refresh account states in RAM and update cards immediately
-		overview, _ := a.mgr.GetAccountStates(context.Background())
+		overview, _ := mgr.GetAccountStates(context.Background())
 		a.mu.Lock()
 		a.overview = overview
 		a.mu.Unlock()
 
 		fyne.Do(func() {
 			a.updateUI(overview)
-			a.showStatusBar(fmt.Sprintf("✅ Đã chuyển sang %s", targetEmail))
+			msg := fmt.Sprintf("✅ Đã chuyển sang %s", targetEmail)
+			if res != nil && res.Message != "" {
+				msg = fmt.Sprintf("✅ %s", res.Message)
+			}
+			a.showStatusBar(msg)
 			a.autoHideStatusBar(3 * time.Second)
 		})
 	}()
 }
-
 // SaveSession saves the currently active Chrome session to disk.
 func (a *App) SaveSession() {
 	a.mu.Lock()
@@ -654,18 +815,33 @@ func (a *App) IsAutoSwitchEnabled() bool {
 	return a.autoSwitchEnabled
 }
 
-// SetAutoSwitchEnabled explicitly sets the auto-switch state in the UI.
+// SetAutoSwitchEnabled explicitly sets the auto-switch state in the UI and controller.
 func (a *App) SetAutoSwitchEnabled(enabled bool) {
 	a.mu.Lock()
+	if a.autoSwitchEnabled == enabled {
+		ctrl := a.controller
+		toggle := a.autoSwitchToggle
+		a.mu.Unlock()
+		if toggle != nil && toggle.IsOn() != enabled {
+			toggle.SetOn(enabled)
+		}
+		if ctrl != nil && ctrl.IsEnabled() != enabled {
+			ctrl.SetEnabled(enabled)
+		}
+		return
+	}
 	a.autoSwitchEnabled = enabled
 	toggle := a.autoSwitchToggle
+	ctrl := a.controller
 	a.mu.Unlock()
 
-	if toggle != nil {
+	if toggle != nil && toggle.IsOn() != enabled {
 		toggle.SetOn(enabled)
 	}
+	if ctrl != nil {
+		ctrl.SetEnabled(enabled)
+	}
 }
-
 // updateUI refreshes all visual components based on the given overview.
 func (a *App) updateUI(overview *manager.AccountOverview) {
 	if overview == nil {
