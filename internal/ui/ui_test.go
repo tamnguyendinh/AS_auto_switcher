@@ -3149,16 +3149,14 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	if app.autoSwitchToggle == nil {
 		t.Fatal("AC-1 VIOLATION: expected non-nil app.autoSwitchToggle")
 	}
-	if app.autoSwitchLabel == nil {
-		t.Fatal("AC-1 VIOLATION: expected non-nil app.autoSwitchLabel")
+	lblAuto := app.AutoSwitchLabelWidget()
+	if lblAuto == nil {
+		t.Fatal("AC-1 VIOLATION: expected non-nil AutoSwitchLabelWidget")
 	}
-	if app.autoSwitchLabel.Text != "Tự động:" {
-		t.Fatalf("AC-1 VIOLATION: expected label text 'Tự động:', got '%s'", app.autoSwitchLabel.Text)
+	if lblAuto.Text != "Tự động:" {
+		t.Fatalf("AC-1 VIOLATION: expected label text 'Tự động:', got '%s'", lblAuto.Text)
 	}
-	if app.autoSwitchLabel.TextSize != BodyTextSize {
-		t.Fatalf("AC-1 VIOLATION: expected label text size %f, got %f", BodyTextSize, app.autoSwitchLabel.TextSize)
-	}
-	if !app.autoSwitchLabel.TextStyle.Bold {
+	if !lblAuto.TextStyle.Bold {
 		t.Fatalf("AC-1 VIOLATION: expected label text style to be bold")
 	}
 
@@ -3188,12 +3186,18 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	for _, obj := range row2Combined.Objects {
 		if c, ok := obj.(*fyne.Container); ok {
 			for _, inner := range c.Objects {
+				if inner == app.autoSwitchToggle {
+					foundToggle = true
+				}
+				if inner == lblAuto {
+					foundLabel = true
+				}
 				if innerC, ok := inner.(*fyne.Container); ok {
 					for _, deep := range innerC.Objects {
 						if deep == app.autoSwitchToggle {
 							foundToggle = true
 						}
-						if deep == app.autoSwitchLabel {
+						if deep == lblAuto {
 							foundLabel = true
 						}
 					}
@@ -3306,9 +3310,6 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	if toggle.track.FillColor != LightPalette.BorderSubtle {
 		t.Fatalf("expected track color LightPalette.BorderSubtle after theme change, got %+v", toggle.track.FillColor)
 	}
-	if app.autoSwitchLabel.Color != LightPalette.Text {
-		t.Fatalf("expected label color LightPalette.Text after theme change, got %+v", app.autoSwitchLabel.Color)
-	}
 
 	toggle.Tapped(nil) // Turn ON under Light Theme
 	if toggle.track.FillColor != LightPalette.Primary {
@@ -3318,9 +3319,6 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	app.SetTheme(ThemeWarm)
 	if toggle.track.FillColor != WarmPalette.Primary {
 		t.Fatalf("expected track color WarmPalette.Primary when ON under Warm Theme, got %+v", toggle.track.FillColor)
-	}
-	if app.autoSwitchLabel.Color != WarmPalette.Text {
-		t.Fatalf("expected label color WarmPalette.Text under Warm Theme, got %+v", app.autoSwitchLabel.Color)
 	}
 
 	// Restore Dark Theme
@@ -3437,3 +3435,130 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 }
 
 
+
+
+// -----------------------------------------------------------------------------
+// TestHeaderRow2_VerticalAlignment
+// SPEC-ARCH-20261020-ALIGN-HEADER-ROW2-VERTICAL-BASELINE
+// -----------------------------------------------------------------------------
+
+func TestHeaderRow2_VerticalAlignment(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window after Init")
+	}
+
+	content := win.Content().(*fyne.Container)
+	var topSection *fyne.Container
+	for _, obj := range content.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			topSection = c
+			break
+		}
+	}
+	if topSection == nil || len(topSection.Objects) < 2 {
+		t.Fatal("expected topSection with at least 2 children")
+	}
+
+	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
+	if !ok || row2Combined == nil {
+		t.Fatal("expected row2Combined container")
+	}
+
+	// Trigger layout pass on row2Combined with its target width
+	row2Size := row2Combined.MinSize()
+	if row2Size.Width < 800 {
+		row2Size.Width = DefaultWindowWidth
+	}
+	row2Combined.Resize(row2Size)
+
+	// AC-2: Verify lblAuto is a *widget.Label with Bold style
+	lblAuto := app.AutoSwitchLabelWidget()
+	if lblAuto == nil {
+		t.Fatal("AC-2 VIOLATION: expected non-nil AutoSwitchLabelWidget")
+	}
+	if lblAuto.Text != "Tự động:" {
+		t.Fatalf("AC-2 VIOLATION: expected text 'Tự động:', got '%s'", lblAuto.Text)
+	}
+	if !lblAuto.TextStyle.Bold {
+		t.Fatal("AC-2 VIOLATION: expected Bold text style for lblAuto")
+	}
+
+	// Verify serverStatusLabel
+	serverLabel := app.serverStatusLabel
+	if serverLabel == nil {
+		t.Fatal("expected non-nil serverStatusLabel")
+	}
+
+	// AC-1 & AC-3: Calculate vertical centers
+	// Left cluster vertical center
+	yLeft := serverLabel.Position().Y + serverLabel.Size().Height/2.0
+
+	// Right cluster items
+	yLblAuto := lblAuto.Position().Y + lblAuto.Size().Height/2.0
+
+	toggle := app.autoSwitchToggle
+	if toggle == nil {
+		t.Fatal("expected non-nil autoSwitchToggle")
+	}
+	yToggle := toggle.Position().Y + toggle.Size().Height/2.0
+
+	// AC-3: Dynamic Center - toggle must not be stuck at top y=0 when row height > toggle height
+	if toggle.Position().Y < 1.0 && row2Size.Height > 16.0 {
+		t.Fatalf("AC-3 VIOLATION: toggle stuck at top Y=%f in row height=%f", toggle.Position().Y, row2Size.Height)
+	}
+
+	// AC-1: Zero Misalignment - vertical centerline difference <= 2.0 px
+	diffLabel := math.Abs(float64(yLeft - yLblAuto))
+	if diffLabel > 2.0 {
+		t.Fatalf("AC-1 VIOLATION: vertical centerline delta between serverStatusLabel (%f) and lblAuto (%f) is %f > 2.0 px", yLeft, yLblAuto, diffLabel)
+	}
+
+	diffToggle := math.Abs(float64(yLeft - yToggle))
+	if diffToggle > 2.0 {
+		t.Fatalf("AC-1 VIOLATION: vertical centerline delta between serverStatusLabel (%f) and autoSwitchToggle (%f) is %f > 2.0 px", yLeft, yToggle, diffToggle)
+	}
+
+	// Check themeSelectWrap vertical alignment
+	var foundThemeWrap *fyne.Container
+	for _, obj := range row2Combined.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			for _, inner := range c.Objects {
+				if inner == app.themeSelect {
+					foundThemeWrap = c
+					break
+				}
+				if innerC, ok := inner.(*fyne.Container); ok {
+					for _, deep := range innerC.Objects {
+						if deep == app.themeSelect {
+							foundThemeWrap = innerC
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if foundThemeWrap != nil {
+		yTheme := foundThemeWrap.Position().Y + foundThemeWrap.Size().Height/2.0
+		diffTheme := math.Abs(float64(yLeft - yTheme))
+		if diffTheme > 2.0 {
+			t.Fatalf("AC-1 VIOLATION: vertical centerline delta between serverStatusLabel (%f) and themeSelectWrap (%f) is %f > 2.0 px", yLeft, yTheme, diffTheme)
+		}
+	}
+
+	// AC-4: Dimension preservation
+	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
+		t.Fatalf("AC-4 VIOLATION: expected window 920x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	}
+}

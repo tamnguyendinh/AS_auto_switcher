@@ -174,10 +174,9 @@ func (a *App) setupLayout() {
 	themeSelectWrap := container.NewGridWrap(fyne.NewSize(58, 20), a.themeSelect)
 
 	// Auto Switch Toggle Capsule Widget (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
-	lblAuto := canvas.NewText("Tự động:", palette.Text)
-	lblAuto.TextSize = BodyTextSize
-	lblAuto.TextStyle = fyne.TextStyle{Bold: true}
-	a.autoSwitchLabel = lblAuto
+	// SPEC-ARCH-20261020-ALIGN-HEADER-ROW2-VERTICAL-BASELINE: widget.Label with Bold style
+	lblAuto := widget.NewLabelWithStyle("Tự động:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	headerRow2AutoLabel = lblAuto
 
 	a.autoSwitchToggle = newAutoSwitchToggle(a.autoSwitchEnabled, func(isOn bool) {
 		a.mu.Lock()
@@ -185,8 +184,7 @@ func (a *App) setupLayout() {
 		a.mu.Unlock()
 	}, palette)
 
-	autoCluster := container.NewHBox(lblAuto, a.autoSwitchToggle)
-	rightCluster := container.NewHBox(autoCluster, themeSelectWrap)
+	rightCluster := container.New(row2RightClusterLayout{}, lblAuto, a.autoSwitchToggle, themeSelectWrap)
 	row2Combined := container.NewBorder(nil, nil, row2LeftCluster, rightCluster)
 
 	// Separator chia phần điều khiển với lưới tài khoản
@@ -509,10 +507,18 @@ func (t *AutoSwitchToggle) SetPalette(palette ThemePalette) {
 func (t *AutoSwitchToggle) updateVisuals() {
 	if t.isOn {
 		t.track.FillColor = t.palette.Primary
-		t.thumb.Move(fyne.NewPos(13, 2))
 	} else {
 		t.track.FillColor = t.palette.BorderSubtle
-		t.thumb.Move(fyne.NewPos(2, 2))
+	}
+	y := (t.Size().Height - 12.0) / 2.0
+	if y < 0 {
+		y = 0
+	}
+	thumbY := y + 2.0
+	if t.isOn {
+		t.thumb.Move(fyne.NewPos(13, thumbY))
+	} else {
+		t.thumb.Move(fyne.NewPos(2, thumbY))
 	}
 	t.track.Refresh()
 	t.thumb.Refresh()
@@ -527,13 +533,24 @@ func (r *autoSwitchToggleRenderer) MinSize() fyne.Size {
 	return fyne.NewSize(23, 12)
 }
 
-func (r *autoSwitchToggleRenderer) Layout(_ fyne.Size) {
-	r.toggle.track.Move(fyne.NewPos(0, 0))
-	r.toggle.track.Resize(fyne.NewSize(23, 12))
+func (r *autoSwitchToggleRenderer) Layout(size fyne.Size) {
+	trackW := float32(23.0)
+	trackH := float32(12.0)
+
+	// Căn giữa theo chiều cao thực tế được phân bổ cho widget
+	y := (size.Height - trackH) / 2.0
+	if y < 0 {
+		y = 0
+	}
+
+	r.toggle.track.Move(fyne.NewPos(0, y))
+	r.toggle.track.Resize(fyne.NewSize(trackW, trackH))
+
+	thumbY := y + 2.0
 	if r.toggle.isOn {
-		r.toggle.thumb.Move(fyne.NewPos(13, 2))
+		r.toggle.thumb.Move(fyne.NewPos(13, thumbY))
 	} else {
-		r.toggle.thumb.Move(fyne.NewPos(2, 2))
+		r.toggle.thumb.Move(fyne.NewPos(2, thumbY))
 	}
 	r.toggle.thumb.Resize(fyne.NewSize(8, 8))
 }
@@ -554,5 +571,55 @@ func (r *autoSwitchToggleRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *autoSwitchToggleRenderer) Destroy() {}
+
+// -----------------------------------------------------------------------------
+// Row 2 Right Cluster Layout (SPEC-ARCH-20261020-ALIGN-HEADER-ROW2-VERTICAL-BASELINE)
+// -----------------------------------------------------------------------------
+
+var headerRow2AutoLabel *widget.Label
+
+// AutoSwitchLabelWidget returns the header row 2 auto switch label widget.
+func (a *App) AutoSwitchLabelWidget() *widget.Label {
+	return headerRow2AutoLabel
+}
+
+type row2RightClusterLayout struct{}
+
+func (row2RightClusterLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	w, h := float32(0), float32(0)
+	padding := theme.Padding()
+	for i, o := range objects {
+		if !o.Visible() {
+			continue
+		}
+		ms := o.MinSize()
+		w += ms.Width
+		if i > 0 {
+			w += padding
+		}
+		if ms.Height > h {
+			h = ms.Height
+		}
+	}
+	return fyne.NewSize(w, h)
+}
+
+func (row2RightClusterLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	x := float32(0)
+	padding := theme.Padding()
+	for _, o := range objects {
+		if !o.Visible() {
+			continue
+		}
+		ms := o.MinSize()
+		y := (size.Height - ms.Height) / 2.0
+		if y < 0 {
+			y = 0
+		}
+		o.Move(fyne.NewPos(x, y))
+		o.Resize(ms)
+		x += ms.Width + padding
+	}
+}
 
 
