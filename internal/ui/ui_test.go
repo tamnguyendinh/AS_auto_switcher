@@ -2955,6 +2955,10 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 	if foundThemeWrap == nil {
 		t.Fatalf("expected to find themeSelectWrap in row2Combined")
 	}
+	themeWrapSize := foundThemeWrap.MinSize()
+	if themeWrapSize.Width > 40.0 || themeWrapSize.Height > 22.0 {
+		t.Errorf("AC-1 VIOLATION: expected themeSelectWrap size <= 40x22, got %fx%f", themeWrapSize.Width, themeWrapSize.Height)
+	}
 
 	// Verify row2LeftCluster contains serverStatusLabel and toolbarLeft
 	if len(foundLeftCluster.Objects) < 2 {
@@ -3325,5 +3329,110 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	// AC-5: Dimension preservation: window 920x630, card 280x130
 	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
 		t.Errorf("AC-5 VIOLATION: expected DefaultWindowWidth 920 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	}
+}
+
+
+// -----------------------------------------------------------------------------
+// Test for SPEC-ARCH-20261020-COMPACT-THEME-SELECT-60PCT
+// -----------------------------------------------------------------------------
+
+func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := NewAppWithFyne(testApp, mgr)
+	defer app.Close()
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	// AC-1 & AC-2: Locate themeSelectWrap and verify dimensions 36x20 (or <= 40x22)
+	win := app.win
+	content, ok := win.Content().(*fyne.Container)
+	if !ok || content == nil {
+		t.Fatal("expected non-nil window content container")
+	}
+	var topSection *fyne.Container
+	for _, obj := range content.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			topSection = c
+			break
+		}
+	}
+	if topSection == nil || len(topSection.Objects) < 2 {
+		t.Fatal("expected topSection with at least 2 children")
+	}
+	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
+	if !ok || row2Combined == nil {
+		t.Fatal("expected row2Combined container")
+	}
+
+	var foundThemeWrap *fyne.Container
+	for _, obj := range row2Combined.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			for _, inner := range c.Objects {
+				if inner == app.themeSelect {
+					foundThemeWrap = c
+					break
+				}
+				if innerC, ok := inner.(*fyne.Container); ok {
+					for _, deepInner := range innerC.Objects {
+						if deepInner == app.themeSelect {
+							foundThemeWrap = innerC
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if foundThemeWrap == nil {
+		t.Fatalf("expected to find themeSelectWrap in row2Combined rightCluster")
+	}
+
+	themeWrapMin := foundThemeWrap.MinSize()
+	// AC-1: Width reduced ~60% (36px, <= 40px) and Height reduced ~60% (20px, <= 22px)
+	if themeWrapMin.Width != 36.0 && themeWrapMin.Width != 38.0 {
+		t.Errorf("AC-1 VIOLATION: expected themeSelectWrap width 36 or 38 px, got %f", themeWrapMin.Width)
+	}
+	// AC-2: Height uniform with autoSwitchToggle (20px)
+	if themeWrapMin.Height != 20.0 {
+		t.Errorf("AC-2 VIOLATION: expected themeSelectWrap height 20 px, got %f", themeWrapMin.Height)
+	}
+	if app.autoSwitchToggle != nil {
+		toggleMin := app.autoSwitchToggle.MinSize()
+		if toggleMin.Height != themeWrapMin.Height {
+			t.Errorf("AC-2 VIOLATION: expected themeSelectWrap height (%f) to match autoSwitchToggle height (%f)", themeWrapMin.Height, toggleMin.Height)
+		}
+	}
+
+	// AC-3: Functional Continuity - options & theme switching
+	if app.themeSelect == nil || len(app.themeSelect.Options) != 3 {
+		t.Fatalf("AC-3 VIOLATION: expected themeSelect with 3 options")
+	}
+	app.themeSelect.SetSelected("☀️")
+	if app.currentTheme != ThemeLight {
+		t.Errorf("AC-3 VIOLATION: expected currentTheme ThemeLight, got %s", app.currentTheme)
+	}
+	app.themeSelect.SetSelected("☕")
+	if app.currentTheme != ThemeWarm {
+		t.Errorf("AC-3 VIOLATION: expected currentTheme ThemeWarm, got %s", app.currentTheme)
+	}
+	app.themeSelect.SetSelected("🌙")
+	if app.currentTheme != ThemeDark {
+		t.Errorf("AC-3 VIOLATION: expected currentTheme ThemeDark, got %s", app.currentTheme)
+	}
+
+	// AC-4: Dimension preservation: window 920x630, card 280x130
+	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 920 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	}
+	item := manager.AccountDisplayItem{Email: "compact_theme_test@example.com"}
+	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil, nil)
+	cardMin := card.MinSize()
+	if cardMin.Width > 280.0 || cardMin.Height > 130.0 {
+		t.Errorf("AC-4 VIOLATION: expected card min size within 280x130, got %fx%f", cardMin.Width, cardMin.Height)
 	}
 }

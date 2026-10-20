@@ -171,7 +171,7 @@ func (a *App) setupLayout() {
 		a.themeSelect.SetSelected("🌙")
 	}
 
-	themeSelectWrap := container.NewGridWrap(fyne.NewSize(58, 32), a.themeSelect)
+	themeSelectWrap := container.NewGridWrap(fyne.NewSize(36, 20), a.themeSelect)
 
 	// Auto Switch Toggle Capsule Widget (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
 	lblAuto := canvas.NewText("Tự động:", palette.Text)
