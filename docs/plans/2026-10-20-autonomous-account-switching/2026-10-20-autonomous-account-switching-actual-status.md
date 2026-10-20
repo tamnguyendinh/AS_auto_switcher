@@ -60,9 +60,9 @@ Không tạo automation_view.go hoặc toggle thứ hai. Không thêm persistenc
 | connector/automation_rpc.go | Đã triển khai model config reader (P1-A), empty-items retry sender và Connect-RPC stream frame adapter (P1-B) | Tái dùng cho coordinator P1-C | correct | E1-P1A-SRC1, E1-P1B-SRC1 | Hoàn tất P1-B |
 | automation/model_quota.go, sorter.go | Đã triển khai model quota mapping, ternary classifier, 5 tiêu chí lọc, 4 tầng Burn-down sorter | Tái dùng cho controller P1-B và coordinator P1-C | correct | E1-P1A-SRC1, E1-P1A-TEST1, E1-P1A-BENCH1 | Hoàn tất P1-A; bảo lưu cho P1-B |
 | automation/retry.go, controller.go, switch_gate_windows.go | Đã triển khai Single-Flight Gate, RetryCoordinator (tối đa 3 lần theo outcome), AutomationController (dual-trigger + preflight fallback), Windows Named Mutex caller boundary | Tái dùng cho coordinator và binding P1-C | correct | E1-P1B-SRC1, E1-P1B-TEST1, E1-P1B-CONCUR1 | Hoàn tất P1-B; chuyển sang P1-C |
-| ui/window.go AutoSwitchToggle | Đã có toggle và label Tự động; callback gọi SetAutoSwitchEnabled | Giữ widget và nối common setter/controller | correct / bound | E1-P1C-SRC1, E1-P1C-UI1 | Hoàn tất P1-C |
-| ui/app.go | Có Set/IsAutoSwitchEnabled, App.Init quota callback, App.Close, AutomationController lifecycle | Khởi tạo controller bằng dependencies sẵn có, mở rộng callback, cancel lifecycle | correct / bound | E1-P1C-SRC1, E1-P1C-UI1 | Hoàn tất P1-C |
-| GUI/CLI switch callers | App.SwitchAccount và --switch bọc qua ExecuteSwitchWithGate | Cùng wrapper mutex ngoài manager, bảo vệ in-process và cross-process | correct / bound | E1-P1C-SRC1, E1-P1C-CALL1 | Hoàn tất P1-C |
+| ui/window.go AutoSwitchToggle | Đã có toggle và label Tự động; callback gọi SetAutoSwitchEnabled | Giữ widget và nối common setter/controller | correct | E1-P1C-SRC1, E1-P1C-UI1 | Hoàn tất P1-C |
+| ui/app.go | Có Set/IsAutoSwitchEnabled, App.Init quota callback, App.Close, AutomationController lifecycle | Khởi tạo controller bằng dependencies sẵn có, mở rộng callback, cancel lifecycle | correct | E1-P1C-SRC1, E1-P1C-UI1 | Hoàn tất P1-C |
+| GUI/CLI switch callers | App.SwitchAccount và --switch bọc qua ExecuteSwitchWithGate | Cùng wrapper mutex ngoài manager, bảo vệ in-process và cross-process | correct | E1-P1C-SRC1, E1-P1C-CALL1 | Hoàn tất P1-C |
 | Automation scenario/binding tests | Chưa có | Test provider/caller paths, fake side effects và native GUI check | missing | E0-P0A-DIR1, E0-P0A-SRC7 | Theo slice/P2-A |
 
 ## Status Refresh Log
@@ -73,6 +73,7 @@ Không tạo automation_view.go hoặc toggle thứ hai. Không thêm persistenc
 | R1 | 2026-10-20 | HEAD 2e4c893, review F1–F8 và yêu cầu sửa plan | Toggle -> unbound; quota metadata -> partial; thêm RPC/gate/App/CLI paths; giữ engine; E1/E2 -> planned/not run | E0-P0A-REV1, E0-P0A-SRC1..7, E0-P0A-DOC1 | Slice đầu tiên là P1-A; chưa bắt đầu |
 | R2 | 2026-10-20 | Commit c01b16f, nghiệm thu 9633470 | Hoàn thành Slice P1-A: Model Quota Resolver & Burn-down Sorter. model_quota.go, sorter.go chuyển sang correct. | E1-P1A-SRC1, E1-P1A-TEST1, E1-P1A-BENCH1 | Chuyển sang Slice P1-B |
 | R3 | 2026-10-20 | Commit 2c837b1, nghiệm thu e0ac3b2 | Hoàn thành Slice P1-B: Dual-Trigger Engine & 3-Retry Controller. retry.go, controller.go, switch_gate_windows.go và connector/automation_rpc.go chuyển sang correct. | E1-P1B-SRC1, E1-P1B-TEST1, E1-P1B-CONCUR1 | Chuyển sang Slice P1-C |
+| R4 | 2026-10-20 | Commit 5aa9d92, nghiệm thu d8803e0 | Hoàn thành Slice P1-C: Automation Coordinator & GUI Toggle. ui/app.go, ui/window.go và cmd/switcher/main.go chuyển sang correct. Kết thúc toàn bộ Phase 1. | E1-P1C-SRC1, E1-P1C-BUILD1, E1-P1C-UI1, E1-P1C-CALL1 | Chuyển sang Phase 2 (P2-A) |
 
 ## Phase Touch Map
 

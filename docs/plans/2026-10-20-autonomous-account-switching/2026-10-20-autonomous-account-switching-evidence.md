@@ -122,7 +122,7 @@ Status: OBSERVED DOCUMENT CHECK — 2026-10-20, chỉ kiểm tra markdown.
 
 ## E1 - P1 Evidence
 
-Matching items: P1-A, P1-B, P1-C. Slice P1-A và P1-B đã hoàn thành và nghiệm thu PASS (P1-A: Commit c01b16f, acceptance report 9633470; P1-B: Commit 2c837b1, acceptance report e0ac3b2); hàng P1-C là mục tiêu tiếp theo.
+Matching items: P1-A, P1-B, P1-C. Toàn bộ Slice P1-A, P1-B và P1-C đã hoàn thành và nghiệm thu PASS (P1-A: Commit c01b16f, acceptance report 9633470; P1-B: Commit 2c837b1, acceptance report e0ac3b2; P1-C: Commit 5aa9d92, acceptance report d8803e0). Kết thúc toàn bộ Phase 1; chuyển sang Phase 2.
 
 | ID | Status | Evidence cần thu thập khi triển khai |
 |---|---|---|
@@ -132,10 +132,10 @@ Matching items: P1-A, P1-B, P1-C. Slice P1-A và P1-B đã hoàn thành và nghi
 | E1-P1B-SRC1 | OBSERVED SOURCE | Commit `2c837b1`: Connect-RPC streaming/empty-items adapter, RetryCoordinator, AutomationController, Windows Named Mutex gate; report acceptance `e0ac3b2`. |
 | E1-P1B-TEST1 | OBSERVED TEST PASS | Commit `2c837b1`: test suites và race detector PASS 100%, 3-retry outcome exhaustion, event deduplication, preflight fallback, non-blocking status channel; report acceptance `e0ac3b2`. |
 | E1-P1B-CONCUR1 | OBSERVED CONCURRENCY PASS | Commit `2c837b1`: 100 concurrent triggers atomic single-flight gate test và cross-process Windows Named Mutex contention test PASS; report acceptance `e0ac3b2`. |
-| E1-P1C-SRC1 | PLANNED / NOT RUN | Existing toggle/lifecycle/callback/GUI-CLI caller binding diff. |
-| E1-P1C-BUILD1 | PLANNED / NOT RUN | Native GUI với gui tag/CGO và CLI build; không thay GUI build bằng default package build. |
-| E1-P1C-UI1 | PLANNED / NOT RUN | Existing toggle thực, status, quota refresh và close lifecycle; native screenshots/observations. |
-| E1-P1C-CALL1 | PLANNED / NOT RUN | Actual App/CLI call paths: manual-first, auto-first, process contention, no duplicate continuation. |
+| E1-P1C-SRC1 | OBSERVED SOURCE | Commit `5aa9d92`: AutomationController lifecycle & binding trong App, Row 2 toggle, CLI --switch gate, hermetic manager test mocks; report acceptance `d8803e0`. |
+| E1-P1C-BUILD1 | OBSERVED BUILD PASS | Commit `5aa9d92`: Windows release script build_windows.ps1 -Mode all (Exit Code 0), antigravity-switch.exe (10.53 MB), antigravity-switch-gui.exe (27.72 MB); report acceptance `d8803e0`. |
+| E1-P1C-UI1 | OBSERVED UI TEST PASS | Commit `5aa9d92`: go test -v -tags gui ./internal/ui/... PASS 36/36 tests, controller lifecycle, non-blocking telemetry callback, status bar dispatch; report acceptance `d8803e0`. |
+| E1-P1C-CALL1 | OBSERVED CALLER PASS | Commit `5aa9d92`: go test -v ./cmd/switcher/... PASS 6/6 tests, CLI --switch gate integration, process contention, mutual exclusion; report acceptance `d8803e0`. |
 
 ### E1-P1A-SRC1 — Source implementation cho Slice P1-A
 
@@ -203,33 +203,41 @@ Acceptance Report: `reports/supervisor/2026-10-20-p1b-dual-trigger-and-retry-acc
 ### E1-P1C-SRC1 — Source implementation cho Slice P1-C
 
 Status: OBSERVED SOURCE.
-Báo cáo thi công: eports/coder/2026-10-20-p1c-automation-coordinator-and-gui-toggle-report.md.
+Commit: `5aa9d92cf3945520164686c1d05d8b59d83ceabf` (`feat(P1-C): integrate automation toggle and status indicators into fyne ui`).
+Acceptance Report: `reports/supervisor/2026-10-20-p1c-automation-coordinator-and-gui-toggle-acceptance.md` (Commit `d8803e0`).
+Báo cáo thi công: `reports/coder/2026-10-20-p1c-automation-coordinator-and-gui-toggle-report.md`.
 
-- internal/ui/app.go: Khởi tạo và quản lý vòng đời AutomationController trong NewAppWithFyne, Init, và Close; mở rộng callback duy nhất của AutoTelemetryLoop cấp quota data cho controller không chặn; bọc SwitchAccount qua utomation.ExecuteSwitchWithGate và invalidate recovery khi đổi session.
-- internal/ui/window.go: Nối toggle callback vào .SetAutoSwitchEnabled(isOn) thread-safe.
-- cmd/switcher/main.go: Bọc nhánh CLI --switch qua utomation.ExecuteSwitchWithGate.
-- internal/manager/account_manager_test.go: Tiêm mock el.ServerDiscoverer hermetic cho 3 unit tests theo quyết định kiến trúc eports/architect/2026-10-20-p1c-fast-block-resolution.md.
+- `internal/ui/app.go`: Khởi tạo và quản lý vòng đời AutomationController trong NewAppWithFyne, Init, và Close; mở rộng callback duy nhất của AutoTelemetryLoop cấp quota data cho controller không chặn; bọc SwitchAccount qua automation.ExecuteSwitchWithGate và invalidate recovery khi đổi session.
+- `internal/ui/window.go`: Nối toggle callback vào a.SetAutoSwitchEnabled(isOn) thread-safe.
+- `cmd/switcher/main.go`: Bọc nhánh CLI --switch qua automation.ExecuteSwitchWithGate.
+- `internal/manager/account_manager_test.go`: Tiêm mock rel.ServerDiscoverer hermetic cho 3 unit tests theo quyết định kiến trúc `reports/architect/2026-10-20-p1c-fast-block-resolution.md`.
 
 ### E1-P1C-BUILD1 — Biên dịch nhị phân toàn diện
 
 Status: OBSERVED BUILD PASS.
-Command: powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Mode all.
+Commit: `5aa9d92cf3945520164686c1d05d8b59d83ceabf`.
+Acceptance Report: `reports/supervisor/2026-10-20-p1c-automation-coordinator-and-gui-toggle-acceptance.md` (Commit `d8803e0`).
+Command: `powershell -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -Mode all`.
 Exit Code: 0 (BUILD SUCCESSFUL).
 Outputs:
-- in/antigravity-switch.exe: 10.53 MB (11,036,672 bytes)
-- in/antigravity-switch-gui.exe: 27.72 MB (29,067,776 bytes)
+- `bin/antigravity-switch.exe`: 10.53 MB (11,036,672 bytes)
+- `bin/antigravity-switch-gui.exe`: 27.72 MB (29,067,776 bytes)
 - Embedded PE application icon: verified (32x32)
 
 ### E1-P1C-UI1 — Kiểm thử giao diện & Controller Binding
 
 Status: OBSERVED UI TEST PASS.
-Command: go test -v -tags gui ./internal/ui/....
+Commit: `5aa9d92cf3945520164686c1d05d8b59d83ceabf`.
+Acceptance Report: `reports/supervisor/2026-10-20-p1c-automation-coordinator-and-gui-toggle-acceptance.md` (Commit `d8803e0`).
+Command: `go test -v -tags gui ./internal/ui/...`.
 Result: PASS (36/36 tests pass, 0 warnings).
 
 ### E1-P1C-CALL1 — Kiểm thử Callers & Switch Gate
 
 Status: OBSERVED CALLER PASS.
-Command: go test -v ./cmd/switcher/....
+Commit: `5aa9d92cf3945520164686c1d05d8b59d83ceabf`.
+Acceptance Report: `reports/supervisor/2026-10-20-p1c-automation-coordinator-and-gui-toggle-acceptance.md` (Commit `d8803e0`).
+Command: `go test -v ./cmd/switcher/...`.
 Result: PASS (6/6 tests pass, 0 warnings).
 
 ## E2 - P2 Evidence
