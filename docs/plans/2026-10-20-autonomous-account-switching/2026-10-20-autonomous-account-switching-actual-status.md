@@ -2,7 +2,21 @@
 
 Title: Autonomous Account Switching
 Date: 2026-10-20
-Status: P0 Complete — R1 corrected; implementation not started
+Status: R7 — đã sửa F1–F8; build/package tests/race có kết quả; Owner phản hồi app hoạt động tốt
+
+## R7 Current Status — ưu tiên hơn bảng lịch sử bên dưới
+
+| Surface | State | Evidence | Next action |
+|---|---|---|---|
+| Native stream adapter/decoder | Đã sửa auth/framing/schema/EOS; đọc được lỗi 429 native | E2-P2R-TEST1, E2-P2R-LIVE1 | Giữ bản sửa; native full-switch trace chưa có |
+| Controller operation/candidate rounds | Đã sửa context và lifetime exclusions; regression PASS | E2-P2R-TEST1 | Giữ bản sửa |
+| Recovery/subscriptions/OFF | Đã sửa lifecycle/outcomes; regression/race PASS | E2-P2R-TEST1 | Không suy từ mock thành full native E2E |
+| GUI toggle/callback | Đã nối TriggerNow/manual pause; UI suite PASS sau sửa test wait | E2-P2R-TEST1 | Giữ layout; native capture chưa thành công |
+| Regression fixtures/call paths | Có native-format fixtures và callback regression | E2-P2R-TEST1 | Dùng tests này cho các bản sửa tiếp |
+| manager/reloader/telemetry | preserve-only, source không thay đổi | E2-P2R-REPORT1 | Giữ nguyên |
+
+R7: working tree trên HEAD 3d58dff; chưa commit/push. Owner phản hồi “tuyệt vời, ngon lành luôn”. Agent đã đọc stream thật nhưng chưa có trace GUI auto-switch/continuation do capture timeout. Báo cáo: reports/coder/rp_coder_261020_201600_by_gpt-6_autonomous_switch_runtime_fix.md. Những dòng correct/next action lịch sử phía dưới không thay thế trạng thái R7.
+
 Companion plan: docs/plans/2026-10-20-autonomous-account-switching/2026-10-20-autonomous-account-switching-plan.md
 Companion rules: mục Rules và Integration contracts trong companion plan R1
 Companion evidence: docs/plans/2026-10-20-autonomous-account-switching/2026-10-20-autonomous-account-switching-evidence.md

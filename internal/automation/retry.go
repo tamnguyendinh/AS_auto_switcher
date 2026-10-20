@@ -13,376 +13,419 @@ import (
 	"antigravity-switch/internal/reloader"
 )
 
-const (
-	// MaxRecoveryAttempts defines the maximum number of native in-memory retry attempts (3).
-	MaxRecoveryAttempts = 3
-
-	// DefaultRetryPacingDelay is the delay between limit error detection and dispatching empty-items retry (2s).
-	DefaultRetryPacingDelay = 2 * time.Second
-)
+const MaxRecoveryAttempts = 3
 
 var (
 	ErrCoordinatorStopped = errors.New("retry coordinator is stopped")
 	ErrMaxRetriesExceeded = errors.New("maximum native retry attempts exceeded")
 )
 
-// RetryCoordinator orchestrates native in-memory 3-retry handling and agent state stream monitoring.
-type RetryCoordinator struct {
-	clientProvider  func(ctx context.Context) (*connector.Client, error)
-	conversationsFn func(ctx context.Context) ([]string, error)
-	onSwitchNeeded  func(ctx context.Context, reason string)
-	onStatusEvent   func(code StatusCode, message string, details any)
-	sleeper         func(ctx context.Context, d time.Duration) error
-
-	mu               sync.Mutex
-	recoveryAttempts int
-	isRecovering     atomic.Bool
-	seenEvents       map[string]bool
-	activeStreams    map[string]context.CancelFunc
-	activeModelName  string
-	currentEmail     string
-
-	ctx     context.Context
-	cancel  context.CancelFunc
-	running atomic.Bool
+type recovery struct {
+	attempts  int
+	execution string
+	step      string
+	started   bool
+	awaiting  bool
+	switching bool
+	cancel    context.CancelFunc
+	ctx       context.Context
+}
+type subscription struct {
+	cancel     context.CancelFunc
+	generation uint64
 }
 
-// NewRetryCoordinator creates a new RetryCoordinator.
-func NewRetryCoordinator(
-	clientProvider func(ctx context.Context) (*connector.Client, error),
-	onSwitchNeeded func(ctx context.Context, reason string),
-	onStatusEvent func(code StatusCode, message string, details any),
-) *RetryCoordinator {
-	rc := &RetryCoordinator{
-		clientProvider: clientProvider,
-		onSwitchNeeded:  onSwitchNeeded,
-		onStatusEvent:   onStatusEvent,
-		seenEvents:      make(map[string]bool),
-		activeStreams:   make(map[string]context.CancelFunc),
-	}
+// RetryCoordinator owns recovery per conversation. A completion on another
+// conversation cannot consume or reset this conversation's three actions.
+type RetryCoordinator struct {
+	clientProvider  func(context.Context) (*connector.Client, error)
+	conversationsFn func(context.Context) ([]string, error)
+	onSwitchNeeded  func(context.Context, string)
+	onStatusEvent   func(StatusCode, string, any)
+	sendGuard       func(context.Context, func() error) error
+	sleeper         func(context.Context, time.Duration) error
+	mu              sync.Mutex
+	recoveries      map[string]*recovery
+	seenEvents      map[string]bool
+	activeStreams   map[string]*subscription
+	activeModelName string
+	currentEmail    string
+	generation      uint64
+	skipInitial     bool
+	ctx             context.Context
+	cancel          context.CancelFunc
+	running         atomic.Bool
+}
+
+func NewRetryCoordinator(provider func(context.Context) (*connector.Client, error), onSwitch func(context.Context, string), onStatus func(StatusCode, string, any)) *RetryCoordinator {
+	rc := &RetryCoordinator{clientProvider: provider, onSwitchNeeded: onSwitch, onStatusEvent: onStatus,
+		recoveries: make(map[string]*recovery), seenEvents: make(map[string]bool), activeStreams: make(map[string]*subscription)}
 	rc.conversationsFn = rc.defaultScanConversations
-	rc.sleeper = defaultContextSleep
 	return rc
 }
-
 func (rc *RetryCoordinator) defaultScanConversations(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	threads, err := reloader.ScanActiveConversations2h("", "", time.Now())
 	if err != nil {
 		return nil, err
 	}
 	ids := make([]string, 0, len(threads))
-	for _, th := range threads {
-		if strings.TrimSpace(th.ThreadID) != "" {
-			ids = append(ids, th.ThreadID)
+	for _, t := range threads {
+		if t.ThreadID != "" {
+			ids = append(ids, t.ThreadID)
 		}
 	}
 	return ids, nil
 }
-
-func defaultContextSleep(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+func (rc *RetryCoordinator) emit(code StatusCode, message string) {
+	if rc.onStatusEvent != nil {
+		rc.onStatusEvent(code, message, nil)
 	}
 }
-
-// SetConversationsScanner overrides the conversation discovery function (useful in tests).
-func (rc *RetryCoordinator) SetConversationsScanner(fn func(ctx context.Context) ([]string, error)) {
+func (rc *RetryCoordinator) SetConversationsScanner(fn func(context.Context) ([]string, error)) {
 	rc.mu.Lock()
-	defer rc.mu.Unlock()
 	rc.conversationsFn = fn
+	rc.mu.Unlock()
 }
 
-// SetSleeper overrides the pacing sleep function (useful in tests).
-func (rc *RetryCoordinator) SetSleeper(fn func(ctx context.Context, d time.Duration) error) {
+// SetSleeper is an optional scheduling seam for tests; native recovery has no fixed delay.
+func (rc *RetryCoordinator) SetSleeper(fn func(context.Context, time.Duration) error) {
 	rc.mu.Lock()
-	defer rc.mu.Unlock()
 	rc.sleeper = fn
+	rc.mu.Unlock()
 }
-
-// SetModelName configures the active model name to supply in native retry requests.
+func (rc *RetryCoordinator) SetSendGuard(fn func(context.Context, func() error) error) {
+	rc.mu.Lock()
+	rc.sendGuard = fn
+	rc.mu.Unlock()
+}
 func (rc *RetryCoordinator) SetModelName(name string) {
 	rc.mu.Lock()
-	defer rc.mu.Unlock()
 	rc.activeModelName = name
+	rc.mu.Unlock()
 }
-
-// SetCurrentEmail updates the active email session. If email changes, stale events and retries are purged.
 func (rc *RetryCoordinator) SetCurrentEmail(email string) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	if !strings.EqualFold(rc.currentEmail, email) {
+		if rc.currentEmail != "" {
+			rc.invalidateLocked()
+		}
 		rc.currentEmail = email
-		rc.seenEvents = make(map[string]bool)
-		rc.recoveryAttempts = 0
-		rc.isRecovering.Store(false)
 	}
 }
-
-// Reset clears the recovery attempt counter, event deduplication map, and recovering state.
+func (rc *RetryCoordinator) clearRecoveryLocked() {
+	for _, r := range rc.recoveries {
+		r.cancel()
+	}
+	rc.recoveries = make(map[string]*recovery)
+}
 func (rc *RetryCoordinator) Reset() {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-	rc.recoveryAttempts = 0
-	rc.isRecovering.Store(false)
+	rc.clearRecoveryLocked()
 	rc.seenEvents = make(map[string]bool)
 }
+func (rc *RetryCoordinator) invalidateLocked() {
+	rc.generation++
+	rc.clearRecoveryLocked()
+	rc.seenEvents = make(map[string]bool)
+	rc.skipInitial = true
+	for cid, sub := range rc.activeStreams {
+		sub.cancel()
+		delete(rc.activeStreams, cid)
+	}
+}
 
-// GetRecoveryAttempts returns the current count of failed recovery actions.
+// InvalidateSession discards old workers and treats rehydrated terminal states
+// after a credential switch as history, not as a new failed request.
+func (rc *RetryCoordinator) InvalidateSession() {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	rc.invalidateLocked()
+}
 func (rc *RetryCoordinator) GetRecoveryAttempts() int {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-	return rc.recoveryAttempts
+	n := 0
+	for _, r := range rc.recoveries {
+		if r.attempts > n {
+			n = r.attempts
+		}
+	}
+	return n
 }
-
-// IsRecovering returns whether a recovery sequence is currently active.
 func (rc *RetryCoordinator) IsRecovering() bool {
-	return rc.isRecovering.Load()
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return len(rc.recoveries) > 0
+}
+func (rc *RetryCoordinator) IsRunning() bool { return rc.running.Load() }
+func eventKey(u connector.AgentStateUpdate) string {
+	return fmt.Sprintf("%s:%s:%s:%s", u.ConversationID, u.ExecutionID, u.StepID, u.TerminationReason)
 }
 
-// IsRunning returns whether the coordinator is currently active.
-func (rc *RetryCoordinator) IsRunning() bool {
-	return rc.running.Load()
-}
-
-// HandleAgentStateUpdate evaluates an update from StreamAgentStateUpdates and drives the recovery state machine.
-func (rc *RetryCoordinator) HandleAgentStateUpdate(ctx context.Context, update connector.AgentStateUpdate) error {
-	if !rc.running.Load() {
+func (rc *RetryCoordinator) HandleAgentStateUpdate(ctx context.Context, u connector.AgentStateUpdate) error {
+	rc.mu.Lock()
+	if !rc.running.Load() || ctx.Err() != nil {
+		rc.mu.Unlock()
 		return ErrCoordinatorStopped
 	}
-
-	rc.mu.Lock()
-	// 1. Deduplication key
-	eventKey := fmt.Sprintf("%s:%s:%s:%s:%d:%s",
-		update.ConversationID,
-		update.ExecutionID,
-		update.StepID,
-		update.Status,
-		update.Attempt,
-		update.TerminationReason,
-	)
-
-	if rc.seenEvents[eventKey] {
+	if strings.TrimSpace(u.ConversationID) == "" {
 		rc.mu.Unlock()
-		return nil // Drop duplicate/stale update
+		return errors.New("agent update has no conversation ID")
 	}
-	rc.seenEvents[eventKey] = true
-
-	// 2. Check if language server is auto-retrying
-	if update.HasRetryAt() {
-		rc.mu.Unlock()
-		if rc.onStatusEvent != nil {
-			rc.onStatusEvent(StatusRetrying, fmt.Sprintf("Antigravity đang tự động retry (thời điểm: %s), đang chờ.", update.RetryAt), update)
+	r := rc.recoveries[u.ConversationID]
+	if u.IsRunning() || u.HasRetryAt() {
+		if r != nil && r.awaiting {
+			r.started = true
 		}
+		rc.mu.Unlock()
 		return nil
 	}
-
-	// 3. Check for successful completion
-	if update.IsSuccessfulCompletion() {
-		wasRecovering := rc.isRecovering.Load() || rc.recoveryAttempts > 0
-		rc.recoveryAttempts = 0
-		rc.isRecovering.Store(false)
+	if !u.IsTerminalError() && !u.IsSuccessfulCompletion() {
 		rc.mu.Unlock()
-
-		if wasRecovering && rc.onStatusEvent != nil {
-			rc.onStatusEvent(StatusIdle, "Khôi phục thành công! Phiên hoạt động trở lại bình thường.", update)
+		return nil
+	}
+	key := eventKey(u)
+	if rc.seenEvents[key] {
+		rc.mu.Unlock()
+		return nil
+	}
+	// Require an actual execution transition after the previous Retry send.
+	if r != nil && r.awaiting && !r.started && u.ExecutionID == r.execution && u.StepID == r.step {
+		rc.mu.Unlock()
+		return nil
+	}
+	rc.seenEvents[key] = true
+	if u.IsSuccessfulCompletion() || !u.IsRateLimitOrQuotaExhausted() {
+		if r != nil {
+			r.cancel()
+			delete(rc.recoveries, u.ConversationID)
 		}
-		return nil
-	}
-
-	// 4. Check for in-flight running
-	if update.IsRunning() {
 		rc.mu.Unlock()
-		return nil
-	}
-
-	// 5. Check for Rate Limit or Quota Exhaustion
-	if update.IsRateLimitOrQuotaExhausted() {
-		rc.isRecovering.Store(true)
-
-		if rc.recoveryAttempts >= MaxRecoveryAttempts {
-			rc.mu.Unlock()
-			if rc.onStatusEvent != nil {
-				rc.onStatusEvent(StatusSwitching, "Đã thất bại 3 lần thử khôi phục với lỗi giới hạn. Kích hoạt chuyển tài khoản.", update)
+		if r != nil {
+			if u.IsSuccessfulCompletion() {
+				rc.emit(StatusIdle, "Khôi phục thành công; tiếp tục theo dõi.")
+			} else {
+				rc.emit(StatusError, "Phiên dừng với lỗi không thuộc quota; ngừng tự thử lại.")
 			}
-			if rc.onSwitchNeeded != nil {
-				go rc.onSwitchNeeded(ctx, "3 native retries exhausted on rate limit/quota error")
-			}
-			return ErrMaxRetriesExceeded
 		}
-
-		rc.recoveryAttempts++
-		attemptNum := rc.recoveryAttempts
-		model := rc.activeModelName
-		sleeper := rc.sleeper
-		clientProvider := rc.clientProvider
+		return nil
+	}
+	if r == nil {
+		workCtx, cancel := context.WithCancel(rc.ctx)
+		r = &recovery{ctx: workCtx, cancel: cancel}
+		rc.recoveries[u.ConversationID] = r
+	}
+	if r.switching {
 		rc.mu.Unlock()
-
-		if rc.onStatusEvent != nil {
-			rc.onStatusEvent(StatusRetrying, fmt.Sprintf("Bắt lỗi giới hạn (429/QUOTA). Thực hiện Native Retry lần %d/%d...", attemptNum, MaxRecoveryAttempts), update)
-		}
-
-		// Dispatch native empty items retry asynchronously
+		return nil
+	}
+	if r.attempts >= MaxRecoveryAttempts {
+		r.switching = true
+		generation := rc.generation
+		rc.mu.Unlock()
+		rc.emit(StatusSwitching, "Ba lần khôi phục vẫn gặp lỗi giới hạn; chuyển tài khoản.")
 		go func() {
-			if sleeper != nil {
-				_ = sleeper(ctx, DefaultRetryPacingDelay)
+			rc.mu.Lock()
+			valid := rc.running.Load() && rc.generation == generation && rc.recoveries[u.ConversationID] == r
+			rc.mu.Unlock()
+			if valid && rc.onSwitchNeeded != nil {
+				rc.onSwitchNeeded(context.Background(), "3 native retries exhausted on rate limit/quota error")
 			}
-			if !rc.running.Load() {
-				return
-			}
-			if clientProvider == nil {
-				return
-			}
-			client, err := clientProvider(ctx)
-			if err != nil || client == nil {
-				return
-			}
-			// Send empty items retry without waiting or counting HTTP ACK as recovery
-			_ = client.SendEmptyItemsRetry(ctx, update.ConversationID, model, nil)
 		}()
-
-		return nil
+		return ErrMaxRetriesExceeded
 	}
-
+	r.attempts++
+	r.execution, r.step, r.started, r.awaiting = u.ExecutionID, u.StepID, false, true
+	attempt, generation, model := r.attempts, rc.generation, rc.activeModelName
+	provider, guard, before := rc.clientProvider, rc.sendGuard, rc.sleeper
 	rc.mu.Unlock()
+	rc.emit(StatusRetrying, fmt.Sprintf("Khôi phục bằng Native Retry lần %d/%d...", attempt, MaxRecoveryAttempts))
+	go func() {
+		var err error
+		if before != nil {
+			err = before(r.ctx, 0)
+		}
+		var client *connector.Client
+		if err == nil {
+			if provider == nil {
+				err = errors.New("retry client provider unavailable")
+			} else {
+				client, err = provider(r.ctx)
+			}
+		}
+		send := func() error {
+			rc.mu.Lock()
+			valid := rc.running.Load() && rc.generation == generation && rc.recoveries[u.ConversationID] == r && r.attempts == attempt
+			rc.mu.Unlock()
+			if !valid || r.ctx.Err() != nil {
+				return context.Canceled
+			}
+			if client == nil {
+				return errors.New("retry language server unavailable")
+			}
+			return client.SendEmptyItemsRetry(r.ctx, u.ConversationID, model, nil)
+		}
+		if err == nil {
+			if guard != nil {
+				err = guard(r.ctx, send)
+			} else {
+				err = send()
+			}
+		}
+		if err != nil {
+			rc.mu.Lock()
+			valid := rc.generation == generation && rc.recoveries[u.ConversationID] == r && r.attempts == attempt
+			if valid {
+				r.cancel()
+				delete(rc.recoveries, u.ConversationID)
+				delete(rc.seenEvents, key)
+			}
+			rc.mu.Unlock()
+			if valid && !errors.Is(err, context.Canceled) && !errors.Is(err, ErrAutomationDisabled) && !errors.Is(err, ErrGateBusy) {
+				rc.emit(StatusError, fmt.Sprintf("Không gửi được Native Retry: %v", err))
+			}
+		}
+	}()
 	return nil
 }
 
-// SupersedeByProactive aborts any in-flight native recovery and triggers an immediate proactive switch.
 func (rc *RetryCoordinator) SupersedeByProactive(ctx context.Context, reason string) {
-	rc.mu.Lock()
-	rc.isRecovering.Store(false)
-	rc.recoveryAttempts = 0
-	rc.mu.Unlock()
-
-	if rc.onStatusEvent != nil {
-		rc.onStatusEvent(StatusSwitching, fmt.Sprintf("Van chủ động kích hoạt (%s), dừng thử lại và chuyển ngay.", reason), nil)
-	}
+	rc.Reset()
 	if rc.onSwitchNeeded != nil {
-		go rc.onSwitchNeeded(ctx, reason)
+		rc.onSwitchNeeded(ctx, reason)
 	}
 }
-
-// Start initiates monitoring on active conversations.
 func (rc *RetryCoordinator) Start(ctx context.Context) error {
 	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	if rc.running.Load() {
+		rc.mu.Unlock()
 		return nil
 	}
-
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	rc.ctx, rc.cancel = context.WithCancel(ctx)
 	rc.running.Store(true)
-
-	if rc.conversationsFn != nil {
-		convs, err := rc.conversationsFn(rc.ctx)
-		if err == nil {
-			for _, cid := range convs {
-				rc.subscribeConversationLocked(rc.ctx, cid)
-			}
-		}
-	}
-
+	rc.mu.Unlock()
+	rc.RescanConversations(ctx)
 	return nil
 }
-
-// Stop shuts down the coordinator and cancels all active stream subscriptions.
 func (rc *RetryCoordinator) Stop() {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-
-	if !rc.running.Load() {
-		return
-	}
 	rc.running.Store(false)
+	rc.generation++
 	if rc.cancel != nil {
 		rc.cancel()
 	}
-	for cid, cancelFn := range rc.activeStreams {
-		cancelFn()
+	rc.clearRecoveryLocked()
+	for cid, sub := range rc.activeStreams {
+		sub.cancel()
 		delete(rc.activeStreams, cid)
 	}
 }
 
-// RescanConversations rescans active conversations and connects any new streams.
+// The existing telemetry callback supplies the reconnect/rescan cadence.
 func (rc *RetryCoordinator) RescanConversations(ctx context.Context) {
 	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	if !rc.running.Load() {
+	scan, generation, running := rc.conversationsFn, rc.generation, rc.running.Load()
+	rc.mu.Unlock()
+	if !running || scan == nil || ctx.Err() != nil {
 		return
 	}
-	if rc.conversationsFn == nil {
-		return
-	}
-	convs, err := rc.conversationsFn(ctx)
+	ids, err := scan(ctx)
 	if err != nil {
+		rc.emit(StatusError, fmt.Sprintf("Không đọc được danh sách phiên để theo dõi: %v", err))
 		return
 	}
-	for _, cid := range convs {
-		rc.subscribeConversationLocked(rc.ctx, cid)
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if !rc.running.Load() || rc.generation != generation {
+		return
+	}
+	present := make(map[string]bool)
+	for _, id := range ids {
+		present[id] = true
+		rc.subscribeLocked(id)
+	}
+	for id, sub := range rc.activeStreams {
+		if !present[id] {
+			sub.cancel()
+			delete(rc.activeStreams, id)
+		}
 	}
 }
-
-func (rc *RetryCoordinator) subscribeConversationLocked(ctx context.Context, conversationID string) {
-	if conversationID == "" {
+func (rc *RetryCoordinator) subscribeLocked(cid string) {
+	if cid == "" || rc.activeStreams[cid] != nil {
 		return
 	}
-	if _, exists := rc.activeStreams[conversationID]; exists {
-		return
-	}
-
-	streamCtx, streamCancel := context.WithCancel(ctx)
-	rc.activeStreams[conversationID] = streamCancel
-
+	ctx, cancel := context.WithCancel(rc.ctx)
+	sub := &subscription{cancel: cancel, generation: rc.generation}
+	rc.activeStreams[cid] = sub
+	provider, skipInitial := rc.clientProvider, rc.skipInitial
 	go func() {
+		defer cancel()
 		defer func() {
 			rc.mu.Lock()
-			delete(rc.activeStreams, conversationID)
+			if rc.activeStreams[cid] == sub {
+				delete(rc.activeStreams, cid)
+			}
 			rc.mu.Unlock()
 		}()
-
-		if rc.clientProvider == nil {
+		if provider == nil {
 			return
 		}
-		client, err := rc.clientProvider(streamCtx)
+		client, err := provider(ctx)
 		if err != nil || client == nil {
+			if ctx.Err() == nil {
+				rc.emit(StatusError, "Chưa kết nối được Language Server; sẽ nối lại ở lượt quota tiếp theo.")
+			}
 			return
 		}
-
-		req := connector.StreamAgentStateUpdatesRequest{
-			ConversationID:     conversationID,
-			SubscriberID:       fmt.Sprintf("antigravity-switch-sub-%d", time.Now().UnixNano()),
-			DisableRehydration: true,
-			PageBounds:         10,
-		}
-
-		updateChan, errChan, err := client.StreamAgentStateUpdates(streamCtx, req)
+		updates, errs, err := client.StreamAgentStateUpdates(ctx, connector.StreamAgentStateUpdatesRequest{ConversationID: cid, SubscriberID: fmt.Sprintf("switcher-%d", time.Now().UnixNano()), DisableRehydration: true, PageBounds: 1})
 		if err != nil {
+			if ctx.Err() == nil {
+				rc.emit(StatusError, fmt.Sprintf("Không mở được agent stream: %v", err))
+			}
 			return
 		}
-
-		for {
+		first := true
+		for updates != nil || errs != nil {
 			select {
-			case update, ok := <-updateChan:
+			case u, ok := <-updates:
 				if !ok {
+					updates = nil
+					continue
+				}
+				rc.mu.Lock()
+				valid := rc.running.Load() && rc.generation == sub.generation && rc.activeStreams[cid] == sub
+				if valid && first && skipInitial && !u.IsRunning() {
+					rc.seenEvents[eventKey(u)] = true
+				}
+				rc.mu.Unlock()
+				first = false
+				if !valid {
 					return
 				}
-				_ = rc.HandleAgentStateUpdate(streamCtx, update)
-			case _, ok := <-errChan:
-				if !ok {
+				if u.ConversationID != cid {
+					rc.emit(StatusError, "Agent stream trả sai conversation ID.")
 					return
 				}
-				return
-			case <-streamCtx.Done():
+				_ = rc.HandleAgentStateUpdate(ctx, u)
+			case err, ok := <-errs:
+				if !ok {
+					errs = nil
+					continue
+				}
+				if err != nil && ctx.Err() == nil {
+					rc.emit(StatusError, fmt.Sprintf("Agent stream bị ngắt: %v", err))
+				}
+			case <-ctx.Done():
 				return
 			}
 		}

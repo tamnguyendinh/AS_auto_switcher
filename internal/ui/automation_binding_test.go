@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"antigravity-switch/internal/manager"
 	"context"
+	"errors"
+	"fyne.io/fyne/v2"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +26,7 @@ func TestUIBinding_AppLifecycle_ControllerAndStatusCleanup(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 
 	ctrl := app.Controller()
 	if ctrl == nil {
@@ -37,8 +41,8 @@ func TestUIBinding_AppLifecycle_ControllerAndStatusCleanup(t *testing.T) {
 
 	// Verify controller is active after Init
 	rc := ctrl.RetryCoordinator()
-	if rc == nil || !rc.IsRunning() {
-		t.Errorf("expected RetryCoordinator to be running after App.Init")
+	if rc == nil || rc.IsRunning() {
+		t.Errorf("expected no subscriptions while initial toggle is OFF")
 	}
 
 	// Close cleans up controller and status listener goroutine
@@ -54,7 +58,7 @@ func TestUIBinding_TelemetryCallback_DualDispatchWithoutOverwrite(t *testing.T) 
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -84,14 +88,26 @@ func TestUIBinding_TelemetryCallback_DualDispatchWithoutOverwrite(t *testing.T) 
 		},
 	}
 
-	app.Controller().OnTelemetryUpdate(results)
-	time.Sleep(100 * time.Millisecond)
+	_ = results
+	app.autoLoop.TriggerNow()
+	end := time.Now().Add(time.Second)
+	for time.Now().Before(end) {
+		app.mu.RLock()
+		done := !app.lastQuotaRefresh.IsZero()
+		app.mu.RUnlock()
+		if done {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	// Verify UI quota overview remains operational
 	app.mu.RLock()
 	lastRefresh := app.lastQuotaRefresh
 	app.mu.RUnlock()
-	_ = lastRefresh
+	if lastRefresh.IsZero() {
+		t.Fatal("telemetry callback did not refresh UI")
+	}
 }
 
 func TestUIBinding_Toggle_SetterBindingAndDynamicCheck(t *testing.T) {
@@ -99,7 +115,7 @@ func TestUIBinding_Toggle_SetterBindingAndDynamicCheck(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -129,40 +145,25 @@ func TestUIBinding_Toggle_SetterBindingAndDynamicCheck(t *testing.T) {
 	}
 }
 
-func TestUIBinding_ManualSwitch_Resets_RecoveryState(t *testing.T) {
-	testApp := test.NewApp()
-	defer testApp.Quit()
+// Remaining manual caller coverage runs through App.SwitchAccount in ui_test.go.
 
-	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
-	defer app.Close()
-
-	app.Init()
-	waitForIdle(app, 1*time.Second)
-
-	rc := app.Controller().RetryCoordinator()
-	if rc == nil {
-		t.Fatal("expected non-nil RetryCoordinator")
+func newIsolatedApp(fyneApp fyne.App, mgr *manager.AccountManager) *App {
+	a := NewAppWithFyne(fyneApp, mgr)
+	if mgr != nil && mgr.Store() != nil {
+		pool, err := telemetry.NewTelemetryPool(&testQuotaClient{}, a.quotaCache, mgr.Store())
+		if err != nil {
+			panic(err)
+		}
+		pool.SetLocalQuotaFetcher(nil)
+		a.SetTelemetryPool(pool)
+		a.autoLoop, _ = telemetry.NewAutoTelemetryLoop(pool, telemetry.DefaultLoopInterval)
 	}
-
-	// Simulate coordinator in recovery state
-	ctx := context.Background()
-	_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
-		ConversationID:    "conv-ui-1",
-		ExecutionID:       "exec-1",
-		StepID:            "step-1",
-		Status:            "IDLE",
-		TerminationReason: "429 RATE_LIMIT",
-		Attempt:           1,
-	})
-
-	if !rc.IsRecovering() {
-		t.Errorf("expected coordinator to enter recovering state")
+	if a.controller != nil {
+		a.controller.SetClientFinder(func(context.Context) (*connector.Client, error) {
+			return nil, errors.New("isolated GUI test: no external Language Server")
+		})
+		a.controller.SetPbtxtPath(filepath.Join(mgr.Store().GetStoreDir(), "test-only.pbtxt"))
+		a.controller.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
 	}
-
-	// Manual switch resets coordinator
-	rc.Reset()
-	if rc.IsRecovering() || rc.GetRecoveryAttempts() != 0 {
-		t.Errorf("expected recovery state reset on manual switch, got recovering=%v attempts=%d", rc.IsRecovering(), rc.GetRecoveryAttempts())
-	}
+	return a
 }

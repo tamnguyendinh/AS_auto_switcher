@@ -3,11 +3,11 @@ package ui
 import (
 	"antigravity-switch/internal/automation"
 	"context"
-	"image/color"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/color"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -20,8 +20,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -69,6 +69,8 @@ func createTestManagerWithReloader(t *testing.T, sessionReloader *reloader.Sessi
 		}
 	}
 
+	sessionReloader.StoragePath = filepath.Join(tempDir, "app_storage.json")
+	sessionReloader.SnapshotCapturer = func(string, string, string) (string, []reloader.ActiveThread, error) { return "", nil, nil }
 	mgr, err := manager.NewAccountManager(accStore, sessionReloader)
 	if err != nil {
 		t.Fatalf("failed initializing manager: %v", err)
@@ -109,19 +111,8 @@ func createTestManagerWithReloader(t *testing.T, sessionReloader *reloader.Sessi
 		CSRFToken: "test-csrf",
 	}, testServer.Client())
 
-	origDiscoverer := sessionReloader.ServerDiscoverer
 	sessionReloader.ServerDiscoverer = func() (*connector.ServerInfo, error) {
-		if origDiscoverer != nil {
-			info, err := origDiscoverer()
-			if err == nil && info != nil && info.Port > 0 {
-				return info, nil
-			}
-		}
-		return &connector.ServerInfo{
-			PID:       12345,
-			Port:      testPort,
-			CSRFToken: "test-csrf",
-		}, nil
+		return &connector.ServerInfo{PID: 12345, Port: testPort, CSRFToken: "test-csrf"}, nil
 	}
 
 	// Mock client finder returning testClient
@@ -162,7 +153,7 @@ func TestNewAppAndInit(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	if app == nil {
 		t.Fatal("expected non-nil App")
 	}
@@ -190,7 +181,7 @@ func TestNewAppAndInit(t *testing.T) {
 func TestAlwaysOnTop(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 
@@ -229,7 +220,7 @@ func TestToggleAlwaysOnTop(t *testing.T) {
 func TestUpdateUI_WithAccounts(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 
@@ -283,7 +274,7 @@ func TestUpdateUI_WithAccounts(t *testing.T) {
 func TestUpdateUI_Empty(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 
@@ -369,7 +360,7 @@ func TestAppLogoResourceAndWindowIcon(t *testing.T) {
 
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 
@@ -443,7 +434,7 @@ func TestElevationTokensAndBorders(t *testing.T) {
 func TestSwitchAccount_NoModalPopup(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 
@@ -483,7 +474,7 @@ func TestSwitchAccount_WithContinuationSummary(t *testing.T) {
 
 	mgr := createTestManagerWithReloader(t, rel)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 
@@ -509,7 +500,7 @@ func TestSwitchAccount_WithContinuationSummary(t *testing.T) {
 func TestSaveSession_NoModalPopup(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 
@@ -788,7 +779,7 @@ func TestAccountCardWithQuotaAndRefresh(t *testing.T) {
 func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	tmpDir := t.TempDir()
 	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
 	cache := telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json"))
@@ -897,7 +888,7 @@ func TestExtractDualCycleQuota_Contract(t *testing.T) {
 func TestUITraceabilityChecklist(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	tmpDir := t.TempDir()
 	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
 	app.SetQuotaCache(telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json")))
@@ -955,8 +946,6 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	app.ToggleAlwaysOnTop()
 	waitForIdle(app, 3*time.Second)
 }
-
-
 
 func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 	errQuota := &telemetry.AccountQuotaData{
@@ -1023,7 +1012,7 @@ func TestUIRendering_QuotaErrorBadgesTruthful(t *testing.T) {
 func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	tmpDir := t.TempDir()
 
 	cache := telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json"))
@@ -1066,7 +1055,6 @@ func TestApp_StatusBarQuotaReportingFormatting(t *testing.T) {
 	app.RefreshAllQuota()
 	waitForIdle(app, 3*time.Second)
 
-
 }
 
 // -------------------------------------------------------------
@@ -1077,7 +1065,7 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
 	defer testApp.Quit()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 
@@ -1350,7 +1338,7 @@ func TestOwnerRedesign_EmailTruncationAndTooltip(t *testing.T) {
 func TestOwnerRedesign_ThreeColumnGrid(t *testing.T) {
 	mgr := createTestManager(t)
 	testApp := test.NewApp()
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 	waitForIdle(app, 1*time.Second)
@@ -1425,7 +1413,6 @@ func TestOwnerRedesign_NoGPTInCardsOrSummary(t *testing.T) {
 		}
 	}
 	walkNoGPT(card)
-
 
 }
 
@@ -1544,7 +1531,7 @@ func TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings(t *testing.T) {
 	mgr, _ := manager.NewAccountManager(accountStore, nil)
 	mgr.SetChromeDir(filepath.Join(tmp, "no-real-chrome"))
 
-	app := NewAppWithFyne(fyneApp, mgr)
+	app := newIsolatedApp(fyneApp, mgr)
 	app.SetPreferencesPath(filepath.Join(tmp, "preferences.json"))
 
 	pool, _ := telemetry.NewTelemetryPoolWithSource(&testQuotaClient{}, telemetry.NewQuotaCache(filepath.Join(tmp, "q.json")), &testAccountSource{})
@@ -1586,7 +1573,7 @@ func TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings(t *testing.T) {
 	app.RefreshSingleAccountQuota(targetEmail)
 	waitForIdle(app, 3*time.Second)
 
-		// In-place reactive update (INV-01): target card container is preserved in-place (zero re-creations, no canvas churn)
+	// In-place reactive update (INV-01): target card container is preserved in-place (zero re-creations, no canvas churn)
 	if grid.Objects[0] != initialCards[0] {
 		t.Errorf("expected target card 0 to be updated in-place without replacing container object")
 	}
@@ -1604,7 +1591,7 @@ func TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings(t *testing.T) {
 	}
 }
 func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
-	app := NewAppWithFyne(test.NewApp(), nil)
+	app := newIsolatedApp(test.NewApp(), nil)
 	app.Init()
 	defer app.Close()
 
@@ -1642,7 +1629,7 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 // TestOwnerRedesign_F6_MonogramRecolorsOnThemeChange verifies F6:
 // Monogram AS background recolors dynamically across Dark, Light, and Warm themes.
 func TestOwnerRedesign_F6_MonogramRecolorsOnThemeChange(t *testing.T) {
-	app := NewAppWithFyne(test.NewApp(), nil)
+	app := newIsolatedApp(test.NewApp(), nil)
 	app.Init()
 	defer app.Close()
 
@@ -1959,7 +1946,6 @@ func TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero(t *t
 	}
 }
 
-
 func TestMiniProgressBar_DepletionAndGeometry(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -2125,7 +2111,7 @@ func TestArchitectSpec_INV01_InPlaceReactiveQuotaUpdatesZeroCanvasChurn(t *testi
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -2286,7 +2272,7 @@ func TestIndustryStandard_WindowInit920x630(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -2313,7 +2299,7 @@ func TestWindowControlsMinimizeMaximizeClose(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -2368,7 +2354,7 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -2400,7 +2386,7 @@ func TestArchitectSpec_QuotaStackedLayoutCard280x130_FullConformance(t *testing.
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -2611,7 +2597,6 @@ func TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance(t *te
 	_ = cCW
 }
 
-
 // -----------------------------------------------------------------------------
 // Test for SPEC-ARCH-20261019-COMPACT-WINDOW-WIDTH-920PX
 // -----------------------------------------------------------------------------
@@ -2621,7 +2606,7 @@ func TestArchitectSpec_CompactWindowWidth920px_FullConformance(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -2875,7 +2860,6 @@ func TestArchitectSpec_FlatTextSwitchButton_FullConformance(t *testing.T) {
 	}
 }
 
-
 // -----------------------------------------------------------------------------
 // Test for SPEC-ARCH-20261019-MERGE-TOOLBAR-WITH-SERVER-STATUS-ROW
 // -----------------------------------------------------------------------------
@@ -2885,7 +2869,7 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -3044,7 +3028,6 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 	}
 }
 
-
 // -----------------------------------------------------------------------------
 // Test for SPEC-ARCH-20261019-SYMMETRIC-GRID-WRAP-MARGINS
 // -----------------------------------------------------------------------------
@@ -3086,13 +3069,13 @@ func TestSymmetricGridWrapLayout_ExactSymmetry(t *testing.T) {
 	}
 
 	// AC-2: Aligned Follower Rows (row 2 cards vertically align with row 1 columns)
-	if math.Abs(float64(objects[0].Position().X - objects[3].Position().X)) > 0.001 {
+	if math.Abs(float64(objects[0].Position().X-objects[3].Position().X)) > 0.001 {
 		t.Fatalf("AC-2 VIOLATION: row 2 col 0 (x=%f) does not align with row 1 col 0 (x=%f)", objects[3].Position().X, objects[0].Position().X)
 	}
-	if math.Abs(float64(objects[1].Position().X - objects[4].Position().X)) > 0.001 {
+	if math.Abs(float64(objects[1].Position().X-objects[4].Position().X)) > 0.001 {
 		t.Fatalf("AC-2 VIOLATION: row 2 col 1 (x=%f) does not align with row 1 col 1 (x=%f)", objects[4].Position().X, objects[1].Position().X)
 	}
-	if math.Abs(float64(objects[2].Position().X - objects[5].Position().X)) > 0.001 {
+	if math.Abs(float64(objects[2].Position().X-objects[5].Position().X)) > 0.001 {
 		t.Fatalf("AC-2 VIOLATION: row 2 col 2 (x=%f) does not align with row 1 col 2 (x=%f)", objects[5].Position().X, objects[2].Position().X)
 	}
 
@@ -3121,7 +3104,7 @@ func TestSymmetricGridWrapLayout_ExactSymmetry(t *testing.T) {
 
 	// Verify app.accountListContainer layout type in Init()
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 	waitForIdle(app, 1*time.Second)
@@ -3147,7 +3130,7 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 	waitForIdle(app, 1*time.Second)
@@ -3337,7 +3320,6 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	}
 }
 
-
 // -----------------------------------------------------------------------------
 // Test for SPEC-ARCH-20261020-COMPACT-THEME-SELECT-60PCT
 // -----------------------------------------------------------------------------
@@ -3347,7 +3329,7 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 	app.Init()
 	waitForIdle(app, 1*time.Second)
@@ -3441,9 +3423,6 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 	}
 }
 
-
-
-
 // -----------------------------------------------------------------------------
 // TestHeaderRow2_VerticalAlignment
 // SPEC-ARCH-20261020-ALIGN-HEADER-ROW2-VERTICAL-BASELINE
@@ -3454,7 +3433,7 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -3570,7 +3549,6 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 	}
 }
 
-
 // -----------------------------------------------------------------------------
 // Slice P1-C: Automation Coordinator & GUI Toggle Integration Tests
 // -----------------------------------------------------------------------------
@@ -3580,7 +3558,7 @@ func TestAutomation_AppLifecycleAndController(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	if app.Controller() == nil {
 		t.Fatal("expected non-nil AutomationController in App")
 	}
@@ -3600,7 +3578,7 @@ func TestAutomation_ToggleAndSetterBinding(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -3669,48 +3647,22 @@ func TestAutomation_ToggleAndSetterBinding(t *testing.T) {
 func TestAutomation_TelemetryCallbackIntegration(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
-
-	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, createTestManager(t))
 	defer app.Close()
-
 	app.Init()
-	waitForIdle(app, 1*time.Second)
-
-	// Verify autoLoop callback exists and passes results to controller
-	if app.autoLoop == nil {
-		t.Fatal("expected non-nil autoLoop")
-	}
-
-	results := []*telemetry.AccountQuotaData{
-		{
-			Email:  "test@example.com",
-			Status: telemetry.StatusPristine,
-			Claude: telemetry.ModelQuotaBucket{RemainingFraction: 1.0},
-			Gemini: telemetry.ModelQuotaBucket{RemainingFraction: 0.9},
-		},
-	}
-
+	waitForIdle(app, time.Second)
 	app.autoLoop.TriggerNow()
-	time.Sleep(200 * time.Millisecond)
-
-	// Test direct non-blocking feed to controller
-	ctrl := app.Controller()
-	if ctrl != nil {
-		ctrl.OnTelemetryUpdate(results)
+	end := time.Now().Add(3 * time.Second)
+	for time.Now().Before(end) {
+		app.mu.RLock()
+		refreshed := !app.lastQuotaRefresh.IsZero()
+		app.mu.RUnlock()
+		if refreshed {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-
-	app.mu.Lock()
-	app.lastQuotaRefresh = time.Now()
-	app.mu.Unlock()
-
-	app.mu.RLock()
-	lastRefresh := app.lastQuotaRefresh
-	app.mu.RUnlock()
-
-	if lastRefresh.IsZero() {
-		t.Error("expected lastQuotaRefresh to be updated after telemetry callback")
-	}
+	t.Fatal("telemetry callback did not update lastQuotaRefresh")
 }
 
 func TestAutomation_StatusEventListenerAndStatusBar(t *testing.T) {
@@ -3718,7 +3670,7 @@ func TestAutomation_StatusEventListenerAndStatusBar(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -3759,7 +3711,7 @@ func TestAutomation_ManualSwitch_GateAndInvalidation(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	app.Init()
@@ -3799,7 +3751,7 @@ func TestAutomation_GateMutualExclusion(t *testing.T) {
 	defer testApp.Quit()
 
 	mgr := createTestManager(t)
-	app := NewAppWithFyne(testApp, mgr)
+	app := newIsolatedApp(testApp, mgr)
 	defer app.Close()
 
 	gate := app.Controller().Gate()

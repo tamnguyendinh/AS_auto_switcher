@@ -2,17 +2,18 @@ package connector
 
 import (
 	"bytes"
-	"io"
-	"strings"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestGetCascadeModelConfig_And_ResolveActiveModel(t *testing.T) {
@@ -134,17 +135,14 @@ func TestGetCascadeModelConfig_And_ResolveActiveModel(t *testing.T) {
 		t.Errorf("expected label Disabled Model, got %s", label)
 	}
 
-	// 6. Test ResolveActiveModel with dynamic unknown model ID -> falls back gracefully
-	_ = os.WriteFile(pbtxt, []byte("some_flag: true\nlast_selected_agent_model: \"MODEL_DYNAMIC_FUTURE_V4\"\n"), 0600)
-	modelID, label, disabled, err = client.ResolveActiveModel(ctx, pbtxt)
-	if err != nil {
-		t.Fatalf("ResolveActiveModel failed: %v", err)
+	// Unknown IDs must not silently select Gemini.
+	_ = os.WriteFile(pbtxt, []byte("last_selected_agent_model: \"MODEL_DYNAMIC_FUTURE_V4\""), 0600)
+	_, _, _, err = client.ResolveActiveModel(ctx, pbtxt)
+	if err == nil {
+		t.Fatal("expected unresolved model error")
 	}
-	if modelID != "MODEL_DYNAMIC_FUTURE_V4" || label != "MODEL_DYNAMIC_FUTURE_V4" || disabled {
-		t.Errorf("expected fallback for dynamic model, got id=%s label=%s disabled=%v", modelID, label, disabled)
-	}
-}
 
+}
 
 func TestSendEmptyItemsRetry(t *testing.T) {
 	var capturedBody []byte
@@ -239,6 +237,20 @@ func TestConnectFrame_EncodeDecode(t *testing.T) {
 func TestStreamAgentStateUpdates_ConnectFramedAndLineDelimited(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == EndpointStreamAgentStateUpdates {
+			if r.Header.Get("x-codeium-csrf-token") != "stream_csrf_test" {
+				t.Error("missing native CSRF header")
+			}
+			requestFrame, err := ReadConnectFrame(r.Body)
+			if err != nil {
+				t.Errorf("missing request envelope: %v", err)
+				http.Error(w, "bad frame", 400)
+				return
+			}
+			var req map[string]any
+			if json.Unmarshal(requestFrame.Payload, &req) != nil || req["initialStepsPageBounds"] == nil {
+				t.Error("missing native page bounds")
+			}
+
 			flusher, ok := w.(http.Flusher)
 			if !ok {
 				http.Error(w, "streaming not supported", http.StatusInternalServerError)
@@ -255,7 +267,7 @@ func TestStreamAgentStateUpdates_ConnectFramedAndLineDelimited(t *testing.T) {
 				ExecutionID:     "exec-1",
 				StepID:          "step-1",
 			}
-			b1, _ := json.Marshal(u1)
+			b1 := nativeFixture(t, u1)
 			_, _ = w.Write(EncodeConnectFrame(b1, false))
 			flusher.Flush()
 
@@ -271,7 +283,7 @@ func TestStreamAgentStateUpdates_ConnectFramedAndLineDelimited(t *testing.T) {
 				ExecutionID: "exec-1",
 				StepID:      "step-2",
 			}
-			b2, _ := json.Marshal(u2)
+			b2 := nativeFixture(t, u2)
 			_, _ = w.Write(EncodeConnectFrame(b2, false))
 			flusher.Flush()
 
@@ -367,6 +379,7 @@ func TestAgentStateUpdate_HelpersAndErrorParsing(t *testing.T) {
 	jsonRetry := `{"conversationId":"c1","status":"PAUSED","retryAt":"2026-10-20T12:00:00Z"}`
 	var u3 AgentStateUpdate
 	_ = json.Unmarshal([]byte(jsonRetry), &u3)
+	u3.RetryAt = time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
 	if !u3.HasRetryAt() {
 		t.Errorf("expected HasRetryAt=true")
 	}
@@ -380,5 +393,63 @@ func TestAgentStateUpdate_HelpersAndErrorParsing(t *testing.T) {
 	}
 	if u4.IsRateLimitOrQuotaExhausted() {
 		t.Errorf("success should not be rate limit")
+	}
+}
+func nativeFixture(t *testing.T, u AgentStateUpdate) []byte {
+	t.Helper()
+	m := map[string]any{"conversationId": u.ConversationID, "status": "CASCADE_RUN_STATUS_" + u.Status,
+		"executorMetadata":     map[string]any{"executionId": u.ExecutionID, "terminationReason": "EXECUTOR_TERMINATION_REASON_" + u.TerminationReason},
+		"mainTrajectoryUpdate": map[string]any{"lastStepError": u.LastStepError, "stepsUpdate": map[string]any{"totalLength": 2}}}
+	if u.RetryAt != "" {
+		m["executionStatus"] = map[string]any{"modelRequest": map[string]any{"attempt": u.Attempt, "maxAttempts": u.MaxAttempts, "retryAt": u.RetryAt}}
+	}
+	b, err := json.Marshal(map[string]any{"update": m})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestNativeStreamErrorsAndCancellation(t *testing.T) {
+	out := make(chan AgentStateUpdate, 2)
+	err := DecodeStreamAgentStateUpdates(bytes.NewReader(EncodeConnectFrame([]byte(`{"error":{"code":"unauthenticated","message":"missing CSRF token"}}`), true)), out)
+	if err == nil || !strings.Contains(err.Error(), "unauthenticated") {
+		t.Fatalf("lost Connect error: %v", err)
+	}
+	err = DecodeStreamAgentStateUpdates(bytes.NewReader(EncodeConnectFrame([]byte(`{"status":"IDLE"}`), false)), out)
+	if err == nil {
+		t.Fatal("accepted non-native envelope")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = decodeAgentStateStream(ctx, bytes.NewReader(EncodeConnectFrame(nativeFixture(t, AgentStateUpdate{ConversationID: "c", Status: "IDLE", TerminationReason: "NO_TOOL_CALL"}), false)), make(chan AgentStateUpdate))
+	if err != context.Canceled {
+		t.Fatalf("blocked decoder did not cancel: %v", err)
+	}
+}
+
+func TestNativeStreamMergesExecutionPatches(t *testing.T) {
+	frames := [][]byte{
+		[]byte(`{"update":{"conversationId":"c","status":"CASCADE_RUN_STATUS_RUNNING","executorMetadata":{"executionId":"e1"},"executionStatus":{"modelRequest":{"attempt":1,"maxAttempts":3,"retryAt":"2099-01-01T00:00:00Z"}}}}`),
+		[]byte(`{"update":{"status":"CASCADE_RUN_STATUS_IDLE","executorMetadata":{"executionId":"e1","terminationReason":"EXECUTOR_TERMINATION_REASON_ERROR"},"mainTrajectoryUpdate":{"lastStepError":{"errorCode":"RESOURCE_EXHAUSTED","errorMessage":"quota exhausted"},"stepsUpdate":{"totalLength":5}}}}`),
+		[]byte(`{"update":{"status":"CASCADE_RUN_STATUS_IDLE","executorMetadata":{"executionId":"e2","terminationReason":"EXECUTOR_TERMINATION_REASON_NO_TOOL_CALL"},"mainTrajectoryUpdate":{"lastStepError":{}}}}`),
+	}
+	var buf bytes.Buffer
+	for _, b := range frames {
+		buf.Write(EncodeConnectFrame(b, false))
+	}
+	out := make(chan AgentStateUpdate, 3)
+	if err := DecodeStreamAgentStateUpdates(&buf, out); err != nil {
+		t.Fatal(err)
+	}
+	a, b, c := <-out, <-out, <-out
+	if !a.IsRunning() || !a.HasRetryAt() || a.MaxAttempts != 3 {
+		t.Fatalf("native retry not decoded: %+v", a)
+	}
+	if b.ConversationID != "c" || !b.IsTerminalError() || !b.IsRateLimitOrQuotaExhausted() || b.HasRetryAt() {
+		t.Fatalf("terminal state incorrect: %+v", b)
+	}
+	if !c.IsSuccessfulCompletion() || c.LastStepError != nil {
+		t.Fatalf("old error leaked to new execution: %+v", c)
 	}
 }

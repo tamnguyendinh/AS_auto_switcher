@@ -48,9 +48,9 @@ var (
 
 // SwitchDecision records the outcome of proactive trigger evaluation.
 type SwitchDecision struct {
-	ShouldSwitch bool                  `json:"should_switch"`
-	Reason       string                `json:"reason"`
-	ActiveEmail  string                `json:"active_email"`
+	ShouldSwitch bool                 `json:"should_switch"`
+	Reason       string               `json:"reason"`
+	ActiveEmail  string               `json:"active_email"`
 	Evaluation   ModelQuotaEvaluation `json:"evaluation"`
 }
 
@@ -69,8 +69,10 @@ type AutomationController struct {
 	pbtxtPath      string
 	activeModelID  string
 	activeModelLbl string
-	failedInRound  map[string]bool
-	failedMu       sync.Mutex
+	evaluating     atomic.Bool
+	manualSwitch   atomic.Bool
+	monitorMu      sync.Mutex
+	refreshNow     func()
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -89,13 +91,12 @@ func NewAutomationController(
 		gate = NewSwitchGate()
 	}
 	c := &AutomationController{
-		mgr:           mgr,
-		pool:          pool,
-		cache:         cache,
-		gate:          gate,
-		statusChan:    make(chan StatusEvent, 64),
-		failedInRound: make(map[string]bool),
-		pbtxtPath:     "",
+		mgr:        mgr,
+		pool:       pool,
+		cache:      cache,
+		gate:       gate,
+		statusChan: make(chan StatusEvent, 64),
+		pbtxtPath:  "",
 	}
 	c.clientFinder = c.defaultFindClient
 
@@ -105,13 +106,25 @@ func NewAutomationController(
 			return c.findClient(ctx)
 		},
 		func(ctx context.Context, reason string) {
-			_, _ = c.TriggerSwitch(ctx, reason)
+			_, _ = c.TriggerSwitch(c.monitorContext(), reason)
 		},
 		func(code StatusCode, message string, details any) {
 			c.EmitStatus(code, message, details)
 		},
 	)
 
+	c.retryCoord.SetSendGuard(func(ctx context.Context, action func() error) error {
+		if !c.enabled.Load() || c.isSwitching.Load() || c.manualSwitch.Load() {
+			return ErrAutomationDisabled
+		}
+		_, err := c.gate.TryExecute(func(bool) error {
+			if !c.enabled.Load() || c.isSwitching.Load() || c.manualSwitch.Load() || ctx.Err() != nil {
+				return ErrAutomationDisabled
+			}
+			return action()
+		})
+		return err
+	})
 	return c
 }
 
@@ -148,20 +161,61 @@ func (c *AutomationController) IsEnabled() bool {
 // Toggling OFF prevents new triggers/retries but does not interrupt an in-flight switch.
 func (c *AutomationController) SetEnabled(enabled bool) {
 	was := c.enabled.Swap(enabled)
-	if !was && enabled {
+	if was == enabled {
+		return
+	}
+	c.syncMonitoring()
+	if enabled {
 		c.EmitStatus(StatusIdle, "Tự động chuyển tài khoản: BẬT", nil)
-		if c.cache != nil {
-			quotas := make([]*telemetry.AccountQuotaData, 0)
-			for _, q := range c.cache.GetAll() {
-				quotas = append(quotas, q)
-			}
-			c.OnTelemetryUpdate(quotas)
-		}
-	} else if was && !enabled {
+		c.requestFreshQuota()
+	} else {
 		c.EmitStatus(StatusIdle, "Tự động chuyển tài khoản: TẮT", nil)
-		if c.retryCoord != nil {
-			c.retryCoord.Reset()
-		}
+	}
+}
+
+// SetQuotaRefresh binds the existing telemetry loop; the controller owns no ticker.
+func (c *AutomationController) SetQuotaRefresh(fn func()) {
+	c.mu.Lock()
+	c.refreshNow = fn
+	c.mu.Unlock()
+}
+func (c *AutomationController) requestFreshQuota() {
+	c.mu.Lock()
+	fn := c.refreshNow
+	c.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+func (c *AutomationController) monitorContext() context.Context {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
+}
+func (c *AutomationController) syncMonitoring() {
+	c.monitorMu.Lock()
+	defer c.monitorMu.Unlock()
+	if c.retryCoord == nil {
+		return
+	}
+	if c.running.Load() && c.enabled.Load() && !c.isSwitching.Load() && !c.manualSwitch.Load() {
+		_ = c.retryCoord.Start(c.monitorContext())
+	} else {
+		c.retryCoord.Stop()
+	}
+}
+
+// Manual callers pause recovery before entering the same credential gate.
+func (c *AutomationController) BeginManualSwitch() { c.manualSwitch.Store(true); c.syncMonitoring() }
+func (c *AutomationController) EndManualSwitch() {
+	c.manualSwitch.Store(false)
+	c.retryCoord.InvalidateSession()
+	c.syncMonitoring()
+	if c.enabled.Load() {
+		c.requestFreshQuota()
 	}
 }
 
@@ -200,9 +254,8 @@ func (c *AutomationController) EmitStatus(code StatusCode, message string, detai
 // Start starts background monitoring and the retry coordinator.
 func (c *AutomationController) Start(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.running.Load() {
+		c.mu.Unlock()
 		return nil
 	}
 	if ctx == nil {
@@ -210,28 +263,21 @@ func (c *AutomationController) Start(ctx context.Context) error {
 	}
 	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.running.Store(true)
-
-	if c.retryCoord != nil {
-		_ = c.retryCoord.Start(c.ctx)
-	}
+	c.mu.Unlock()
+	c.syncMonitoring()
 	return nil
 }
 
-// Stop terminates the controller, cancels background contexts, and stops the retry coordinator.
 func (c *AutomationController) Stop() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c.running.Load() {
-		return
-	}
+	c.enabled.Store(false)
 	c.running.Store(false)
-	if c.cancel != nil {
-		c.cancel()
+	c.mu.Lock()
+	cancel := c.cancel
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
-	if c.retryCoord != nil {
-		c.retryCoord.Stop()
-	}
+	c.syncMonitoring()
 }
 
 func (c *AutomationController) defaultFindClient(ctx context.Context) (*connector.Client, error) {
@@ -254,21 +300,50 @@ func (c *AutomationController) findClient(ctx context.Context) (*connector.Clien
 
 // OnTelemetryUpdate is the non-blocking callback invoked when telemetry data is refreshed.
 func (c *AutomationController) OnTelemetryUpdate(quotas []*telemetry.AccountQuotaData) {
-	if !c.enabled.Load() || c.isSwitching.Load() {
+	if !c.enabled.Load() || c.isSwitching.Load() || c.manualSwitch.Load() || !c.evaluating.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		decision, err := c.EvaluateProactiveTrigger(ctx, quotas)
-		if err == nil && decision != nil && decision.ShouldSwitch {
-			if c.retryCoord != nil {
-				c.retryCoord.SupersedeByProactive(ctx, decision.Reason)
-			} else {
-				_, _ = c.TriggerSwitch(ctx, decision.Reason)
+		defer c.evaluating.Store(false)
+		base := c.monitorContext()
+		evalCtx, cancel := context.WithTimeout(base, 15*time.Second)
+		decision, err := c.EvaluateProactiveTrigger(evalCtx, quotas)
+		cancel()
+		if err != nil {
+			if c.enabled.Load() {
+				c.EmitStatus(StatusError, fmt.Sprintf("Không thể kiểm tra automation: %v", err), nil)
 			}
+			return
+		}
+		if !c.enabled.Load() || base.Err() != nil {
+			return
+		}
+		if decision != nil && decision.ShouldSwitch {
+			// The operation is synchronous in this worker and does not inherit the
+			// evaluation deadline or the lifetime of a stream being restarted.
+			_, _ = c.triggerSwitch(base, decision.Reason, decision)
+		} else if c.retryCoord != nil {
+			c.retryCoord.RescanConversations(base)
 		}
 	}()
+}
+
+func (c *AutomationController) resolveModel(ctx context.Context) (string, string, error) {
+	client, err := c.findClient(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	if client == nil {
+		return "", "", errors.New("language server unavailable")
+	}
+	c.mu.Lock()
+	path := c.pbtxtPath
+	c.mu.Unlock()
+	id, label, _, err := client.ResolveActiveModel(ctx, path)
+	if err == nil && ResolveActiveModelCategory(id, label) == CategoryUnknown {
+		err = fmt.Errorf("unknown quota family for model %s", id)
+	}
+	return id, label, err
 }
 
 // EvaluateProactiveTrigger inspects active account quota against active model thresholds.
@@ -287,25 +362,17 @@ func (c *AutomationController) EvaluateProactiveTrigger(ctx context.Context, quo
 		return nil, fmt.Errorf("failed resolving current active email: %w", err)
 	}
 
-	modelID := connector.DefaultActiveAgentModel
-	label := connector.DefaultActiveAgentModel
-	client, err := c.findClient(ctx)
-	if err == nil && client != nil {
-		mID, mLbl, _, rErr := client.ResolveActiveModel(ctx, c.pbtxtPath)
-		if rErr == nil && mID != "" {
-			modelID = mID
-			label = mLbl
-		}
+	modelID, label, err := c.resolveModel(ctx)
+	if err != nil {
+		return nil, err
 	}
-
 	c.mu.Lock()
-	c.activeModelID = modelID
-	c.activeModelLbl = label
+	c.activeModelID, c.activeModelLbl = modelID, label
+	c.mu.Unlock()
 	if c.retryCoord != nil {
 		c.retryCoord.SetModelName(modelID)
 		c.retryCoord.SetCurrentEmail(activeEmail)
 	}
-	c.mu.Unlock()
 
 	var activeQuota *telemetry.AccountQuotaData
 	for _, q := range quotas {
@@ -344,7 +411,25 @@ func (c *AutomationController) EvaluateProactiveTrigger(ctx context.Context, quo
 }
 
 // TriggerSwitch runs the account switching pipeline through the single-flight gate and SwitchGate.
-func (c *AutomationController) TriggerSwitch(ctx context.Context, reason string) (*manager.SwitchResult, error) {
+func (c *AutomationController) TriggerSwitch(ctx context.Context, reason string) (result *manager.SwitchResult, resultErr error) {
+	return c.triggerSwitch(ctx, reason, nil)
+}
+
+func (c *AutomationController) triggerSwitch(ctx context.Context, reason string, expected *SwitchDecision) (result *manager.SwitchResult, resultErr error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if c.mgr == nil {
+		return nil, errors.New("account manager cannot be nil")
+	}
+	if c.manualSwitch.Load() {
+		return nil, ErrSwitchInProgress
+	}
+	defer func() {
+		if resultErr != nil && !errors.Is(resultErr, ErrAutomationDisabled) && !errors.Is(resultErr, ErrSwitchInProgress) && !errors.Is(resultErr, ErrNoCandidates) {
+			c.EmitStatus(StatusError, fmt.Sprintf("Tự động chuyển chưa hoàn tất: %v", resultErr), nil)
+		}
+	}()
 	if !c.enabled.Load() {
 		return nil, ErrAutomationDisabled
 	}
@@ -353,29 +438,45 @@ func (c *AutomationController) TriggerSwitch(ctx context.Context, reason string)
 	if !c.isSwitching.CompareAndSwap(false, true) {
 		return nil, ErrSwitchInProgress
 	}
-	defer c.isSwitching.Store(false)
+	c.syncMonitoring()
+	defer func() { c.isSwitching.Store(false); c.syncMonitoring() }()
 
 	c.EmitStatus(StatusSwitching, fmt.Sprintf("Kích hoạt chuyển tài khoản: %s", reason), nil)
 
 	var switchResult *manager.SwitchResult
 
-	err := c.gate.Execute(ctx, func(wasAbandoned bool) error {
+	_, err := c.gate.TryExecute(func(wasAbandoned bool) error {
+		if !c.enabled.Load() || c.manualSwitch.Load() {
+			return ErrAutomationDisabled
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		activeEmail, err := c.mgr.GetCurrentActiveEmail(ctx)
 		if err != nil {
 			return fmt.Errorf("failed retrieving active email: %w", err)
 		}
+		if activeEmail == "" {
+			return errors.New("cannot identify active account")
+		}
+		if expected != nil && !strings.EqualFold(activeEmail, expected.ActiveEmail) {
+			return nil
+		}
 
-		modelID := connector.DefaultActiveAgentModel
-		label := connector.DefaultActiveAgentModel
-		client, err := c.findClient(ctx)
-		if err == nil && client != nil {
-			mID, mLbl, _, rErr := client.ResolveActiveModel(ctx, c.pbtxtPath)
-			if rErr == nil && mID != "" {
-				modelID = mID
-				label = mLbl
-			}
+		modelID, label, err := c.resolveModel(ctx)
+		if err != nil {
+			return err
 		}
 		category := ResolveActiveModelCategory(modelID, label)
+		if expected != nil && category != expected.Evaluation.Category {
+			var current *telemetry.AccountQuotaData
+			if c.cache != nil {
+				current, _ = c.cache.Get(activeEmail)
+			}
+			if !ClassifyQuotaState(current, category).ShouldSwitch {
+				return nil
+			}
+		}
 
 		if c.mgr.Store() == nil {
 			return errors.New("account store is nil")
@@ -385,12 +486,7 @@ func (c *AutomationController) TriggerSwitch(ctx context.Context, reason string)
 			return fmt.Errorf("failed listing accounts from store: %w", err)
 		}
 
-		c.failedMu.Lock()
-		failedMap := make(map[string]bool)
-		for k, v := range c.failedInRound {
-			failedMap[k] = v
-		}
-		c.failedMu.Unlock()
+		failedMap := make(map[string]bool) // Exclusions live only for this operation.
 
 		candidates := make([]CandidateAccount, 0, len(emails))
 		for idx, email := range emails {
@@ -425,24 +521,19 @@ func (c *AutomationController) TriggerSwitch(ctx context.Context, reason string)
 
 		sorted := SortCandidatesBurnDown(eligible)
 
-		var lastSwitchErr error
 		for _, cand := range sorted {
 			// Preflight check with PollAccount
 			if c.pool != nil {
 				freshQuota, pollErr := c.pool.PollAccount(ctx, cand.Email)
 				if pollErr != nil || (freshQuota != nil && freshQuota.Status == telemetry.StatusError) {
-					c.failedMu.Lock()
-					c.failedInRound[cand.Email] = true
-					c.failedMu.Unlock()
+					failedMap[cand.Email] = true
 					c.EmitStatus(StatusEvaluating, fmt.Sprintf("Preflight kiểm tra tài khoản %s thất bại, bỏ qua trong đợt này", cand.Email), pollErr)
 					continue
 				}
 				if freshQuota != nil {
 					freshEval := ClassifyQuotaState(freshQuota, category)
 					if !freshEval.IsEligible {
-						c.failedMu.Lock()
-						c.failedInRound[cand.Email] = true
-						c.failedMu.Unlock()
+						failedMap[cand.Email] = true
 						c.EmitStatus(StatusEvaluating, fmt.Sprintf("Quota tài khoản %s sau preflight không đủ điều kiện: %s", cand.Email, freshEval.Reason), freshEval)
 						continue
 					}
@@ -451,35 +542,30 @@ func (c *AutomationController) TriggerSwitch(ctx context.Context, reason string)
 
 			// Preflight passed! Execute switch
 			c.EmitStatus(StatusSwitching, fmt.Sprintf("Đang chuyển đổi sang %s...", cand.Email), cand)
-			res, sErr := c.mgr.SwitchAccount(ctx, cand.Email, false)
+			if !c.enabled.Load() || ctx.Err() != nil {
+				return ErrAutomationDisabled
+			}
+			// Once credential mutation begins, OFF/stream cancellation must not
+			// cut short restart, identity verification or continuation.
+			res, sErr := c.mgr.SwitchAccount(context.WithoutCancel(ctx), cand.Email, false)
 			if sErr != nil {
-				lastSwitchErr = sErr
-				c.failedMu.Lock()
-				c.failedInRound[cand.Email] = true
-				c.failedMu.Unlock()
+				failedMap[cand.Email] = true
 				c.EmitStatus(StatusError, fmt.Sprintf("SwitchAccount sang %s thất bại: %v", cand.Email, sErr), sErr)
 				return sErr
 			}
 
 			// Switch succeeded
 			switchResult = res
-			c.failedMu.Lock()
-			c.failedInRound = make(map[string]bool)
-			c.failedMu.Unlock()
 
 			if c.retryCoord != nil {
-				c.retryCoord.Reset()
+				c.retryCoord.InvalidateSession()
 				c.retryCoord.SetCurrentEmail(cand.Email)
-				c.retryCoord.RescanConversations(ctx)
 			}
 
 			c.EmitStatus(StatusSwitched, fmt.Sprintf("Đã tự động chuyển thành công sang %s", cand.Email), res)
 			return nil
 		}
 
-		if lastSwitchErr != nil {
-			return lastSwitchErr
-		}
 		c.EmitStatus(StatusNoCandidate, "Tất cả ứng viên đã thất bại preflight trong đợt này", nil)
 		return ErrNoCandidates
 	})

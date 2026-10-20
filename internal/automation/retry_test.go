@@ -1,291 +1,129 @@
 package automation
 
 import (
+	"antigravity-switch/internal/connector"
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"antigravity-switch/internal/connector"
 )
 
-func TestRetryCoordinator_HandleAgentStateUpdate_Deduplication(t *testing.T) {
-	var retryCount atomic.Int32
-	clientProvider := func(ctx context.Context) (*connector.Client, error) {
-		retryCount.Add(1)
-		return nil, nil
+func retryFixture(t *testing.T) (*RetryCoordinator, *MockLangServer, *atomic.Int32) {
+	t.Helper()
+	ls := NewMockLangServer(t)
+	switches := &atomic.Int32{}
+	rc := NewRetryCoordinator(func(context.Context) (*connector.Client, error) { return ls.NewClient(), nil }, func(context.Context, string) { switches.Add(1) }, nil)
+	rc.SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
+	rc.SetModelName("gemini-2.5-pro")
+	if err := rc.Start(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-
-	rc := NewRetryCoordinator(clientProvider, nil, nil)
-	rc.SetSleeper(func(ctx context.Context, d time.Duration) error {
-		return nil // Instant sleep for tests
-	})
-
-	_ = rc.Start(context.Background())
-	defer rc.Stop()
-
-	update := connector.AgentStateUpdate{
-		ConversationID:    "conv-dup-1",
-		ExecutionID:       "exec-1",
-		StepID:            "step-1",
-		Status:            "IDLE",
-		Attempt:           1,
-		TerminationReason: "ERROR",
-		LastStepError: &connector.StepError{
-			Code:    "RESOURCE_EXHAUSTED",
-			Message: "429 Rate limit exceeded",
-		},
+	t.Cleanup(func() { rc.Stop(); ls.Close() })
+	return rc, ls, switches
+}
+func quotaFailure(conv string, n int) connector.AgentStateUpdate {
+	return connector.AgentStateUpdate{ConversationID: conv, ExecutionID: fmt.Sprintf("exec-%d", n), StepID: fmt.Sprint(n), Status: "IDLE", TerminationReason: "ERROR", LastStepError: &connector.StepError{Code: "RESOURCE_EXHAUSTED"}}
+}
+func TestRetryCoordinator_ThreeActionsWaitForExecution(t *testing.T) {
+	rc, ls, switches := retryFixture(t)
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		if err := rc.HandleAgentStateUpdate(ctx, quotaFailure("a", i)); err != nil {
+			t.Fatal(err)
+		}
+		waitUntil(t, func() bool { return ls.GetRetryCalls() == i+1 })
+		if switches.Load() != 0 {
+			t.Fatal("HTTP ACK counted as failed outcome")
+		}
+		_ = rc.HandleAgentStateUpdate(ctx, quotaFailure("a", i))
+		if rc.GetRecoveryAttempts() != i+1 {
+			t.Fatal("duplicate consumed retry budget")
+		}
 	}
-
-	// First delivery: processes error and increments attempts
-	err := rc.HandleAgentStateUpdate(context.Background(), update)
-	if err != nil {
-		t.Fatalf("first update failed: %v", err)
+	if err := rc.HandleAgentStateUpdate(ctx, quotaFailure("a", 3)); !errors.Is(err, ErrMaxRetriesExceeded) {
+		t.Fatal(err)
 	}
-
+	waitUntil(t, func() bool { return switches.Load() == 1 })
+	_ = rc.HandleAgentStateUpdate(ctx, quotaFailure("a", 3))
+	if ls.GetRetryCalls() != 3 || switches.Load() != 1 {
+		t.Fatal("duplicate recovery or switch")
+	}
+}
+func TestRetryCoordinator_ConversationOutcomesAreIsolated(t *testing.T) {
+	rc, ls, _ := retryFixture(t)
+	ctx := context.Background()
+	_ = rc.HandleAgentStateUpdate(ctx, quotaFailure("a", 0))
+	waitUntil(t, func() bool { return ls.GetRetryCalls() == 1 })
+	_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{ConversationID: "b", ExecutionID: "b-1", Status: "IDLE", TerminationReason: "NO_TOOL_CALL"})
 	if rc.GetRecoveryAttempts() != 1 {
-		t.Errorf("expected recoveryAttempts=1, got %d", rc.GetRecoveryAttempts())
+		t.Fatal("another conversation reset recovery")
 	}
-
-	// Second delivery (duplicate): should be dropped
-	err = rc.HandleAgentStateUpdate(context.Background(), update)
-	if err != nil {
-		t.Fatalf("second update failed: %v", err)
-	}
-
-	if rc.GetRecoveryAttempts() != 1 {
-		t.Errorf("expected recoveryAttempts to remain 1 after duplicate, got %d", rc.GetRecoveryAttempts())
-	}
-}
-
-func TestRetryCoordinator_ServerAutoRetry_RetryAt(t *testing.T) {
-	rc := NewRetryCoordinator(nil, nil, nil)
-	_ = rc.Start(context.Background())
-	defer rc.Stop()
-
-	update := connector.AgentStateUpdate{
-		ConversationID: "conv-server-retry",
-		Status:         "PAUSED",
-		RetryAt:        "2026-10-20T15:00:00Z",
-	}
-
-	err := rc.HandleAgentStateUpdate(context.Background(), update)
-	if err != nil {
-		t.Fatalf("update failed: %v", err)
-	}
-
-	if rc.GetRecoveryAttempts() != 0 {
-		t.Errorf("server auto-retry should not increment attempts, got %d", rc.GetRecoveryAttempts())
-	}
+	_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{ConversationID: "a", ExecutionID: "exec-1", Status: "IDLE", TerminationReason: "NO_TOOL_CALL"})
 	if rc.IsRecovering() {
-		t.Errorf("expected isRecovering=false")
+		t.Fatal("successful execution did not stop recovery")
 	}
 }
-
-func TestRetryCoordinator_SuccessfulOutcome_ResetsCounter(t *testing.T) {
-	rc := NewRetryCoordinator(nil, nil, nil)
-	rc.SetSleeper(func(ctx context.Context, d time.Duration) error {
-		return nil
-	})
-	_ = rc.Start(context.Background())
-	defer rc.Stop()
-
-	// 1. Encounter rate limit error
-	errUpdate := connector.AgentStateUpdate{
-		ConversationID:    "conv-recovery",
-		ExecutionID:       "exec-1",
-		StepID:            "step-1",
-		Status:            "IDLE",
-		TerminationReason: "ERROR",
-		LastStepError: &connector.StepError{
-			Code: "429",
-		},
-	}
-	_ = rc.HandleAgentStateUpdate(context.Background(), errUpdate)
-
-	if rc.GetRecoveryAttempts() != 1 || !rc.IsRecovering() {
-		t.Fatalf("expected recoveryAttempts=1 and isRecovering=true, got %d, %v", rc.GetRecoveryAttempts(), rc.IsRecovering())
-	}
-
-	// 2. Subsequent execution succeeds
-	succUpdate := connector.AgentStateUpdate{
-		ConversationID:    "conv-recovery",
-		ExecutionID:       "exec-2",
-		StepID:            "step-1",
-		Status:            "IDLE",
-		TerminationReason: "DONE",
-	}
-	_ = rc.HandleAgentStateUpdate(context.Background(), succUpdate)
-
-	if rc.GetRecoveryAttempts() != 0 {
-		t.Errorf("expected recoveryAttempts reset to 0, got %d", rc.GetRecoveryAttempts())
-	}
-	if rc.IsRecovering() {
-		t.Errorf("expected isRecovering=false after success")
+func TestRetryCoordinator_StoppedSupersededAndSessionChangedCancelPendingSend(t *testing.T) {
+	for _, action := range []string{"stop", "supersede", "session"} {
+		t.Run(action, func(t *testing.T) {
+			rc, ls, _ := retryFixture(t)
+			entered, finished := make(chan struct{}), make(chan struct{})
+			rc.SetSleeper(func(ctx context.Context, _ time.Duration) error {
+				close(entered)
+				<-ctx.Done()
+				close(finished)
+				return ctx.Err()
+			})
+			_ = rc.HandleAgentStateUpdate(context.Background(), quotaFailure("a", 0))
+			<-entered
+			switch action {
+			case "stop":
+				rc.Stop()
+			case "supersede":
+				rc.SupersedeByProactive(context.Background(), "quota")
+			case "session":
+				rc.InvalidateSession()
+			}
+			<-finished
+			if rc.IsRecovering() || ls.GetRetryCalls() != 0 {
+				t.Fatal("invalidated worker sent Retry")
+			}
+		})
 	}
 }
-
-func TestRetryCoordinator_ThreeRetriesThenSwitch(t *testing.T) {
-	var switchTriggered atomic.Bool
-	switchChan := make(chan string, 1)
-
-	onSwitch := func(ctx context.Context, reason string) {
-		switchTriggered.Store(true)
-		switchChan <- reason
-	}
-
-	rc := NewRetryCoordinator(nil, onSwitch, nil)
-	rc.SetSleeper(func(ctx context.Context, d time.Duration) error {
-		return nil
-	})
-	_ = rc.Start(context.Background())
-	defer rc.Stop()
-
-	// Feed 3 consecutive limit errors (attempts 1, 2, 3)
-	for i := 1; i <= 3; i++ {
-		upd := connector.AgentStateUpdate{
-			ConversationID:    "conv-3retry",
-			ExecutionID:       fmt.Sprintf("exec-%d", i),
-			StepID:            "step-1",
-			Status:            "IDLE",
-			TerminationReason: "ERROR",
-			LastStepError: &connector.StepError{
-				Code: "RESOURCE_EXHAUSTED",
-			},
-		}
-		err := rc.HandleAgentStateUpdate(context.Background(), upd)
-		if err != nil {
-			t.Fatalf("step %d update error: %v", i, err)
-		}
-		if rc.GetRecoveryAttempts() != i {
-			t.Errorf("expected recoveryAttempts=%d, got %d", i, rc.GetRecoveryAttempts())
-		}
-	}
-
-	// 4th limit error: attempts was 3, so now it exceeds max attempts and triggers switch
-	upd4 := connector.AgentStateUpdate{
-		ConversationID:    "conv-3retry",
-		ExecutionID:       "exec-4",
-		StepID:            "step-1",
-		Status:            "IDLE",
-		TerminationReason: "ERROR",
-		LastStepError: &connector.StepError{
-			Code: "429",
-		},
-	}
-	err := rc.HandleAgentStateUpdate(context.Background(), upd4)
-	if err != ErrMaxRetriesExceeded {
-		t.Errorf("expected ErrMaxRetriesExceeded, got %v", err)
-	}
-
-	select {
-	case reason := <-switchChan:
-		if !switchTriggered.Load() {
-			t.Errorf("expected switchTriggered=true")
-		}
-		if reason == "" {
-			t.Errorf("expected non-empty switch reason")
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatalf("timeout waiting for onSwitchNeeded callback")
+func TestRetryCoordinator_NativeRetryAndNonQuotaErrors(t *testing.T) {
+	rc, ls, switches := retryFixture(t)
+	u := quotaFailure("a", 0)
+	u.Status = "RUNNING"
+	u.RetryAt = time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
+	u.Attempt = 1
+	u.MaxAttempts = 3
+	_ = rc.HandleAgentStateUpdate(context.Background(), u)
+	u.Status = "IDLE"
+	u.RetryAt = ""
+	u.LastStepError = &connector.StepError{Code: "INTERNAL"}
+	_ = rc.HandleAgentStateUpdate(context.Background(), u)
+	if rc.IsRecovering() || ls.GetRetryCalls() != 0 || switches.Load() != 0 {
+		t.Fatal("native wait or non-quota error initiated recovery")
 	}
 }
-
-func TestRetryCoordinator_ProactiveSupersedesRecovery(t *testing.T) {
-	var switchTriggered atomic.Bool
-	switchChan := make(chan string, 1)
-
-	onSwitch := func(ctx context.Context, reason string) {
-		switchTriggered.Store(true)
-		switchChan <- reason
-	}
-
-	rc := NewRetryCoordinator(nil, onSwitch, nil)
-	rc.SetSleeper(func(ctx context.Context, d time.Duration) error {
-		return nil
-	})
+func TestRetryCoordinator_SendFailureDoesNotBecomeQuotaFailure(t *testing.T) {
+	statuses := make(chan StatusCode, 10)
+	rc := NewRetryCoordinator(func(context.Context) (*connector.Client, error) { return nil, errors.New("offline") }, func(context.Context, string) { t.Error("transport error caused switch") }, func(s StatusCode, _ string, _ any) { statuses <- s })
+	rc.SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
 	_ = rc.Start(context.Background())
 	defer rc.Stop()
-
-	// Start a recovery attempt
-	upd := connector.AgentStateUpdate{
-		ConversationID:    "conv-proactive",
-		ExecutionID:       "exec-1",
-		StepID:            "step-1",
-		Status:            "IDLE",
-		TerminationReason: "ERROR",
-		LastStepError: &connector.StepError{
-			Code: "429",
-		},
-	}
-	_ = rc.HandleAgentStateUpdate(context.Background(), upd)
-
-	if !rc.IsRecovering() || rc.GetRecoveryAttempts() != 1 {
-		t.Fatalf("expected recovery active")
-	}
-
-	// Proactive trigger arrives (5h <= 2% or weekly = 0%)
-	rc.SupersedeByProactive(context.Background(), "5h quota depleted (1.5% <= 2%)")
-
-	if rc.IsRecovering() {
-		t.Errorf("expected isRecovering=false after proactive supersession")
-	}
-	if rc.GetRecoveryAttempts() != 0 {
-		t.Errorf("expected recoveryAttempts=0 after proactive supersession")
-	}
-
-	select {
-	case reason := <-switchChan:
-		if !switchTriggered.Load() {
-			t.Errorf("expected switch to be triggered")
+	_ = rc.HandleAgentStateUpdate(context.Background(), quotaFailure("a", 0))
+	waitUntil(t, func() bool { return !rc.IsRecovering() })
+	found := false
+	for len(statuses) > 0 {
+		if <-statuses == StatusError {
+			found = true
 		}
-		if reason != "5h quota depleted (1.5% <= 2%)" {
-			t.Errorf("unexpected reason: %s", reason)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatalf("timeout waiting for proactive switch callback")
 	}
-}
-
-func TestRetryCoordinator_SessionChange_PurgesEvents(t *testing.T) {
-	rc := NewRetryCoordinator(nil, nil, nil)
-	rc.SetSleeper(func(ctx context.Context, d time.Duration) error {
-		return nil
-	})
-	_ = rc.Start(context.Background())
-	defer rc.Stop()
-
-	rc.SetCurrentEmail("user1@example.com")
-
-	upd := connector.AgentStateUpdate{
-		ConversationID:    "conv-session",
-		ExecutionID:       "exec-1",
-		StepID:            "step-1",
-		Status:            "IDLE",
-		TerminationReason: "ERROR",
-		LastStepError: &connector.StepError{
-			Code: "429",
-		},
-	}
-	_ = rc.HandleAgentStateUpdate(context.Background(), upd)
-	if rc.GetRecoveryAttempts() != 1 {
-		t.Errorf("expected attempts=1")
-	}
-
-	// Switch session to user2
-	rc.SetCurrentEmail("user2@example.com")
-
-	if rc.GetRecoveryAttempts() != 0 {
-		t.Errorf("expected attempts reset to 0 after session change, got %d", rc.GetRecoveryAttempts())
-	}
-	if rc.IsRecovering() {
-		t.Errorf("expected isRecovering=false after session change")
-	}
-
-	// Re-sending same event under new session should NOT be dropped as a duplicate from old session
-	_ = rc.HandleAgentStateUpdate(context.Background(), upd)
-	if rc.GetRecoveryAttempts() != 1 {
-		t.Errorf("expected event to be processed under new session, got attempts=%d", rc.GetRecoveryAttempts())
+	if !found {
+		t.Fatal("send failure not visible")
 	}
 }

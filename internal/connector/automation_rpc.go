@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -11,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // ModelOrAlias represents a model identifier or its alias.
@@ -48,7 +48,7 @@ type StreamAgentStateUpdatesRequest struct {
 	ConversationID     string `json:"conversationId"`
 	SubscriberID       string `json:"subscriberId"`
 	DisableRehydration bool   `json:"disableRehydration"`
-	PageBounds         int    `json:"pageBounds,omitempty"`
+	PageBounds         int    `json:"-"` // Number of entries requested from each native page.
 }
 
 // StepError represents structured error information in an AgentStateUpdate.
@@ -66,12 +66,25 @@ func (e *StepError) UnmarshalJSON(data []byte) error {
 		e.Code = s
 		return nil
 	}
-	type alias StepError
-	var a alias
-	if err := json.Unmarshal(data, &a); err != nil {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-	*e = StepError(a)
+	read := func(names ...string) string {
+		for _, name := range names {
+			if raw := fields[name]; len(raw) > 0 {
+				var value string
+				if json.Unmarshal(raw, &value) == nil {
+					return value
+				}
+				return string(raw)
+			}
+		}
+		return ""
+	}
+	e.Code = read("code", "errorCode")
+	e.Message = read("message", "errorMessage", "shortError")
+	e.Type = read("type", "errorType")
 	return nil
 }
 
@@ -85,6 +98,7 @@ type AgentStateUpdate struct {
 	ExecutionID       string          `json:"executionId,omitempty"`
 	StepID            string          `json:"stepId,omitempty"`
 	Attempt           int             `json:"attempt,omitempty"`
+	MaxAttempts       int             `json:"maxAttempts,omitempty"`
 	RetryAt           string          `json:"retryAt,omitempty"`
 	Raw               json.RawMessage `json:"raw,omitempty"`
 }
@@ -116,7 +130,7 @@ func (u *AgentStateUpdate) IsTerminalError() bool {
 	}
 	status := strings.ToUpper(strings.TrimSpace(u.Status))
 	term := strings.ToUpper(strings.TrimSpace(u.TerminationReason))
-	return status == "IDLE" && (term == "ERROR" || term == "TERMINATION_REASON_ERROR" || u.LastStepError != nil)
+	return status == "IDLE" && (term == "ERROR" || u.LastStepError != nil)
 }
 
 // IsSuccessfulCompletion returns true if execution finished normally without errors.
@@ -126,12 +140,16 @@ func (u *AgentStateUpdate) IsSuccessfulCompletion() bool {
 	}
 	status := strings.ToUpper(strings.TrimSpace(u.Status))
 	term := strings.ToUpper(strings.TrimSpace(u.TerminationReason))
-	return status == "IDLE" && (term == "DONE" || term == "COMPLETED" || (term == "" && u.LastStepError == nil))
+	return status == "IDLE" && u.LastStepError == nil && (term == "DONE" || term == "COMPLETED" || term == "NO_TOOL_CALL" || term == "END_TURN")
 }
 
 // HasRetryAt checks if the language server has scheduled an automatic internal retry.
 func (u *AgentStateUpdate) HasRetryAt() bool {
-	return u != nil && strings.TrimSpace(u.RetryAt) != ""
+	if u == nil || u.RetryAt == "" || (u.MaxAttempts > 0 && u.Attempt >= u.MaxAttempts) {
+		return false
+	}
+	when, err := time.Parse(time.RFC3339Nano, u.RetryAt)
+	return err == nil && when.After(time.Now())
 }
 
 // IsRunning returns true if the turn is currently executing.
@@ -158,6 +176,9 @@ func ReadConnectFrame(r io.Reader) (*ConnectFrame, error) {
 	}
 	flags := header[0]
 	length := binary.BigEndian.Uint32(header[1:5])
+	if length > 64<<20 {
+		return nil, errors.New("Connect frame exceeds 64 MiB")
+	}
 	payload := make([]byte, length)
 	if length > 0 {
 		if _, err := io.ReadFull(r, payload); err != nil {
@@ -180,59 +201,9 @@ func EncodeConnectFrame(payload []byte, isEndOfStream bool) []byte {
 	return buf
 }
 
-// DecodeStreamAgentStateUpdates decodes incoming agent state updates from an io.Reader.
-// It supports both Connect streaming protocol 5-byte envelope frames and line-delimited JSON.
+// DecodeStreamAgentStateUpdates normalizes the native Connect stream.
 func DecodeStreamAgentStateUpdates(r io.Reader, out chan<- AgentStateUpdate) error {
-	br := bufio.NewReader(r)
-
-	for {
-		firstByte, err := br.Peek(1)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		}
-
-		// Line-delimited JSON starts with '{' or whitespace
-		if firstByte[0] == '{' || firstByte[0] == ' ' || firstByte[0] == '\t' || firstByte[0] == '\r' || firstByte[0] == '\n' {
-			line, readErr := br.ReadBytes('\n')
-			trimmed := bytes.TrimSpace(line)
-			if len(trimmed) > 0 {
-				var update AgentStateUpdate
-				if unmarshalErr := json.Unmarshal(trimmed, &update); unmarshalErr == nil {
-					out <- update
-				}
-			}
-			if readErr != nil {
-				if errors.Is(readErr, io.EOF) {
-					return nil
-				}
-				return readErr
-			}
-			continue
-		}
-
-		// Connect framing
-		frame, frameErr := ReadConnectFrame(br)
-		if frameErr != nil {
-			if errors.Is(frameErr, io.EOF) {
-				return nil
-			}
-			return frameErr
-		}
-
-		if frame.Flags&ConnectFlagEndOfStream != 0 {
-			return nil
-		}
-
-		if len(frame.Payload) > 0 {
-			var update AgentStateUpdate
-			if unmarshalErr := json.Unmarshal(frame.Payload, &update); unmarshalErr == nil {
-				out <- update
-			}
-		}
-	}
+	return decodeAgentStateStream(context.Background(), r, out)
 }
 
 // GetCascadeModelConfig queries GetCascadeModelConfigData Connect-RPC endpoint.
@@ -272,7 +243,7 @@ func (c *Client) ResolveActiveModel(ctx context.Context, pbtxtPath string) (mode
 
 	cfgData, cfgErr := c.GetCascadeModelConfig(ctx)
 	if cfgErr != nil || cfgData == nil {
-		return modelID, modelID, false, nil
+		return "", "", false, fmt.Errorf("cannot resolve active model configuration: %w", cfgErr)
 	}
 
 	// 1. Check clientModelConfigs for direct model/alias match
@@ -298,7 +269,7 @@ func (c *Client) ResolveActiveModel(ctx context.Context, pbtxtPath string) (mode
 		}
 	}
 
-	return modelID, modelID, false, nil
+	return "", "", false, fmt.Errorf("active model %s is absent from model configuration", modelID)
 }
 
 // SendEmptyItemsRetry dispatches a Connect-RPC SendUserCascadeMessage with an explicit empty items array ([]).
@@ -357,13 +328,23 @@ func (c *Client) StreamAgentStateUpdates(ctx context.Context, req StreamAgentSta
 		return nil, nil, err
 	}
 
-	bodyBytes, err := json.Marshal(req)
+	limit := req.PageBounds
+	if limit <= 0 {
+		limit = 1
+	}
+	bounds := map[string]int{"startIndex": 0, "endIndexExclusive": limit}
+	bodyBytes, err := json.Marshal(map[string]any{
+		"conversationId": req.ConversationID, "subscriberId": req.SubscriberID,
+		"disableRehydration":     req.DisableRehydration,
+		"initialStepsPageBounds": bounds, "initialGeneratorMetadatasPageBounds": bounds,
+		"initialExecutorMetadatasPageBounds": bounds,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed marshaling StreamAgentStateUpdatesRequest: %w", err)
 	}
 
 	url := fmt.Sprintf("%s%s", c.info.BaseURL(), EndpointStreamAgentStateUpdates)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(EncodeConnectFrame(bodyBytes, false)))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating request: %w", err)
 	}
@@ -371,6 +352,7 @@ func (c *Client) StreamAgentStateUpdates(ctx context.Context, req StreamAgentSta
 	httpReq.Header.Set("Content-Type", "application/connect+json")
 	httpReq.Header.Set("Connect-Protocol-Version", "1")
 	httpReq.Header.Set("X-CSRF-Token", c.info.CSRFToken)
+	httpReq.Header.Set("x-codeium-csrf-token", c.info.CSRFToken)
 
 	var transport http.RoundTripper
 	if c.httpClient != nil {
@@ -399,7 +381,7 @@ func (c *Client) StreamAgentStateUpdates(ctx context.Context, req StreamAgentSta
 		defer close(updateChan)
 		defer close(errChan)
 
-		if err := DecodeStreamAgentStateUpdates(resp.Body, updateChan); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
+		if err := decodeAgentStateStream(ctx, resp.Body, updateChan); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
 			select {
 			case errChan <- err:
 			default:

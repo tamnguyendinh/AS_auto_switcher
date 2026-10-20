@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -75,6 +76,8 @@ func setupTestEnvironment(t *testing.T, activeEmail string, otherAccounts map[st
 	}
 
 	rel := reloader.NewSessionReloader()
+	rel.StoragePath = filepath.Join(t.TempDir(), "app_storage.json")
+	rel.SnapshotCapturer = func(string, string, string) (string, []reloader.ActiveThread, error) { return "", nil, nil }
 	rel.ProcessKiller = func(ctx context.Context) error { return nil }
 	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
 	rel.ContinuationRunner = func(ctx context.Context, client *connector.Client, activeThreads []reloader.ActiveThread, promptText string) error {
@@ -89,9 +92,13 @@ func setupTestEnvironment(t *testing.T, activeEmail string, otherAccounts map[st
 		t.Fatalf("failed creating manager: %v", err)
 	}
 
+	mgr.SetOAuthRefresher(syntheticOAuthRefresher{})
+	var identityMu sync.Mutex
 	currentEmail := activeEmail
 	mgr.SetWincredHandlers(
 		func() (*model.TokenData, error) {
+			identityMu.Lock()
+			defer identityMu.Unlock()
 			return &model.TokenData{
 				AccessToken:  "access-" + currentEmail,
 				RefreshToken: "refresh-" + currentEmail,
@@ -99,6 +106,8 @@ func setupTestEnvironment(t *testing.T, activeEmail string, otherAccounts map[st
 			}, nil
 		},
 		func(token *model.TokenData) error {
+			identityMu.Lock()
+			defer identityMu.Unlock()
 			if token != nil {
 				if email := manager.ExtractEmailFromToken(token); email != "" {
 					currentEmail = email
@@ -115,6 +124,8 @@ func TestAutomationController_LifecycleAndEnableToggle(t *testing.T) {
 	mgr, cache, _ := setupTestEnvironment(t, "user@example.com", nil)
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_Lifecycle_%d", time.Now().UnixNano()))
 	ctrl := NewAutomationController(mgr, nil, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(t.TempDir(), "missing.pbtxt"))
+	ctrl.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
 
 	if ctrl.IsEnabled() {
 		t.Errorf("expected controller initially disabled")
@@ -157,6 +168,8 @@ func TestAutomationController_EvaluateProactiveTrigger(t *testing.T) {
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_Eval_%d", time.Now().UnixNano()))
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) { return nil, nil })
 	ctrl := NewAutomationController(mgr, nil, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(t.TempDir(), "missing.pbtxt"))
+	ctrl.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
 	ctrl.SetEnabled(true)
 
 	// Injected client finder returning Gemini model
@@ -308,6 +321,8 @@ func TestAutomationController_SingleFlightGate_100ConcurrentTriggers(t *testing.
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_100Concurrent_%d", time.Now().UnixNano()))
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) { return nil, nil })
 	ctrl := NewAutomationController(mgr, nil, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(t.TempDir(), "missing.pbtxt"))
+	ctrl.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
 	ctrl.SetEnabled(true)
 
 	// Mock language server for switch
@@ -315,6 +330,10 @@ func TestAutomationController_SingleFlightGate_100ConcurrentTriggers(t *testing.
 	currentActiveEmail.Store(activeEmail)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == connector.EndpointCascadeModelConfigData {
+			_, _ = w.Write([]byte(`{"clientModelConfigs":[{"modelOrAlias":{"model":"gemini-2.5-pro"},"label":"Gemini 2.5 Pro","isSelected":true}]}`))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		email := currentActiveEmail.Load().(string)
@@ -436,6 +455,8 @@ func TestAutomationController_CandidatePreflightAndFallback(t *testing.T) {
 
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_Preflight_%d", time.Now().UnixNano()))
 	ctrl := NewAutomationController(mgr, pool, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(t.TempDir(), "missing.pbtxt"))
+	ctrl.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
 	ctrl.SetEnabled(true)
 
 	// Mock language server for switch
@@ -443,6 +464,10 @@ func TestAutomationController_CandidatePreflightAndFallback(t *testing.T) {
 	currentActiveEmail.Store(activeEmail)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == connector.EndpointCascadeModelConfigData {
+			_, _ = w.Write([]byte(`{"clientModelConfigs":[{"modelOrAlias":{"model":"gemini-2.5-pro"},"label":"Gemini 2.5 Pro","isSelected":true}]}`))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		email := currentActiveEmail.Load().(string)
@@ -505,6 +530,8 @@ func TestAutomationController_NoCandidates(t *testing.T) {
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_NoCand_%d", time.Now().UnixNano()))
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) { return nil, nil })
 	ctrl := NewAutomationController(mgr, nil, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(t.TempDir(), "missing.pbtxt"))
+	ctrl.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
 	ctrl.SetEnabled(true)
 
 	_, err := ctrl.TriggerSwitch(context.Background(), "no cand test")
@@ -517,6 +544,8 @@ func TestAutomationController_NonBlockingStatusChannel(t *testing.T) {
 	mgr, cache, _ := setupTestEnvironment(t, "user@example.com", nil)
 	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_NonBlock_%d", time.Now().UnixNano()))
 	ctrl := NewAutomationController(mgr, nil, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(t.TempDir(), "missing.pbtxt"))
+	ctrl.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
 
 	// Rapidly emit 128 status events with NO reader
 	done := make(chan struct{})
@@ -534,5 +563,3 @@ func TestAutomationController_NonBlockingStatusChannel(t *testing.T) {
 		t.Fatalf("EmitStatus blocked when statusChan was full")
 	}
 }
-
-

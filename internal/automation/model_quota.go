@@ -12,6 +12,7 @@ import (
 type QuotaCategory string
 
 const (
+	CategoryUnknown   QuotaCategory = "unknown"
 	CategoryGemini    QuotaCategory = "gemini"
 	CategoryClaudeGPT QuotaCategory = "claude_gpt"
 )
@@ -70,8 +71,8 @@ func ResolveActiveModelCategory(modelID string, modelLabel string) QuotaCategory
 		return CategoryClaudeGPT
 	}
 
-	// Default fallback to Gemini as per Antigravity primary engine
-	return CategoryGemini
+	// An unresolved placeholder must never select a quota family implicitly.
+	return CategoryUnknown
 }
 
 // ClassifyQuotaState evaluates the account quota under the given category and determines ternary state and decisions.
@@ -104,7 +105,8 @@ func ClassifyQuotaState(quota *telemetry.AccountQuotaData, category QuotaCategor
 	case CategoryClaudeGPT:
 		bucket = quota.Claude
 	default:
-		bucket = quota.Gemini
+		eval.Reason = "unknown model quota family"
+		return eval
 	}
 
 	eval.ModelID = bucket.ModelID
@@ -201,4 +203,3 @@ func EvaluateAccountQuota(quota *telemetry.AccountQuotaData, modelID string, mod
 	eval.ModelLabel = modelLabel
 	return eval
 }
-

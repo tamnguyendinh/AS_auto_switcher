@@ -3,7 +3,7 @@
 ## Metadata
 
 - Date: `2026-10-20`
-- Status: `planned — tài liệu đã sửa R1; chưa triển khai sản phẩm`
+- Status: `in progress — P2-R đã sửa code, package tests/race PASS; Owner phản hồi hoạt động tốt; chưa đóng nghiệm thu native`
 - Revision: `R1 — sửa theo review F1–F8 và yêu cầu Owner; chỉ thay đổi tài liệu`
 - Source baseline: `2e4c8939037871f7247f6030d03a69a0c90c89ab`
 - Review đầu vào: `reports/supervisor/rp_supervisor_261020_144149_by_gpt-6_autonomous_plan_review.md`
@@ -13,6 +13,35 @@
 - Actual status: `docs/plans/2026-10-20-autonomous-account-switching/2026-10-20-autonomous-account-switching-actual-status.md`
 
 ## Goal
+
+### R6 — sửa lỗi runtime đã được Owner giao ngày 2026-10-20
+
+Review hiện hành: `reports/supervisor/rp_supervisor_261020_190000_by_gpt-6_autonomous_switch_runtime_review.md` (REJECT). Các claim PASS P1-B/P1-C/P2-A cũ chưa đóng được luồng thật. Owner đã cho phép sửa toàn bộ findings, chạy GUI và thử chuyển thật với `daohien204ccyersin@gmail.com` đang cạn quota, kể cả dùng chuyển tay/continuation để chuẩn bị kiểm thử. Không yêu cầu xác nhận lại.
+
+Invariant family: toggle/telemetry/native stream -> model quota hoặc recovery outcome -> một switch operation có vòng đời hợp lệ -> engine/continuation hoàn tất -> theo dõi tiếp. OFF ngừng tác vụ mới. Sibling surfaces: GUI manual, CLI switch, native retry, reconnect, candidate preflight, model mapping và status.
+
+Current repair slice P2-R là một đợt sửa invariant trên cùng controller/retry/adapter; các lỗi phụ thuộc nhau (sửa stream sẽ làm lộ lỗi OFF/retry), nên nghiệm thu và commit chung sau kiểm tra tích hợp, không phát hành bản chỉ sửa được một nửa trigger. Thực hiện nguyên yêu cầu sửa của Owner trước khi quay lại P2-B/C/D.
+
+- [ ] P2-R: Sửa và kiểm tra automation trên runtime thật.
+  - Goal: Đóng F1–F8 trong báo cáo review mà giữ engine/continuation/telemetry và layout hiện hữu.
+  - Scope Boundary: edit `internal/connector/automation_rpc.go` và file decoder cùng package nếu cần; `internal/automation/{controller,retry,model_quota,switch_gate_windows}.go`; binding `internal/ui/app.go`; tests tương ứng. `manager`, `reloader`, `telemetry` preserve-only. Không tạo daemon/engine mới.
+  - Non-Goals: Không thay ngưỡng 5h 2%/tuần 1%, không thêm persistence hoặc chính sách chọn thread continuation.
+  - Pre-flight Questions: dữ liệu từ LS native + telemetry hiện có; UI status/toggle có sẵn; store thật chỉ qua engine trong live QA Owner đã cho phép; unit/integration dùng temp store/mock side effects. Docker/Playwright N/A cho Fyne Windows; dùng build native và Computer Use. Không log token, CSRF hoặc nội dung hội thoại.
+  - Work Steps:
+    1. Code:
+       - Task 1.1: Adapter native. Inputs: request/frame/schema đọc từ LS; edit connector adapter/decoder; output đúng auth/framing/envelope/error/enum/model config; verify read-only stream nhận normalized state. Checkpoint: `wip(P2-R): native stream contract`.
+       - Task 1.2: Controller operation. Inputs: telemetry/manager/gate; edit controller/gate; output context sống đến hết switch, recheck sau contention, failed candidates theo từng đợt, báo lỗi rõ; verify callback tới fake executor. Checkpoint: `wip(P2-R): switch operation lifetime`.
+       - Task 1.3: Recovery/lifecycle. Inputs: normalized events, scanner và App lifecycle; edit retry/controller/App; output ba actions theo đúng outcome, OFF/supersede/manual cancellation, reconnect/rescan trên telemetry hiện có, bật gọi TriggerNow; verify events/worker cancellation. Checkpoint: `wip(P2-R): recovery lifecycle`.
+    2. Inspect: trace imports/call sites và diff, giữ manager/reloader nguyên vẹn. Anvien đã lỗi schema khi review; dùng direct source/call-site map thay index lỗi.
+    3. Update tests: fixtures native, auth/envelope/EOS, callback quota thực, OFF, retry outcomes nhiều thread, reconnect/session invalidation, candidate hồi phục. Fake side effects không được né callback/adapter production.
+    4. Build: Windows CLI CGO=0 và Fyne GUI CGO=1; build trước final tests. Logs tạm trong `.tmp/`.
+    5. QA: focused tests/race; GUI vừa build -> bật automation từ tài khoản Owner chỉ định -> quan sát switch/identity/continuation; xác nhận OFF và lỗi status. Live reactive nếu cần dùng prompt kiểm tra ngắn, không yêu cầu sửa file trong thread. Evidence Markdown/JSON/ảnh tại `reports/qa/automation/`.
+    6. Acceptance/Commit: Supervisor đối chiếu từng F1–F8, ghi kết quả thật vào ledgers/report, commit repair khi đạt. Không gọi mock là live-provider E2E.
+  - Implementation Gate: P0 review đã xác định root cause; Owner đã giao sửa và thử thật. Không còn câu hỏi policy cần chốt.
+  - Acceptance: proactive hoàn tất trên GUI thật; reactive adapter nhận native data; recovery/OFF/reconnect/candidate có regression tests đúng entrypoints; không thay engine/continuation; báo rõ mọi phần chưa quan sát live.
+  - Evidence Targets: E2-P2R-SRC1, E2-P2R-TEST1, E2-P2R-LIVE1, E2-P2R-SUP1.
+  - Actual-status Update: R7 đã triển khai F1–F8, build và kiểm tra package/race; Owner phản hồi app hoạt động tốt. Native GUI trace do agent chưa thu thập được; chưa đóng toàn bộ plan. Xem E2-P2R-TEST1/LIVE1/REPORT1.
+  - Commit Boundary: một repair commit sau build/tests/live QA và review; giữ commit cũ để truy vết.
 
 Nối automation vào telemetry, model discovery, GUI toggle và engine chuyển tài khoản hiện có. Tự chuyển khi quota của model đang dùng đạt 5h <= 2% hoặc tuần <= 1%; khi gặp lỗi giới hạn thì khôi phục tối đa ba lần theo kết quả thực thi của Antigravity trước khi chuyển. Chọn tài khoản theo tuần tăng dần, ưu tiên có 5h khi tuần bằng nhau, sau đó 5h giảm dần và thứ tự cố định. Giữ nguyên `SwitchAccount`, khoảng chờ 8 giây và continuation hai giờ đã nằm trong engine.
 

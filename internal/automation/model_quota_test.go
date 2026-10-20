@@ -23,7 +23,7 @@ func TestResolveActiveModelCategory(t *testing.T) {
 		{"GPT-4o", "gpt-4o", "", CategoryClaudeGPT},
 		{"GPT-OSS", "gpt-oss", "", CategoryClaudeGPT},
 		{"3P model", "3p-model-variant", "", CategoryClaudeGPT},
-		{"Unknown fallback", "unknown-custom-model", "", CategoryGemini},
+		{"Unknown model", "unknown-custom-model", "", CategoryUnknown},
 	}
 
 	for _, tt := range tests {
@@ -356,5 +356,3 @@ func TestActiveModelBinding_ModelIsolation(t *testing.T) {
 		t.Fatalf("expected Claude to be ineligible when exhausted, got true")
 	}
 }
-
-

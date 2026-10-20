@@ -59,8 +59,8 @@ type App struct {
 	autoSwitchEnabled bool
 
 	// Automation (Slice P1-C)
-	controller         *automation.AutomationController
-	statusCancel       context.CancelFunc
+	controller   *automation.AutomationController
+	statusCancel context.CancelFunc
 
 	// In-place update state
 	accountCards []*AccountCardWidget
@@ -121,7 +121,7 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 		}
 	}
 
-		// 4. Initialize Automation Controller
+	// 4. Initialize Automation Controller
 	if mgr != nil {
 		a.controller = automation.NewAutomationController(mgr, a.telemetryPool, a.quotaCache, nil)
 	}
@@ -184,7 +184,6 @@ func (a *App) SetController(c *automation.AutomationController) {
 	defer a.mu.Unlock()
 	a.controller = c
 }
-
 
 // CurrentTheme returns the active theme name.
 func (a *App) CurrentTheme() string {
@@ -278,6 +277,9 @@ func (a *App) Init() {
 		a.statusCancel = cancel
 		a.mu.Unlock()
 
+		if a.autoLoop != nil {
+			ctrl.SetQuotaRefresh(a.autoLoop.TriggerNow)
+		}
 		_ = ctrl.Start(statusCtx)
 
 		statusChan := ctrl.StatusChannel()
@@ -306,7 +308,7 @@ func (a *App) Init() {
 			c := a.controller
 			a.mu.RUnlock()
 			if c != nil {
-				go c.OnTelemetryUpdate(results)
+				c.OnTelemetryUpdate(results)
 			}
 
 			// 2. Refresh UI in main Fyne thread
@@ -456,7 +458,6 @@ func (a *App) RefreshAllQuota() {
 		a.quotaRefreshAllBtn.Disable()
 	}
 
-
 	go func() {
 		completed := false
 		defer func() {
@@ -478,7 +479,10 @@ func (a *App) RefreshAllQuota() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		_, _, _, _ = a.telemetryPool.PollAll(ctx)
+		results, _, _, pollErr := a.telemetryPool.PollAll(ctx)
+		if ctrl := a.Controller(); ctrl != nil && pollErr == nil {
+			ctrl.OnTelemetryUpdate(results)
+		}
 		if a.quotaCache != nil {
 			_ = a.quotaCache.SaveToDisk()
 		}
@@ -495,8 +499,6 @@ func (a *App) RefreshAllQuota() {
 			if overview != nil {
 				a.updateUI(overview)
 			}
-
-
 
 			if a.quotaRefreshAllBtn != nil {
 				a.quotaRefreshAllBtn.SetText("Làm mới Quota")
@@ -517,8 +519,6 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 		return
 	}
 
-
-
 	go func() {
 		defer a.accountRefreshing.Delete(email)
 
@@ -529,7 +529,10 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
-		data, _ := a.telemetryPool.PollAccount(ctx, email)
+		data, pollErr := a.telemetryPool.PollAccount(ctx, email)
+		if ctrl := a.Controller(); ctrl != nil && pollErr == nil && data != nil {
+			ctrl.OnTelemetryUpdate([]*telemetry.AccountQuotaData{data})
+		}
 		if a.quotaCache != nil {
 			_ = a.quotaCache.SaveToDisk()
 		}
@@ -553,7 +556,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 					}
 				}
 
-								if targetIdx >= 0 && targetIdx < len(a.accountCards) && a.accountCards[targetIdx] != nil && a.accountCards[targetIdx].Email == email {
+				if targetIdx >= 0 && targetIdx < len(a.accountCards) && a.accountCards[targetIdx] != nil && a.accountCards[targetIdx].Email == email {
 					var quotaData *telemetry.AccountQuotaData
 					if a.quotaCache != nil {
 						quotaData, _ = a.quotaCache.Get(email)
@@ -586,8 +589,6 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 				}
 			}
 
-
-
 		})
 	}()
 }
@@ -607,8 +608,6 @@ func (a *App) Refresh() {
 			a.refreshBtn.SetText("⏳ Đang quét...")
 		})
 	}
-
-
 
 	go func() {
 		defer func() {
@@ -679,6 +678,10 @@ func (a *App) SwitchAccount(targetEmail string) {
 			gate = ctrl.Gate()
 		}
 
+		if ctrl != nil {
+			ctrl.BeginManualSwitch()
+			defer ctrl.EndManualSwitch()
+		}
 		res, err := automation.ExecuteSwitchWithGate(context.Background(), gate, mgr, targetEmail, false)
 
 		if err != nil {
@@ -714,6 +717,7 @@ func (a *App) SwitchAccount(targetEmail string) {
 		})
 	}()
 }
+
 // SaveSession saves the currently active Chrome session to disk.
 func (a *App) SaveSession() {
 	a.mu.Lock()
@@ -842,6 +846,7 @@ func (a *App) SetAutoSwitchEnabled(enabled bool) {
 		ctrl.SetEnabled(enabled)
 	}
 }
+
 // updateUI refreshes all visual components based on the given overview.
 func (a *App) updateUI(overview *manager.AccountOverview) {
 	if overview == nil {
@@ -862,8 +867,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 		}
 	}
 
-
-		// 3. 3-Column Account Grid with in-place reactive quota updates
+	// 3. 3-Column Account Grid with in-place reactive quota updates
 	if a.accountListContainer != nil {
 		canUpdateInPlace := false
 		if len(a.accountCards) == len(overview.Accounts) && len(overview.Accounts) > 0 {
@@ -909,15 +913,16 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 		}
 	}
 
-
-
-
 }
 
 // showStatusBar displays a transient status message in the status bar.
 func (a *App) showStatusBar(msg string) {
 	if a.statusBar == nil {
 		return
+	}
+	if a.statusBarHideTimer != nil {
+		a.statusBarHideTimer.Stop()
+		a.statusBarHideTimer = nil
 	}
 	a.statusBar.SetText(msg)
 	a.statusBar.Show()
@@ -955,5 +960,3 @@ func (a *App) forceRebuildCards(overview *manager.AccountOverview) {
 func (a *App) Logo() fyne.Resource {
 	return AppLogoResource
 }
-
-

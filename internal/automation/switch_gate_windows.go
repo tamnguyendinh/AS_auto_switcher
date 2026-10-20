@@ -215,7 +215,13 @@ func ExecuteSwitchWithGate(
 		fl = forceLogout[0]
 	}
 
-	err := gate.Execute(ctx, func(wasAbandoned bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	_, err := gate.TryExecute(func(wasAbandoned bool) error {
 		// If the lock was abandoned by a previous process crash, re-verify the active email
 		if wasAbandoned {
 			current, _ := mgr.GetCurrentActiveEmail(ctx)

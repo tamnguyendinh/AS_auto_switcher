@@ -152,7 +152,7 @@ func TestUIPreferencesPersistence(t *testing.T) {
 
 func TestAppSetThemeRuntime(t *testing.T) {
 	fyneApp := test.NewApp()
-	app := NewAppWithFyne(fyneApp, nil)
+	app := newIsolatedApp(fyneApp, nil)
 	tmpDir := t.TempDir()
 	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
 	app.SetQuotaCache(telemetry.NewQuotaCache(filepath.Join(tmpDir, ".quota_cache.json")))

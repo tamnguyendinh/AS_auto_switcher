@@ -242,6 +242,24 @@ Result: PASS (6/6 tests pass, 0 warnings).
 
 ## E2 - P2 Evidence
 
+### E2-P2R-SRC1 — baseline repair R6
+
+OBSERVED: review `reports/supervisor/rp_supervisor_261020_190000_by_gpt-6_autonomous_switch_runtime_review.md`, HEAD 3d58dff. F1–F8 có source/probe/native read evidence; automation chưa nghiệm thu. Owner đã giao sửa và cho phép đổi tài khoản thật, gửi prompt kiểm tra qua cơ chế sẵn có. Không ghi token/CSRF/chat vào evidence.
+
+### E2-P2R-TEST1 — build và regression sau repair
+
+OBSERVED: CLI/GUI build PASS. Full `go test -tags gui ./... -count=1 -timeout 120s` PASS các package ngoài UI, FAIL một test GUI dùng chờ cố định. Sau đổi sang condition wait, `go test -tags gui ./internal/ui -count=1 -timeout 120s` PASS (17.113s). Race automation/connector PASS (13.456s/2.235s). Không mô tả full-suite ban đầu là PASS; không chạy race toàn repo. Artifacts: reports/qa/automation/2026-10-20-runtime-fix/{results.md,results.json,full-tests-initial.log,ui-tests-after-wait-fix.log,automation-connector-race.log,sha256.json}.
+
+### E2-P2R-LIVE1 — native read và phản hồi người dùng
+
+OBSERVED READ-ONLY: connector production đọc đúng daohien204ccyersin@gmail.com, Gemini 3.8 Flash (High), một thread gần đây, IDLE/ERROR/429, có execution ID và nhận diện quota error. Agent chưa capture được full GUI auto-switch/continuation vì Computer Use capture timeout; accessibility chỉ có window. Owner sau đó phản hồi app hoạt động tốt. Ghi riêng phản hồi Owner với evidence do agent thực hiện.
+
+### E2-P2R-REPORT1 — báo cáo sửa lỗi
+
+reports/coder/rp_coder_261020_201600_by_gpt-6_autonomous_switch_runtime_fix.md đối chiếu F1–F8, source, test, preserve-only và giới hạn kiểm tra. Bản sửa nằm trong working tree trên 3d58dff, chưa commit/push. Lượt viết báo cáo chỉ ghi tài liệu và sao lưu log đã có, không test/switch thêm.
+
+E2-P2R-SUP1: chưa có Supervisor PASS cho toàn bộ live-native acceptance; không dùng phản hồi Owner hoặc test mô phỏng để tự đóng mục này.
+
 Matching items: P2-A, P2-B, P2-C, P2-D.
 
 | ID | Status | Evidence cần thu thập khi triển khai |

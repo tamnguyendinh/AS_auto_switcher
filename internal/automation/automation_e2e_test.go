@@ -2,8 +2,8 @@ package automation
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,7 +39,8 @@ type MockLangServer struct {
 	retryCalls    atomic.Int32
 	lastRetryReq  []byte
 	streamClients map[chan connector.AgentStateUpdate]struct{}
-	emailGetter   func() string}
+	emailGetter   func() string
+}
 
 func NewMockLangServer(t *testing.T) *MockLangServer {
 	t.Helper()
@@ -78,6 +79,20 @@ func NewMockLangServer(t *testing.T) *MockLangServer {
 
 	// 2. StreamAgentStateUpdates Connect-RPC endpoint
 	mux.HandleFunc(connector.EndpointStreamAgentStateUpdates, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-codeium-csrf-token") != mls.csrfToken {
+			http.Error(w, "missing CSRF", 401)
+			return
+		}
+		frame, err := connector.ReadConnectFrame(r.Body)
+		if err != nil {
+			http.Error(w, "invalid envelope", 400)
+			return
+		}
+		var request map[string]any
+		if json.Unmarshal(frame.Payload, &request) != nil || request["initialStepsPageBounds"] == nil {
+			http.Error(w, "invalid bounds", 400)
+			return
+		}
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -108,7 +123,7 @@ func NewMockLangServer(t *testing.T) *MockLangServer {
 				if !open {
 					return
 				}
-				payload, err := json.Marshal(update)
+				payload, err := json.Marshal(nativeUpdateFixture(update))
 				if err != nil {
 					continue
 				}
@@ -379,10 +394,12 @@ func (mt *MockTelemetry) NewQuotaClient() *telemetry.QuotaClient {
 	telemetry.SetDiscoveredUserAgent("antigravity/2.24.0")
 	return qc
 }
+
 // E2ETestHarness: Orchestrates hermetic end-to-end testing with real components
 // -----------------------------------------------------------------------------
 
 type E2ETestHarness struct {
+	Reloader     *reloader.SessionReloader
 	t            *testing.T
 	LangServer   *MockLangServer
 	Telemetry    *MockTelemetry
@@ -436,6 +453,8 @@ func NewE2ETestHarness(t *testing.T, activeEmail string, otherAccounts []string)
 	}
 
 	rel := reloader.NewSessionReloader()
+	rel.StoragePath = filepath.Join(tempDir, "app_storage.json")
+	rel.SnapshotCapturer = func(string, string, string) (string, []reloader.ActiveThread, error) { return "", nil, nil }
 	rel.ProcessKiller = func(ctx context.Context) error { return nil }
 	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
 	rel.ContinuationRunner = func(ctx context.Context, client *connector.Client, activeThreads []reloader.ActiveThread, promptText string) error {
@@ -445,6 +464,7 @@ func NewE2ETestHarness(t *testing.T, activeEmail string, otherAccounts []string)
 		return mls.ServerInfo(), nil
 	}
 
+	harness.Reloader = rel
 	mgr, err := manager.NewAccountManager(accStore, rel)
 	if err != nil {
 		t.Fatalf("failed initializing AccountManager: %v", err)
@@ -475,6 +495,7 @@ func NewE2ETestHarness(t *testing.T, activeEmail string, otherAccounts []string)
 	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
 		return mls.NewClient(), nil
 	})
+	mgr.SetOAuthRefresher(syntheticOAuthRefresher{})
 	harness.Manager = mgr
 
 	cachePath := filepath.Join(tempDir, "quota_cache.json")
@@ -495,12 +516,14 @@ func NewE2ETestHarness(t *testing.T, activeEmail string, otherAccounts []string)
 	harness.Gate = gate
 
 	ctrl := NewAutomationController(mgr, pool, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(tempDir, "missing.pbtxt"))
 	ctrl.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
 		return mls.NewClient(), nil
 	})
 
 	rc := ctrl.RetryCoordinator()
 	if rc != nil {
+		rc.SetModelName("gemini-2.5-pro")
 		rc.SetConversationsScanner(func(ctx context.Context) ([]string, error) {
 			return []string{"conv-e2e-1"}, nil
 		})
@@ -551,7 +574,7 @@ func TestMockHarnessInit(t *testing.T) {
 
 	// 1. Verify MockLangServer returns dynamic model config
 	client := harness.LangServer.NewClient()
-	modelID, label, disabled, err := client.ResolveActiveModel(context.Background(), "")
+	modelID, label, disabled, err := client.ResolveActiveModel(context.Background(), filepath.Join(t.TempDir(), "missing.pbtxt"))
 	if err != nil {
 		t.Fatalf("ResolveActiveModel failed: %v", err)
 	}
@@ -581,11 +604,6 @@ func TestMockHarnessInit(t *testing.T) {
 		t.Errorf("expected 1 retry call recorded, got %d", harness.LangServer.GetRetryCalls())
 	}
 }
-
-
-
-
-
 
 // -----------------------------------------------------------------------------
 // Task 1.2: Verification Condition - Edge Cases 1 to 7
@@ -758,7 +776,8 @@ func TestEdgeCases1To7(t *testing.T) {
 			ExecutionID:       "exec-6-1",
 			StepID:            "step-1",
 			Status:            "IDLE",
-			TerminationReason: "RESOURCE_EXHAUSTED",
+			TerminationReason: "ERROR",
+			LastStepError:     &connector.StepError{Code: "RESOURCE_EXHAUSTED"},
 			Attempt:           1,
 		}
 		if err := rc.HandleAgentStateUpdate(ctx, update1); err != nil {
@@ -816,46 +835,53 @@ func TestEdgeCases1To7(t *testing.T) {
 			ExecutionID:       "exec-7-1",
 			StepID:            "step-1",
 			Status:            "IDLE",
-			TerminationReason: "429 RATE_LIMIT",
+			TerminationReason: "ERROR",
+			LastStepError:     &connector.StepError{Code: "RESOURCE_EXHAUSTED"},
 			Attempt:           1,
 		})
 		if rc.GetRecoveryAttempts() != 1 {
 			t.Fatalf("expected attempt 1, got %d", rc.GetRecoveryAttempts())
 		}
 
+		waitUntil(t, func() bool { return harness.LangServer.GetRetryCalls() >= 1 })
 		// Attempt 2 fails with rate limit
 		_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
 			ConversationID:    "conv-e2e-1",
 			ExecutionID:       "exec-7-2",
 			StepID:            "step-2",
 			Status:            "IDLE",
-			TerminationReason: "429 RATE_LIMIT",
+			TerminationReason: "ERROR",
+			LastStepError:     &connector.StepError{Code: "RESOURCE_EXHAUSTED"},
 			Attempt:           2,
 		})
 		if rc.GetRecoveryAttempts() != 2 {
 			t.Fatalf("expected attempt 2, got %d", rc.GetRecoveryAttempts())
 		}
 
+		waitUntil(t, func() bool { return harness.LangServer.GetRetryCalls() >= 2 })
 		// Attempt 3 fails with rate limit
 		_ = rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
 			ConversationID:    "conv-e2e-1",
 			ExecutionID:       "exec-7-3",
 			StepID:            "step-3",
 			Status:            "IDLE",
-			TerminationReason: "429 RATE_LIMIT",
+			TerminationReason: "ERROR",
+			LastStepError:     &connector.StepError{Code: "RESOURCE_EXHAUSTED"},
 			Attempt:           3,
 		})
 		if rc.GetRecoveryAttempts() != 3 {
 			t.Fatalf("expected attempt 3, got %d", rc.GetRecoveryAttempts())
 		}
 
+		waitUntil(t, func() bool { return harness.LangServer.GetRetryCalls() >= 3 })
 		// Attempt 4 triggers switch because 3 retries are exhausted
 		err := rc.HandleAgentStateUpdate(ctx, connector.AgentStateUpdate{
 			ConversationID:    "conv-e2e-1",
 			ExecutionID:       "exec-7-4",
 			StepID:            "step-4",
 			Status:            "IDLE",
-			TerminationReason: "429 RATE_LIMIT",
+			TerminationReason: "ERROR",
+			LastStepError:     &connector.StepError{Code: "RESOURCE_EXHAUSTED"},
 			Attempt:           4,
 		})
 		if err != ErrMaxRetriesExceeded {
@@ -877,10 +903,6 @@ func TestEdgeCases1To7(t *testing.T) {
 		}
 	})
 }
-
-
-
-
 
 // -----------------------------------------------------------------------------
 // Task 1.3: Verification Condition - Edge Cases 8 to 14 & Binding Assertions
@@ -907,7 +929,8 @@ func TestEdgeCases8To14(t *testing.T) {
 			ExecutionID:       "exec-8-1",
 			StepID:            "step-1",
 			Status:            "IDLE",
-			TerminationReason: "429 RATE_LIMIT",
+			TerminationReason: "ERROR",
+			LastStepError:     &connector.StepError{Code: "RESOURCE_EXHAUSTED"},
 			Attempt:           1,
 		})
 		if !rc.IsRecovering() || rc.GetRecoveryAttempts() != 1 {
@@ -977,12 +1000,12 @@ func TestEdgeCases8To14(t *testing.T) {
 			t.Errorf("expected TryExecute to fail with ErrGateBusy when manual holds gate, got executed=%v, err=%v", executed, tryErr)
 		}
 
-		// Auto trigger with bounded context times out waiting for gate
+		// Auto trigger rejects contention instead of queuing stale intent
 		ctxShort, cancelShort := context.WithTimeout(ctx, 100*time.Millisecond)
 		_, autoErr := harness.Controller.TriggerSwitch(ctxShort, "auto contention test")
 		cancelShort()
-		if autoErr == nil || !errors.Is(autoErr, context.DeadlineExceeded) {
-			t.Errorf("expected DeadlineExceeded while manual holds gate, got: %v", autoErr)
+		if autoErr == nil || !errors.Is(autoErr, ErrGateBusy) {
+			t.Errorf("expected ErrGateBusy while manual holds gate, got: %v", autoErr)
 		}
 
 		close(manualRelease)
@@ -1173,7 +1196,8 @@ func TestEdgeCases8To14(t *testing.T) {
 			ExecutionID:       "exec-14-1",
 			StepID:            "step-1",
 			Status:            "IDLE",
-			TerminationReason: "429 RATE_LIMIT",
+			TerminationReason: "ERROR",
+			LastStepError:     &connector.StepError{Code: "RESOURCE_EXHAUSTED"},
 			Attempt:           1,
 		}
 
@@ -1215,6 +1239,7 @@ func TestBindings_HTTPAcceptance_Versus_ExecutionOutcome(t *testing.T) {
 	defer harness.Close()
 
 	ctx := context.Background()
+	harness.Controller.SetEnabled(true)
 	_ = harness.Controller.Start(ctx)
 	client := harness.LangServer.NewClient()
 
@@ -1231,7 +1256,8 @@ func TestBindings_HTTPAcceptance_Versus_ExecutionOutcome(t *testing.T) {
 		ExecutionID:       "exec-binding-1",
 		StepID:            "step-1",
 		Status:            "IDLE",
-		TerminationReason: "RESOURCE_EXHAUSTED",
+		TerminationReason: "ERROR",
+		LastStepError:     &connector.StepError{Code: "RESOURCE_EXHAUSTED"},
 		Attempt:           1,
 	})
 
@@ -1259,6 +1285,7 @@ func TestBindings_NativeRetryWaiting_HasRetryAt(t *testing.T) {
 	defer harness.Close()
 
 	ctx := context.Background()
+	harness.Controller.SetEnabled(true)
 	_ = harness.Controller.Start(ctx)
 	rc := harness.Controller.RetryCoordinator()
 
@@ -1282,8 +1309,19 @@ func TestBindings_NativeRetryWaiting_HasRetryAt(t *testing.T) {
 	}
 }
 
-
-
-
-
-
+func waitUntil(t *testing.T, ready func() bool) {
+	t.Helper()
+	end := time.Now().Add(3 * time.Second)
+	for time.Now().Before(end) {
+		if ready() {
+			return
+		}
+		time.Sleep(time.Millisecond * 5)
+	}
+	t.Fatal("condition did not become true")
+}
+func nativeUpdateFixture(u connector.AgentStateUpdate) map[string]any {
+	return map[string]any{"update": map[string]any{"conversationId": u.ConversationID, "status": "CASCADE_RUN_STATUS_" + u.Status,
+		"executorMetadata":     map[string]any{"executionId": u.ExecutionID, "terminationReason": "EXECUTOR_TERMINATION_REASON_" + u.TerminationReason},
+		"mainTrajectoryUpdate": map[string]any{"lastStepError": u.LastStepError, "stepsUpdate": map[string]any{"totalLength": 2}}}}
+}

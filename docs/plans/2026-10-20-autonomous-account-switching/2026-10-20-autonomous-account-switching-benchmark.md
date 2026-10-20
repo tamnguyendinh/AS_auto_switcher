@@ -41,6 +41,16 @@ Các mục dưới đây là vị trí dành cho số đo nếu thu thập trong
 
 ## B2 - P2 Benchmarks
 
+R7 repair: chưa đo latency/số lần switch thật; không suy ra từ wait 8s. Policy hiện hành 5h <= 2%, tuần <= 1%.
+
+| Measurement | Observed | Evidence |
+|---|---:|---|
+| UI package test duration sau condition-wait fix | 17.113 s | E2-P2R-TEST1 |
+| Automation race test duration | 13.456 s | E2-P2R-TEST1 |
+| Connector race test duration | 2.235 s | E2-P2R-TEST1 |
+
+Các số trên là thời gian chạy tests, không phải thời gian chuyển tài khoản hoặc native retry.
+
 | Item | Metric | Unit | Baseline | Latest | Final | Target | Evidence target |
 |---|---|---|---|---|---|---|---|
 | P2-A | Scenario có kết quả đúng | count | NOT MEASURED | NOT MEASURED | NOT MEASURED | 14/14 và binding checks riêng | E2-P2A-TEST14, E2-P2A-BIND1 |
