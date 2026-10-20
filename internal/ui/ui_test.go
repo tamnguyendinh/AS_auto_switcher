@@ -3782,3 +3782,248 @@ func TestAutomation_GateMutualExclusion(t *testing.T) {
 
 	close(release)
 }
+
+// -----------------------------------------------------------------------------
+// Tests for SPEC-ARCH-20261020-ACCOUNT-PRIVACY-MASKING-TOOLBAR (Phase 1)
+// -----------------------------------------------------------------------------
+
+func TestArchitectSpec_Row2Layout_WithDividers(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	// 1. Verify lblMask presence, text, and bold style
+	lblMask := app.MaskAccountsLabelWidget()
+	if lblMask == nil {
+		t.Fatal("expected non-nil MaskAccountsLabelWidget")
+	}
+	if lblMask.Text != "Ẩn tài khoản:" {
+		t.Fatalf("expected text 'Ẩn tài khoản:', got '%s'", lblMask.Text)
+	}
+	if !lblMask.TextStyle.Bold {
+		t.Fatal("expected Bold text style for lblMask")
+	}
+
+	// 2. Verify maskAccountsToggle presence, initial state, and size
+	maskToggle := app.MaskAccountsToggleWidget()
+	if maskToggle == nil {
+		t.Fatal("expected non-nil MaskAccountsToggleWidget")
+	}
+	if maskToggle.MinSize().Width != 23.0 || maskToggle.MinSize().Height != 12.0 {
+		t.Fatalf("expected maskAccountsToggle MinSize 23x12, got %fx%f", maskToggle.MinSize().Width, maskToggle.MinSize().Height)
+	}
+	if maskToggle.IsOn() != false {
+		t.Fatal("expected maskAccountsToggle initially false")
+	}
+
+	// 3. Verify dividers presence and MinSize (1x14 px)
+	div1, div2 := app.Row2Dividers()
+	if div1 == nil || div2 == nil {
+		t.Fatal("expected non-nil Row2Dividers")
+	}
+
+	// 4. Locate rightCluster in row2Combined and verify exact 7-element layout
+	win := app.win
+	content, ok := win.Content().(*fyne.Container)
+	if !ok || content == nil {
+		t.Fatal("expected non-nil window content container")
+	}
+	var topSection *fyne.Container
+	for _, obj := range content.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			topSection = c
+			break
+		}
+	}
+	if topSection == nil || len(topSection.Objects) < 2 {
+		t.Fatal("expected topSection with at least 2 children")
+	}
+	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
+	if !ok || row2Combined == nil {
+		t.Fatal("expected row2Combined container")
+	}
+
+	var rightCluster *fyne.Container
+	for _, obj := range row2Combined.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			if len(c.Objects) == 7 {
+				rightCluster = c
+				break
+			}
+		}
+	}
+	if rightCluster == nil {
+		t.Fatalf("expected rightCluster container with exactly 7 objects, got objects count in row2Combined: %d", len(row2Combined.Objects))
+	}
+
+	// Check order: [lblMask, maskToggle, div1Wrap, lblAuto, autoSwitchToggle, div2Wrap, themeSelectWrap]
+	if rightCluster.Objects[0] != lblMask {
+		t.Errorf("expected rightCluster[0] to be lblMask")
+	}
+	if rightCluster.Objects[1] != maskToggle {
+		t.Errorf("expected rightCluster[1] to be maskAccountsToggle")
+	}
+
+	div1Wrap, ok := rightCluster.Objects[2].(*fyne.Container)
+	if !ok || div1Wrap == nil {
+		t.Fatalf("expected rightCluster[2] to be div1Wrap container")
+	}
+	if div1Wrap.MinSize().Width != 1.0 || div1Wrap.MinSize().Height != 14.0 {
+		t.Errorf("expected div1Wrap MinSize (1, 14), got %v", div1Wrap.MinSize())
+	}
+
+	lblAuto := app.AutoSwitchLabelWidget()
+	if rightCluster.Objects[3] != lblAuto {
+		t.Errorf("expected rightCluster[3] to be lblAuto")
+	}
+
+	autoToggle := app.autoSwitchToggle
+	if rightCluster.Objects[4] != autoToggle {
+		t.Errorf("expected rightCluster[4] to be autoSwitchToggle")
+	}
+
+	div2Wrap, ok := rightCluster.Objects[5].(*fyne.Container)
+	if !ok || div2Wrap == nil {
+		t.Fatalf("expected rightCluster[5] to be div2Wrap container")
+	}
+	if div2Wrap.MinSize().Width != 1.0 || div2Wrap.MinSize().Height != 14.0 {
+		t.Errorf("expected div2Wrap MinSize (1, 14), got %v", div2Wrap.MinSize())
+	}
+
+	if rightCluster.Objects[6].MinSize().Width != 58.0 || rightCluster.Objects[6].MinSize().Height != 20.0 {
+		t.Errorf("expected rightCluster[6] themeSelectWrap MinSize (58, 20), got %v", rightCluster.Objects[6].MinSize())
+	}
+
+	// 5. Verify Tapped event on maskAccountsToggle
+	maskToggle.Tapped(&fyne.PointEvent{})
+	if !app.IsMaskAccounts() {
+		t.Errorf("expected IsMaskAccounts() == true after tap")
+	}
+	if !maskToggle.IsOn() {
+		t.Errorf("expected maskToggle.IsOn() == true after tap")
+	}
+
+	maskToggle.Tapped(&fyne.PointEvent{})
+	if app.IsMaskAccounts() {
+		t.Errorf("expected IsMaskAccounts() == false after second tap")
+	}
+	if maskToggle.IsOn() {
+		t.Errorf("expected maskToggle.IsOn() == false after second tap")
+	}
+
+	// 6. Verify existing AutoSwitchToggle remains completely functional
+	if app.IsAutoSwitchEnabled() {
+		t.Errorf("expected autoSwitch initially disabled")
+	}
+	autoToggle.Tapped(&fyne.PointEvent{})
+	if !app.IsAutoSwitchEnabled() {
+		t.Errorf("expected autoSwitch enabled after tap")
+	}
+	autoToggle.Tapped(&fyne.PointEvent{})
+	if app.IsAutoSwitchEnabled() {
+		t.Errorf("expected autoSwitch disabled after second tap")
+	}
+}
+
+func TestArchitectSpec_Row2Layout_ThemeSync(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	tmpDir := t.TempDir()
+	app := newIsolatedApp(testApp, nil)
+	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
+	defer app.Close()
+	app.Init()
+
+	div1, div2 := app.Row2Dividers()
+	maskToggle := app.MaskAccountsToggleWidget()
+	autoToggle := app.autoSwitchToggle
+
+	themes := []string{ThemeDark, ThemeLight, ThemeWarm}
+	for _, th := range themes {
+		t.Run("Theme_"+th, func(t *testing.T) {
+			app.SetTheme(th)
+			palette := GetThemePalette(th)
+
+			// Verify Dividers FillColor
+			if div1.FillColor != palette.BorderSubtle {
+				t.Errorf("expected div1.FillColor %v, got %v for theme %s", palette.BorderSubtle, div1.FillColor, th)
+			}
+			if div2.FillColor != palette.BorderSubtle {
+				t.Errorf("expected div2.FillColor %v, got %v for theme %s", palette.BorderSubtle, div2.FillColor, th)
+			}
+
+			// Verify Toggle track FillColor (when OFF)
+			if maskToggle.track.FillColor != palette.BorderSubtle {
+				t.Errorf("expected maskToggle.track.FillColor %v, got %v for theme %s", palette.BorderSubtle, maskToggle.track.FillColor, th)
+			}
+			if autoToggle.track.FillColor != palette.BorderSubtle {
+				t.Errorf("expected autoToggle.track.FillColor %v, got %v for theme %s", palette.BorderSubtle, autoToggle.track.FillColor, th)
+			}
+
+			// Verify Toggle track FillColor (when ON)
+			maskToggle.SetOn(true)
+			if maskToggle.track.FillColor != palette.Primary {
+				t.Errorf("expected maskToggle.track.FillColor %v (Primary), got %v for theme %s", palette.Primary, maskToggle.track.FillColor, th)
+			}
+			maskToggle.SetOn(false)
+		})
+	}
+}
+
+func TestArchitectSpec_MaskAccounts_Persistence(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	tmpDir := t.TempDir()
+	prefFile := filepath.Join(tmpDir, ".ui_preferences.json")
+
+	// Pre-create preference file with mask_accounts = true
+	initialPref := &UIPreferences{
+		Theme:        ThemeDark,
+		MaskAccounts: true,
+	}
+	if err := SaveUIPreferences(prefFile, initialPref); err != nil {
+		t.Fatalf("failed saving initial preferences: %v", err)
+	}
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+	app.SetPreferencesPath(prefFile)
+
+	// Re-load preferences into app state as done during Init()
+	prefs, err := LoadUIPreferences(prefFile)
+	if err != nil {
+		t.Fatalf("failed loading ui preferences: %v", err)
+	}
+	app.maskAccounts = prefs.MaskAccounts
+
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	if !app.IsMaskAccounts() {
+		t.Errorf("expected IsMaskAccounts() == true from loaded preferences")
+	}
+	if !app.MaskAccountsToggleWidget().IsOn() {
+		t.Errorf("expected MaskAccountsToggleWidget.IsOn() == true from loaded preferences")
+	}
+
+	// Change to false and verify persistence
+	app.SetMaskAccounts(false)
+	time.Sleep(100 * time.Millisecond)
+
+	loaded, err := LoadUIPreferences(prefFile)
+	if err != nil {
+		t.Fatalf("failed loading updated ui preferences: %v", err)
+	}
+	if loaded.MaskAccounts != false {
+		t.Errorf("expected persisted MaskAccounts == false, got %v", loaded.MaskAccounts)
+	}
+}
+

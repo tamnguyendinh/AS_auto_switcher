@@ -173,8 +173,25 @@ func (a *App) setupLayout() {
 
 	themeSelectWrap := container.NewGridWrap(fyne.NewSize(58, 20), a.themeSelect)
 
-	// Auto Switch Toggle Capsule Widget (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
+	// -------------------------------------------------------------------------
+	// Khối 1: Label & Capsule Toggle Ẩn tài khoản (SPEC-ARCH-20261020-ACCOUNT-PRIVACY-MASKING-TOOLBAR)
+	// -------------------------------------------------------------------------
+	lblMask := widget.NewLabelWithStyle("Ẩn tài khoản:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	headerRow2MaskLabel = lblMask
+
+	a.maskAccountsToggle = newCapsuleToggle(a.maskAccounts, func(isOn bool) {
+		a.SetMaskAccounts(isOn)
+	}, palette)
+
+	// Divider 1 (Bắt buộc bọc GridWrap 1x14 px để không bị MinSize 0x0)
+	a.row2Divider1 = canvas.NewRectangle(palette.BorderSubtle)
+	div1Wrap := container.NewGridWrap(fyne.NewSize(1, 14), a.row2Divider1)
+
+	// -------------------------------------------------------------------------
+	// Khối 2: Label & Auto Switch Toggle Capsule Widget (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
 	// SPEC-ARCH-20261020-ALIGN-HEADER-ROW2-VERTICAL-BASELINE: widget.Label with Bold style
+	// ĐÃ CÓ - GIỮ NGUYÊN HOÀN TOÀN KHÔNG ĐỤNG VÀO NÚT GẠT TỰ ĐỘNG
+	// -------------------------------------------------------------------------
 	lblAuto := widget.NewLabelWithStyle("Tự động:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	headerRow2AutoLabel = lblAuto
 
@@ -182,7 +199,21 @@ func (a *App) setupLayout() {
 		a.SetAutoSwitchEnabled(isOn)
 	}, palette)
 
-	rightCluster := container.New(row2RightClusterLayout{}, lblAuto, a.autoSwitchToggle, themeSelectWrap)
+	// Divider 2 (Bắt buộc bọc GridWrap 1x14 px để không bị MinSize 0x0)
+	a.row2Divider2 = canvas.NewRectangle(palette.BorderSubtle)
+	div2Wrap := container.NewGridWrap(fyne.NewSize(1, 14), a.row2Divider2)
+
+	// Right Cluster: Bố cục 7 phần tử Canvas
+	// [Ẩn tài khoản: ○] │ [Tự động: ●] │ [ ☀️ ▼ ]
+	rightCluster := container.New(row2RightClusterLayout{},
+		lblMask,
+		a.maskAccountsToggle,
+		div1Wrap,
+		lblAuto,
+		a.autoSwitchToggle,
+		div2Wrap,
+		themeSelectWrap,
+	)
 	row2Combined := container.NewBorder(nil, nil, row2LeftCluster, rightCluster)
 
 	// Separator chia phần điều khiển với lưới tài khoản
@@ -619,5 +650,192 @@ func (row2RightClusterLayout) Layout(objects []fyne.CanvasObject, size fyne.Size
 		x += ms.Width + padding
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Mask Accounts Toggle Widget (SPEC-ARCH-20261020-ACCOUNT-PRIVACY-MASKING-TOOLBAR)
+// -----------------------------------------------------------------------------
+
+// MaskAccountsToggle represents an independent 23x12 capsule pill toggle switch for account privacy masking.
+type MaskAccountsToggle struct {
+	widget.BaseWidget
+	isOn     bool
+	onChange func(bool)
+	palette  ThemePalette
+
+	track *canvas.Rectangle
+	thumb *canvas.Circle
+}
+
+// CapsuleToggle is an alias to MaskAccountsToggle for the standardized capsule toggle specification.
+type CapsuleToggle = MaskAccountsToggle
+
+var (
+	_ fyne.Widget        = (*MaskAccountsToggle)(nil)
+	_ fyne.Tappable      = (*MaskAccountsToggle)(nil)
+	_ desktop.Hoverable  = (*MaskAccountsToggle)(nil)
+	_ desktop.Cursorable = (*MaskAccountsToggle)(nil)
+)
+
+func newMaskAccountsToggle(initial bool, onChange func(bool), palette ThemePalette) *MaskAccountsToggle {
+	t := &MaskAccountsToggle{
+		isOn:     initial,
+		onChange: onChange,
+		palette:  palette,
+	}
+
+	t.track = canvas.NewRectangle(palette.BorderSubtle)
+	t.track.CornerRadius = 6.0
+	t.track.Resize(fyne.NewSize(23, 12))
+	t.track.Move(fyne.NewPos(0, 0))
+
+	t.thumb = canvas.NewCircle(color.White)
+	t.thumb.Resize(fyne.NewSize(8, 8))
+
+	if initial {
+		t.track.FillColor = palette.Primary
+		t.thumb.Move(fyne.NewPos(13, 2))
+	} else {
+		t.track.FillColor = palette.BorderSubtle
+		t.thumb.Move(fyne.NewPos(2, 2))
+	}
+
+	t.ExtendBaseWidget(t)
+	return t
+}
+
+func newCapsuleToggle(initial bool, onChange func(bool), palette ThemePalette) *CapsuleToggle {
+	return newMaskAccountsToggle(initial, onChange, palette)
+}
+
+func (t *MaskAccountsToggle) CreateRenderer() fyne.WidgetRenderer {
+	t.ExtendBaseWidget(t)
+	return &maskAccountsToggleRenderer{toggle: t}
+}
+
+func (t *MaskAccountsToggle) MinSize() fyne.Size {
+	t.ExtendBaseWidget(t)
+	return fyne.NewSize(23, 12)
+}
+
+func (t *MaskAccountsToggle) Tapped(_ *fyne.PointEvent) {
+	t.isOn = !t.isOn
+	t.updateVisuals()
+	if t.onChange != nil {
+		t.onChange(t.isOn)
+	}
+}
+
+func (t *MaskAccountsToggle) Cursor() desktop.Cursor {
+	return desktop.PointerCursor
+}
+
+func (t *MaskAccountsToggle) MouseIn(*desktop.MouseEvent)   {}
+func (t *MaskAccountsToggle) MouseOut()                    {}
+func (t *MaskAccountsToggle) MouseMoved(*desktop.MouseEvent) {}
+
+func (t *MaskAccountsToggle) IsOn() bool {
+	return t.isOn
+}
+
+func (t *MaskAccountsToggle) SetOn(on bool) {
+	if t.isOn == on {
+		return
+	}
+	t.isOn = on
+	t.updateVisuals()
+	if t.onChange != nil {
+		t.onChange(t.isOn)
+	}
+}
+
+func (t *MaskAccountsToggle) SetPalette(palette ThemePalette) {
+	t.palette = palette
+	t.updateVisuals()
+}
+
+func (t *MaskAccountsToggle) updateVisuals() {
+	if t.isOn {
+		t.track.FillColor = t.palette.Primary
+	} else {
+		t.track.FillColor = t.palette.BorderSubtle
+	}
+	y := (t.Size().Height - 12.0) / 2.0
+	if y < 0 {
+		y = 0
+	}
+	thumbY := y + 2.0
+	if t.isOn {
+		t.thumb.Move(fyne.NewPos(13, thumbY))
+	} else {
+		t.thumb.Move(fyne.NewPos(2, thumbY))
+	}
+	t.track.Refresh()
+	t.thumb.Refresh()
+	t.Refresh()
+}
+
+type maskAccountsToggleRenderer struct {
+	toggle *MaskAccountsToggle
+}
+
+func (r *maskAccountsToggleRenderer) MinSize() fyne.Size {
+	return fyne.NewSize(23, 12)
+}
+
+func (r *maskAccountsToggleRenderer) Layout(size fyne.Size) {
+	trackW := float32(23.0)
+	trackH := float32(12.0)
+
+	y := (size.Height - trackH) / 2.0
+	if y < 0 {
+		y = 0
+	}
+
+	r.toggle.track.Move(fyne.NewPos(0, y))
+	r.toggle.track.Resize(fyne.NewSize(trackW, trackH))
+
+	thumbY := y + 2.0
+	if r.toggle.isOn {
+		r.toggle.thumb.Move(fyne.NewPos(13, thumbY))
+	} else {
+		r.toggle.thumb.Move(fyne.NewPos(2, thumbY))
+	}
+	r.toggle.thumb.Resize(fyne.NewSize(8, 8))
+}
+
+func (r *maskAccountsToggleRenderer) Refresh() {
+	if r.toggle.isOn {
+		r.toggle.track.FillColor = r.toggle.palette.Primary
+	} else {
+		r.toggle.track.FillColor = r.toggle.palette.BorderSubtle
+	}
+	r.toggle.track.Refresh()
+	r.toggle.thumb.Refresh()
+	r.Layout(r.toggle.Size())
+}
+
+func (r *maskAccountsToggleRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.toggle.track, r.toggle.thumb}
+}
+
+func (r *maskAccountsToggleRenderer) Destroy() {}
+
+var headerRow2MaskLabel *widget.Label
+
+// MaskAccountsLabelWidget returns the header row 2 mask accounts label widget.
+func (a *App) MaskAccountsLabelWidget() *widget.Label {
+	return headerRow2MaskLabel
+}
+
+// MaskAccountsToggleWidget returns the header row 2 mask accounts capsule toggle.
+func (a *App) MaskAccountsToggleWidget() *CapsuleToggle {
+	return a.maskAccountsToggle
+}
+
+// Row2Dividers returns the two vertical divider canvas rectangles.
+func (a *App) Row2Dividers() (*canvas.Rectangle, *canvas.Rectangle) {
+	return a.row2Divider1, a.row2Divider2
+}
+
 
 

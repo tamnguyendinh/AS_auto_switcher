@@ -29,7 +29,8 @@ const (
 
 // UIPreferences stores persistent user interface settings.
 type UIPreferences struct {
-	Theme string `json:"theme"`
+	Theme        string `json:"theme"`
+	MaskAccounts bool   `json:"mask_accounts"`
 }
 
 // ThemePalette defines semantic color tokens for custom Canvas rendering across themes.

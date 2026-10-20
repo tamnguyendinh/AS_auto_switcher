@@ -50,6 +50,9 @@ type App struct {
 	themeSelect          *widget.Select
 	autoSwitchToggle     *AutoSwitchToggle
 	autoSwitchLabel      *canvas.Text
+	maskAccountsToggle   *CapsuleToggle
+	row2Divider1         *canvas.Rectangle
+	row2Divider2         *canvas.Rectangle
 	monogramBg           *canvas.Rectangle
 	accountScroll        *container.Scroll
 	statusBar            *widget.Label
@@ -57,6 +60,9 @@ type App struct {
 
 	// Auto-switch UI State (SPEC-ARCH-20261020-AUTO-SWITCH-TOGGLE-BUTTON)
 	autoSwitchEnabled bool
+
+	// Privacy Masking (SPEC-ARCH-20261020-ACCOUNT-PRIVACY-MASKING-TOOLBAR)
+	maskAccounts bool
 
 	// Automation (Slice P1-C)
 	controller   *automation.AutomationController
@@ -100,11 +106,12 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	a.quotaCache = telemetry.NewQuotaCache(cachePath)
 	_ = a.quotaCache.LoadFromDisk()
 
-	// 2. Load UI Preferences (Theme)
+	// 2. Load UI Preferences (Theme & Masking)
 	if prefs, err := LoadUIPreferences(a.preferencesPath); err == nil && prefs != nil {
 		if prefs.Theme != "" {
 			a.currentTheme = prefs.Theme
 		}
+		a.maskAccounts = prefs.MaskAccounts
 	}
 
 	// 3. Initialize Telemetry Pool & Auto-Loop if manager and store exist
@@ -212,11 +219,12 @@ func (a *App) SetTheme(themeName string) {
 	a.mu.Lock()
 	a.currentTheme = themeName
 	path := a.preferencesPath
+	mask := a.maskAccounts
 	a.mu.Unlock()
 
 	prefs, err := LoadUIPreferences(path)
 	if err != nil || prefs == nil {
-		prefs = &UIPreferences{Theme: themeName}
+		prefs = &UIPreferences{Theme: themeName, MaskAccounts: mask}
 	}
 	prefs.Theme = themeName
 	_ = SaveUIPreferences(path, prefs)
@@ -237,6 +245,17 @@ func (a *App) SetTheme(themeName string) {
 	if a.autoSwitchLabel != nil {
 		a.autoSwitchLabel.Color = palette.Text
 		a.autoSwitchLabel.Refresh()
+	}
+	if a.maskAccountsToggle != nil {
+		a.maskAccountsToggle.SetPalette(palette)
+	}
+	if a.row2Divider1 != nil {
+		a.row2Divider1.FillColor = palette.BorderSubtle
+		a.row2Divider1.Refresh()
+	}
+	if a.row2Divider2 != nil {
+		a.row2Divider2.FillColor = palette.BorderSubtle
+		a.row2Divider2.Refresh()
 	}
 
 	a.mu.RLock()
@@ -845,6 +864,49 @@ func (a *App) SetAutoSwitchEnabled(enabled bool) {
 	if ctrl != nil {
 		ctrl.SetEnabled(enabled)
 	}
+}
+
+// IsMaskAccounts reports whether account privacy masking is currently active.
+func (a *App) IsMaskAccounts() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.maskAccounts
+}
+
+// SetMaskAccounts updates the privacy masking state and persists it.
+func (a *App) SetMaskAccounts(mask bool) {
+	a.mu.Lock()
+	if a.maskAccounts == mask {
+		toggle := a.maskAccountsToggle
+		a.mu.Unlock()
+		if toggle != nil && toggle.IsOn() != mask {
+			toggle.SetOn(mask)
+		}
+		return
+	}
+	a.maskAccounts = mask
+	toggle := a.maskAccountsToggle
+	path := a.preferencesPath
+	theme := a.currentTheme
+	a.mu.Unlock()
+
+	if toggle != nil && toggle.IsOn() != mask {
+		toggle.SetOn(mask)
+	}
+
+	go func() {
+		pref, err := LoadUIPreferences(path)
+		if err != nil || pref == nil {
+			pref = &UIPreferences{Theme: theme}
+		}
+		pref.MaskAccounts = mask
+		_ = SaveUIPreferences(path, pref)
+	}()
+}
+
+// ToggleMaskAccounts flips the account privacy masking state.
+func (a *App) ToggleMaskAccounts() {
+	a.SetMaskAccounts(!a.IsMaskAccounts())
 }
 
 // updateUI refreshes all visual components based on the given overview.
