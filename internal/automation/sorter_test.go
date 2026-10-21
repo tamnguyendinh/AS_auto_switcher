@@ -198,3 +198,45 @@ func TestSortCandidatesBurnDown_Tier4TieBreak(t *testing.T) {
 		t.Errorf("expected higher index second@example.com to be ranked second, got %s", sorted[1].Email)
 	}
 }
+
+func TestFilterEligibleCandidates_ExcludesOffAccount(t *testing.T) {
+	activeEmail := "active@example.com"
+	failedEmails := map[string]bool{}
+
+	candOff := BuildCandidateAccount("off@example.com", 1, true, "refresh_tok", &telemetry.AccountQuotaData{
+		Email: "off@example.com",
+		Gemini: telemetry.ModelQuotaBucket{FiveHourFraction: 0.90, WeeklyFraction: 0.90},
+	}, CategoryGemini)
+	candOff.Status = "off"
+
+	candOn := BuildCandidateAccount("on@example.com", 2, true, "refresh_tok", &telemetry.AccountQuotaData{
+		Email: "on@example.com",
+		Gemini: telemetry.ModelQuotaBucket{FiveHourFraction: 0.80, WeeklyFraction: 0.50},
+	}, CategoryGemini)
+	candOn.Status = "on"
+
+	candidates := []CandidateAccount{candOff, candOn}
+
+	eligible, exclusions := FilterEligibleCandidates(candidates, activeEmail, failedEmails)
+
+	if len(eligible) != 1 {
+		t.Fatalf("expected 1 eligible candidate, got %d", len(eligible))
+	}
+	if eligible[0].Email != "on@example.com" {
+		t.Errorf("expected eligible email on@example.com, got %s", eligible[0].Email)
+	}
+
+	if len(exclusions) != 1 {
+		t.Fatalf("expected 1 exclusion, got %d", len(exclusions))
+	}
+	if exclusions[0].Email != "off@example.com" {
+		t.Errorf("expected excluded email off@example.com, got %s", exclusions[0].Email)
+	}
+	if exclusions[0].Criterion != 6 {
+		t.Errorf("expected criterion 6, got %d", exclusions[0].Criterion)
+	}
+	if exclusions[0].Reason != "tài khoản đang ở chế độ vô hiệu hóa (OFF)" {
+		t.Errorf("expected reason 'tài khoản đang ở chế độ vô hiệu hóa (OFF)', got '%s'", exclusions[0].Reason)
+	}
+}
+

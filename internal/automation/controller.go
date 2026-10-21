@@ -503,19 +503,25 @@ func (c *AutomationController) triggerSwitch(ctx context.Context, reason string,
 			if c.cache != nil {
 				qData, _ = c.cache.Get(email)
 			}
-			candidates = append(candidates, BuildCandidateAccount(
+			cand := BuildCandidateAccount(
 				email,
 				idx,
 				tokenValid,
 				refreshToken,
 				qData,
 				category,
-			))
+			)
+			if c.mgr != nil {
+				cand.Status = c.mgr.GetAccountStatus(email)
+			}
+			candidates = append(candidates, cand)
 		}
 
 		eligible, exclusions := FilterEligibleCandidates(candidates, activeEmail, failedMap)
 		if len(eligible) == 0 {
-			c.EmitStatus(StatusNoCandidate, "Không có ứng viên nào đủ điều kiện chuyển", exclusions)
+			c.enabled.Store(false)
+			c.syncMonitoring()
+			c.EmitStatus(StatusNoCandidate, "Không có tài khoản để chuyển.", exclusions)
 			return fmt.Errorf("%w: %+v", ErrNoCandidates, exclusions)
 		}
 
@@ -566,7 +572,9 @@ func (c *AutomationController) triggerSwitch(ctx context.Context, reason string,
 			return nil
 		}
 
-		c.EmitStatus(StatusNoCandidate, "Tất cả ứng viên đã thất bại preflight trong đợt này", nil)
+		c.enabled.Store(false)
+		c.syncMonitoring()
+		c.EmitStatus(StatusNoCandidate, "Không có tài khoản để chuyển.", nil)
 		return ErrNoCandidates
 	})
 

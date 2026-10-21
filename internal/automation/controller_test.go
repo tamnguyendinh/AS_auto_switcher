@@ -538,6 +538,139 @@ func TestAutomationController_NoCandidates(t *testing.T) {
 	if !errors.Is(err, ErrNoCandidates) {
 		t.Errorf("expected ErrNoCandidates, got %v", err)
 	}
+	if ctrl.IsEnabled() {
+		t.Errorf("expected controller to be disabled (auto-stopped) when no candidates")
+	}
+}
+
+func TestController_SafetyStop_WhenAllCandidatesOff(t *testing.T) {
+	activeEmail := "active@example.com"
+	otherAccounts := map[string]float64{
+		"off1@example.com": 0.5,
+		"off2@example.com": 0.8,
+	}
+	mgr, cache, accStore := setupTestEnvironment(t, activeEmail, otherAccounts)
+
+	// Set all other accounts to "off"
+	if err := accStore.SetAccountStatus("off1@example.com", "off"); err != nil {
+		t.Fatalf("failed setting off1 status: %v", err)
+	}
+	if err := accStore.SetAccountStatus("off2@example.com", "off"); err != nil {
+		t.Fatalf("failed setting off2 status: %v", err)
+	}
+
+	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_SafetyStop_%d", time.Now().UnixNano()))
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) { return nil, nil })
+	ctrl := NewAutomationController(mgr, nil, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(t.TempDir(), "missing.pbtxt"))
+	ctrl.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
+	ctrl.SetEnabled(true)
+
+	// Consume status channel
+	statusReceived := make(chan StatusEvent, 10)
+	go func() {
+		for ev := range ctrl.StatusChannel() {
+			statusReceived <- ev
+		}
+	}()
+
+	_, err := ctrl.TriggerSwitch(context.Background(), "test all off")
+	if !errors.Is(err, ErrNoCandidates) {
+		t.Fatalf("expected ErrNoCandidates, got %v", err)
+	}
+
+	// Invariant-No-Candidate-Auto-Halt assertions:
+	// 1. Controller enabled state must be false
+	if ctrl.IsEnabled() {
+		t.Errorf("expected controller.IsEnabled() == false after Safety Stop, got true")
+	}
+
+	// 2. StatusNoCandidate event emitted with exact message "Không có tài khoản để chuyển."
+	var foundNoCandidateEvt *StatusEvent
+	timeout := time.After(500 * time.Millisecond)
+	for foundNoCandidateEvt == nil {
+		select {
+		case ev := <-statusReceived:
+			if ev.Code == StatusNoCandidate {
+				foundNoCandidateEvt = &ev
+			}
+		case <-timeout:
+			break
+		}
+	}
+
+	if foundNoCandidateEvt == nil {
+		t.Fatalf("expected StatusNoCandidate event to be emitted")
+	}
+	if foundNoCandidateEvt.Message != "Không có tài khoản để chuyển." {
+		t.Errorf("expected message 'Không có tài khoản để chuyển.', got '%s'", foundNoCandidateEvt.Message)
+	}
+}
+
+func TestController_SafetyStop_WhenAllCandidatesFailPreflight(t *testing.T) {
+	activeEmail := "active@example.com"
+	otherAccounts := map[string]float64{
+		"cand1@example.com": 0.5,
+	}
+	mgr, cache, _ := setupTestEnvironment(t, activeEmail, otherAccounts)
+
+	mockClient := &mockQuotaClient{
+		failEmails: map[string]bool{
+			"refresh-cand1@example.com": true,
+		},
+	}
+	pool, err := telemetry.NewTelemetryPool(mockClient, cache, mgr.Store())
+	if err != nil {
+		t.Fatalf("failed creating pool: %v", err)
+	}
+	pool.SetLocalQuotaFetcher(func(ctx context.Context, email string) (*telemetry.AccountQuotaData, error) {
+		return nil, errors.New("not active")
+	})
+
+	gate := NewSwitchGate(fmt.Sprintf("Local\\TestCtrl_SafetyStopPreflight_%d", time.Now().UnixNano()))
+	ctrl := NewAutomationController(mgr, pool, cache, gate)
+	ctrl.SetPbtxtPath(filepath.Join(t.TempDir(), "missing.pbtxt"))
+	ctrl.RetryCoordinator().SetConversationsScanner(func(context.Context) ([]string, error) { return nil, nil })
+	ctrl.SetEnabled(true)
+
+	// Consume status channel
+	statusReceived := make(chan StatusEvent, 10)
+	go func() {
+		for ev := range ctrl.StatusChannel() {
+			statusReceived <- ev
+		}
+	}()
+
+	_, err = ctrl.TriggerSwitch(context.Background(), "test all preflight fail")
+	if !errors.Is(err, ErrNoCandidates) {
+		t.Fatalf("expected ErrNoCandidates, got %v", err)
+	}
+
+	// 1. Controller enabled state must be false
+	if ctrl.IsEnabled() {
+		t.Errorf("expected controller.IsEnabled() == false after Safety Stop from preflight fail")
+	}
+
+	// 2. StatusNoCandidate event emitted with exact message "Không có tài khoản để chuyển."
+	var foundNoCandidateEvt *StatusEvent
+	timeout := time.After(500 * time.Millisecond)
+	for foundNoCandidateEvt == nil {
+		select {
+		case ev := <-statusReceived:
+			if ev.Code == StatusNoCandidate {
+				foundNoCandidateEvt = &ev
+			}
+		case <-timeout:
+			break
+		}
+	}
+
+	if foundNoCandidateEvt == nil {
+		t.Fatalf("expected StatusNoCandidate event to be emitted")
+	}
+	if foundNoCandidateEvt.Message != "Không có tài khoản để chuyển." {
+		t.Errorf("expected message 'Không có tài khoản để chuyển.', got '%s'", foundNoCandidateEvt.Message)
+	}
 }
 
 func TestAutomationController_NonBlockingStatusChannel(t *testing.T) {

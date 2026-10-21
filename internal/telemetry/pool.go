@@ -31,6 +31,7 @@ var (
 type AccountTokenInfo struct {
 	Email        string
 	RefreshToken string
+	Status       string
 }
 
 // AccountSource defines the interface for retrieving accounts and credentials.
@@ -70,12 +71,25 @@ func (s *StoreAccountSource) ListAccounts() ([]AccountTokenInfo, error) {
 		if err == nil && token != nil {
 			rt = token.RefreshToken
 		}
+		st := "on"
+		if status, err := s.store.GetAccountStatus(clean); err == nil && status != "" {
+			st = status
+		}
 		results = append(results, AccountTokenInfo{
 			Email:        clean,
 			RefreshToken: rt,
+			Status:       st,
 		})
 	}
 	return results, nil
+}
+
+// GetAccountStatus retrieves the status ("on" or "off") for a specific email.
+func (s *StoreAccountSource) GetAccountStatus(email string) (string, error) {
+	if s.store == nil {
+		return "on", errors.New("account store is nil")
+	}
+	return s.store.GetAccountStatus(email)
 }
 
 // GetRefreshToken retrieves the refresh token for a specific email.
@@ -296,6 +310,12 @@ func (p *TelemetryPool) PollAccount(ctx context.Context, email string) (*Account
 		return nil, errors.New("account email cannot be empty")
 	}
 
+	if statusSource, ok := p.source.(interface{ GetAccountStatus(string) (string, error) }); ok {
+		if st, err := statusSource.GetAccountStatus(cleanEmail); err == nil && strings.EqualFold(st, "off") {
+			return nil, fmt.Errorf("account %s is disabled (status: off)", cleanEmail)
+		}
+	}
+
 	pollCtx := ctx
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
@@ -349,12 +369,32 @@ func (p *TelemetryPool) PollAll(ctx context.Context) ([]*AccountQuotaData, int, 
 		return []*AccountQuotaData{}, 0, 0, nil
 	}
 
-	results := make([]*AccountQuotaData, len(accounts))
+	statusSource, hasStatusSource := p.source.(interface{ GetAccountStatus(string) (string, error) })
+
+	var eligibleAccounts []AccountTokenInfo
+	for _, acc := range accounts {
+		st := acc.Status
+		if st == "" && hasStatusSource {
+			if s, err := statusSource.GetAccountStatus(acc.Email); err == nil && s != "" {
+				st = s
+			}
+		}
+		if strings.EqualFold(st, "off") {
+			continue // Bỏ qua tài khoản có trạng thái "off"
+		}
+		eligibleAccounts = append(eligibleAccounts, acc)
+	}
+
+	if len(eligibleAccounts) == 0 {
+		return []*AccountQuotaData{}, 0, 0, nil
+	}
+
+	results := make([]*AccountQuotaData, len(eligibleAccounts))
 	var wg sync.WaitGroup
 	var successCount atomic.Int32
 	var errorCount atomic.Int32
 
-	for i, acc := range accounts {
+	for i, acc := range eligibleAccounts {
 		wg.Add(1)
 		go func(idx int, info AccountTokenInfo) {
 			defer wg.Done()

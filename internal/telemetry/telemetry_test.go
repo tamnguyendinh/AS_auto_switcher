@@ -1170,3 +1170,101 @@ func TestHybridTelemetry_ActiveAccountConnectRPC(t *testing.T) {
 		t.Errorf("Google Cloud Code API should NOT be called for active account when Connect-RPC succeeds")
 	}
 }
+
+
+func TestTelemetryPool_PollAll_SkipsOffAccounts(t *testing.T) {
+	tempDir := t.TempDir()
+	cache := NewQuotaCache(filepath.Join(tempDir, "quota_cache.json"))
+
+	accounts := []AccountTokenInfo{
+		{Email: "on@gmail.com", RefreshToken: "tok_on", Status: "on"},
+		{Email: "off@gmail.com", RefreshToken: "tok_off", Status: "off"},
+		{Email: "default_on@gmail.com", RefreshToken: "tok_def", Status: ""},
+	}
+	source := &mockAccountSource{accounts: accounts}
+	client := &mockQuotaClient{}
+
+	pool, err := NewTelemetryPoolWithSource(client, cache, source)
+	if err != nil {
+		t.Fatalf("failed to create pool: %v", err)
+	}
+
+	results, successCount, errorCount, err := pool.PollAll(context.Background())
+	if err != nil {
+		t.Fatalf("PollAll failed: %v", err)
+	}
+
+	// off@gmail.com must be skipped completely:
+	// Only on@gmail.com and default_on@gmail.com should be polled
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results (skipping off account), got %d", len(results))
+	}
+	if successCount != 2 || errorCount != 0 {
+		t.Errorf("expected 2 success, 0 error, got success=%d error=%d", successCount, errorCount)
+	}
+	if client.callCount.Load() != 2 {
+		t.Errorf("expected exactly 2 API calls to Google, got %d", client.callCount.Load())
+	}
+
+	// Verify off@gmail.com is NOT in cache
+	if _, found := cache.Get("off@gmail.com"); found {
+		t.Errorf("expected off@gmail.com NOT to be in cache")
+	}
+}
+
+func TestTelemetryPool_WithStore_SkipsOffAccounts(t *testing.T) {
+	tempDir := t.TempDir()
+	storeDir := filepath.Join(tempDir, "accounts_store")
+	accStore, err := store.NewAccountStore(storeDir)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	// Create 2 accounts: on and off
+	_ = accStore.SaveAccount("active@gmail.com", &model.TokenData{
+		AccessToken:  "access-active",
+		RefreshToken: "refresh-active",
+		IDToken:      "id-active",
+	})
+	_ = accStore.SaveAccount("disabled@gmail.com", &model.TokenData{
+		AccessToken:  "access-disabled",
+		RefreshToken: "refresh-disabled",
+		IDToken:      "id-disabled",
+	})
+	if err := accStore.SetAccountStatus("disabled@gmail.com", "off"); err != nil {
+		t.Fatalf("failed to set status off: %v", err)
+	}
+
+	cache := NewQuotaCache(filepath.Join(tempDir, "quota_cache.json"))
+	client := &mockQuotaClient{}
+
+	pool, err := NewTelemetryPool(client, cache, accStore)
+	if err != nil {
+		t.Fatalf("failed to create pool: %v", err)
+	}
+
+	results, successCount, errorCount, err := pool.PollAll(context.Background())
+	if err != nil {
+		t.Fatalf("PollAll failed: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (disabled account skipped), got %d", len(results))
+	}
+	if successCount != 1 || errorCount != 0 {
+		t.Errorf("expected 1 success, 0 error, got success=%d error=%d", successCount, errorCount)
+	}
+	if client.callCount.Load() != 1 {
+		t.Errorf("expected 1 call to Google API, got %d", client.callCount.Load())
+	}
+
+	// PollAccount on disabled account directly should be rejected without sending request
+	client.callCount.Store(0)
+	_, pollErr := pool.PollAccount(context.Background(), "disabled@gmail.com")
+	if pollErr == nil {
+		t.Errorf("expected PollAccount on disabled account to fail")
+	}
+	if client.callCount.Load() != 0 {
+		t.Errorf("expected 0 calls to Google API for disabled account, got %d", client.callCount.Load())
+	}
+}

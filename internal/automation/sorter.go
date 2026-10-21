@@ -12,6 +12,7 @@ import (
 type CandidateAccount struct {
 	Email        string                      `json:"email"`
 	Index        int                         `json:"index"` // Original store order
+	Status       string                      `json:"status"` // "on" hoặc "off"
 	TokenValid   bool                        `json:"token_valid"`
 	RefreshToken string                      `json:"-"`
 	HasFreshPoll bool                        `json:"has_fresh_poll"`
@@ -22,13 +23,13 @@ type CandidateAccount struct {
 // CandidateExclusion records why an account was disqualified during pre-filtering.
 type CandidateExclusion struct {
 	Email     string `json:"email"`
-	Criterion int    `json:"criterion"` // 1 to 5
+	Criterion int    `json:"criterion"` // 1 to 6
 	Reason    string `json:"reason"`
 }
 
-// FilterEligibleCandidates applies the 5 pre-filtering criteria to exclude unqualified candidates.
+// FilterEligibleCandidates applies the pre-filtering criteria to exclude unqualified candidates.
 //
-// 5 Pre-filtering criteria:
+// 6 Pre-filtering criteria:
 // 1. Must be different from active account currently in use.
 // 2. Token in accounts_store/ must be valid (can be loaded into WinCred with alive refresh token).
 // 3. Not marked as failed in the current execution round.
@@ -36,6 +37,7 @@ type CandidateExclusion struct {
 //    - For accounts with 5h: 5h > 2% AND weekly > 0%
 //    - For accounts with only weekly: weekly > 0%
 // 5. Quota data must be reliable (not UNKNOWN_UNCERTAIN or error).
+// 6. Account must be enabled (Status != "off").
 func FilterEligibleCandidates(candidates []CandidateAccount, activeEmail string, failedEmails map[string]bool) (eligible []CandidateAccount, exclusions []CandidateExclusion) {
 	for _, cand := range candidates {
 		// Criterion 1: Must not be the active account
@@ -44,6 +46,16 @@ func FilterEligibleCandidates(candidates []CandidateAccount, activeEmail string,
 				Email:     cand.Email,
 				Criterion: 1,
 				Reason:    "active account currently in use",
+			})
+			continue
+		}
+
+		// Criterion 6: Bỏ qua tài khoản đang ở chế độ OFF
+		if strings.EqualFold(cand.Status, "off") {
+			exclusions = append(exclusions, CandidateExclusion{
+				Email:     cand.Email,
+				Criterion: 6,
+				Reason:    "tài khoản đang ở chế độ vô hiệu hóa (OFF)",
 			})
 			continue
 		}
@@ -168,6 +180,7 @@ func BuildCandidateAccount(email string, index int, tokenValid bool, refreshToke
 	return CandidateAccount{
 		Email:        email,
 		Index:        index,
+		Status:       "on",
 		TokenValid:   tokenValid,
 		RefreshToken: refreshToken,
 		Evaluation:   eval,

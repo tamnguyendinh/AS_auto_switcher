@@ -51,8 +51,12 @@ func TestCandidatePreflightFailureExpiresWithOperation(t *testing.T) {
 	if !errors.Is(err, ErrNoCandidates) {
 		t.Fatalf("expected preflight rejection: %v", err)
 	}
+	if h.Controller.IsEnabled() {
+		t.Fatalf("expected controller to auto-stop when all candidates fail preflight")
+	}
 	h.Telemetry.SetAccountQuota("refresh-next@example.com", 0.9, 0.6, false, 0.9, 0.6, false)
 	_, _ = h.Pool.PollAccount(ctx, "next@example.com")
+	h.Controller.SetEnabled(true)
 	res, err := h.Controller.TriggerSwitch(ctx, "new telemetry round")
 	if err != nil || res == nil || !res.Success {
 		t.Fatalf("temporary failure permanently excluded candidate: %v", err)
