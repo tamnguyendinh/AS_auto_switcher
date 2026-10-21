@@ -51,6 +51,7 @@ type switchTextButton struct {
 	OnTapped func()
 	hovered  bool
 	palette  ThemePalette
+	disabled bool
 
 	bg   *canvas.Rectangle
 	text *canvas.Text
@@ -79,12 +80,44 @@ func newSwitchTextButton(onTapped func(), palette ThemePalette) *switchTextButto
 	return b
 }
 
+func newDisabledSwitchTextButton(palette ThemePalette) *switchTextButton {
+	b := &switchTextButton{
+		Text:     "[Chuyển]",
+		palette:  palette,
+		disabled: true,
+	}
+	b.bg = canvas.NewRectangle(color.Transparent)
+	b.bg.CornerRadius = 3
+	b.text = canvas.NewText("[Chuyển]", palette.TextMuted)
+	b.text.TextSize = 10
+	b.text.TextStyle = fyne.TextStyle{Bold: true}
+	b.text.Alignment = fyne.TextAlignCenter
+	b.ExtendBaseWidget(b)
+	return b
+}
+
 func (b *switchTextButton) CreateRenderer() fyne.WidgetRenderer {
 	c := container.NewStack(b.bg, container.NewPadded(b.text))
 	return widget.NewSimpleRenderer(c)
 }
 
 func (b *switchTextButton) Refresh() {
+	if b.disabled {
+		if b.text != nil {
+			if b.Text != "" {
+				b.text.Text = b.Text
+			}
+			b.text.Color = b.palette.TextMuted
+			b.text.Refresh()
+		}
+		if b.bg != nil {
+			b.bg.FillColor = color.Transparent
+			b.bg.Refresh()
+		}
+		b.BaseWidget.Refresh()
+		return
+	}
+
 	if b.text != nil {
 		if b.Text != "" {
 			b.text.Text = b.Text
@@ -113,17 +146,26 @@ func (b *switchTextButton) Refresh() {
 }
 
 func (b *switchTextButton) Tapped(*fyne.PointEvent) {
+	if b.disabled {
+		return
+	}
 	if b.OnTapped != nil {
 		b.OnTapped()
 	}
 }
 
 func (b *switchTextButton) MouseIn(*desktop.MouseEvent) {
+	if b.disabled {
+		return
+	}
 	b.hovered = true
 	b.Refresh()
 }
 
 func (b *switchTextButton) MouseOut() {
+	if b.disabled {
+		return
+	}
 	b.hovered = false
 	b.Refresh()
 }
@@ -131,7 +173,148 @@ func (b *switchTextButton) MouseOut() {
 func (b *switchTextButton) MouseMoved(*desktop.MouseEvent) {}
 
 func (b *switchTextButton) Cursor() desktop.Cursor {
+	if b.disabled {
+		return desktop.DefaultCursor
+	}
 	return desktop.PointerCursor
+}
+
+func (b *switchTextButton) IsDisabled() bool {
+	return b.disabled
+}
+
+// statusTextButton represents a flat text toggle button [ON] / [OFF].
+type statusTextButton struct {
+	widget.BaseWidget
+	Status   string // "on" hoặc "off"
+	OnTapped func()
+	hovered  bool
+	palette  ThemePalette
+
+	bg   *canvas.Rectangle
+	text *canvas.Text
+}
+
+var (
+	_ fyne.Widget        = (*statusTextButton)(nil)
+	_ fyne.Tappable      = (*statusTextButton)(nil)
+	_ desktop.Hoverable  = (*statusTextButton)(nil)
+	_ desktop.Cursorable = (*statusTextButton)(nil)
+)
+
+func newStatusTextButton(status string, onTapped func(), palette ThemePalette) *statusTextButton {
+	norm := strings.ToLower(strings.TrimSpace(status))
+	if norm != "off" {
+		norm = "on"
+	}
+	b := &statusTextButton{
+		Status:   norm,
+		OnTapped: onTapped,
+		palette:  palette,
+	}
+	b.bg = canvas.NewRectangle(color.Transparent)
+	b.bg.CornerRadius = 3
+
+	label := "[ON]"
+	txtColor := palette.Success
+	if norm == "off" {
+		label = "[OFF]"
+		txtColor = palette.TextMuted
+	}
+
+	b.text = canvas.NewText(label, txtColor)
+	b.text.TextSize = 10
+	b.text.TextStyle = fyne.TextStyle{Bold: true}
+	b.text.Alignment = fyne.TextAlignCenter
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+func (b *statusTextButton) CreateRenderer() fyne.WidgetRenderer {
+	c := container.NewStack(b.bg, container.NewPadded(b.text))
+	return widget.NewSimpleRenderer(c)
+}
+
+func (b *statusTextButton) Refresh() {
+	norm := strings.ToLower(strings.TrimSpace(b.Status))
+	if norm != "off" {
+		norm = "on"
+	}
+	b.Status = norm
+
+	txtColor := b.palette.Success
+	label := "[ON]"
+	if norm == "off" {
+		txtColor = b.palette.TextMuted
+		label = "[OFF]"
+	}
+
+	if b.text != nil {
+		b.text.Text = label
+		if b.hovered {
+			b.text.Color = lightenColor(txtColor, 35)
+		} else {
+			b.text.Color = txtColor
+		}
+		b.text.Refresh()
+	}
+	if b.bg != nil {
+		if b.hovered {
+			b.bg.FillColor = color.NRGBA{
+				R: txtColor.R,
+				G: txtColor.G,
+				B: txtColor.B,
+				A: 0x24,
+			}
+		} else {
+			b.bg.FillColor = color.Transparent
+		}
+		b.bg.Refresh()
+	}
+	b.BaseWidget.Refresh()
+}
+
+func (b *statusTextButton) SetStatus(status string) {
+	norm := strings.ToLower(strings.TrimSpace(status))
+	if norm != "off" {
+		norm = "on"
+	}
+	b.Status = norm
+	b.Refresh()
+}
+
+func (b *statusTextButton) SetPalette(palette ThemePalette) {
+	b.palette = palette
+	b.Refresh()
+}
+
+func (b *statusTextButton) Tapped(*fyne.PointEvent) {
+	if b.OnTapped != nil {
+		b.OnTapped()
+	}
+}
+
+func (b *statusTextButton) MouseIn(*desktop.MouseEvent) {
+	b.hovered = true
+	b.Refresh()
+}
+
+func (b *statusTextButton) MouseOut() {
+	b.hovered = false
+	b.Refresh()
+}
+
+func (b *statusTextButton) MouseMoved(*desktop.MouseEvent) {}
+
+func (b *statusTextButton) Cursor() desktop.Cursor {
+	return desktop.PointerCursor
+}
+
+func (b *statusTextButton) LabelText() string {
+	if b == nil || b.text == nil {
+		return ""
+	}
+	return b.text.Text
 }
 
 func lightenColor(c color.NRGBA, delta int) color.NRGBA {
@@ -232,16 +415,19 @@ func (l *emailLabelWithTooltip) MouseOut() {
 
 // AccountCardWidget represents an account card with direct references to child widgets for in-place reactive updates.
 type AccountCardWidget struct {
-	Email         string
-	IsActive      bool
-	HasToken      bool
-	Root          *fyne.Container
-	cardBg        *canvas.Rectangle
-	emailLabel    *emailLabelWithTooltip
-	actionCluster fyne.CanvasObject
-	actionSlot    *fyne.Container
-	refreshButton *widget.Button
-	onSwitch      func(string)
+	Email          string
+	Status         string
+	IsActive       bool
+	HasToken       bool
+	Root           *fyne.Container
+	cardBg         *canvas.Rectangle
+	emailLabel     *emailLabelWithTooltip
+	actionCluster  fyne.CanvasObject
+	actionSlot     *fyne.Container
+	refreshButton  *widget.Button
+	statusButton   *statusTextButton
+	onSwitch       func(string)
+	onToggleStatus func(string)
 
 	gemini5hPct    *canvas.Text
 	gemini5hBar    *canvas.Rectangle
@@ -260,6 +446,30 @@ type AccountCardWidget struct {
 	geminiWeekCell *matrixQuotaCell
 	claude5hCell   *matrixQuotaCell
 	claudeWeekCell *matrixQuotaCell
+}
+
+// StatusButton returns the status toggle button canvas object.
+func (w *AccountCardWidget) StatusButton() fyne.CanvasObject {
+	if w == nil {
+		return nil
+	}
+	return w.statusButton
+}
+
+// ActionButton returns the current canvas object inside actionSlot.
+func (w *AccountCardWidget) ActionButton() fyne.CanvasObject {
+	if w == nil || w.actionSlot == nil || len(w.actionSlot.Objects) == 0 {
+		return nil
+	}
+	return w.actionSlot.Objects[0]
+}
+
+// RefreshButton returns the single-card refresh button.
+func (w *AccountCardWidget) RefreshButton() *widget.Button {
+	if w == nil {
+		return nil
+	}
+	return w.refreshButton
 }
 
 // CanvasObject returns the root CanvasObject for this account card widget.
@@ -341,10 +551,28 @@ func (w *AccountCardWidget) UpdateState(item manager.AccountDisplayItem, palette
 	if w == nil || w.actionSlot == nil {
 		return
 	}
-	if w.IsActive == item.IsActive && w.HasToken == item.HasToken && len(w.actionSlot.Objects) > 0 {
+	normStatus := strings.ToLower(strings.TrimSpace(item.Status))
+	if normStatus != "off" {
+		normStatus = "on"
+	}
+	if w.IsActive == item.IsActive && w.HasToken == item.HasToken && w.Status == normStatus && len(w.actionSlot.Objects) > 0 {
 		return
 	}
-	w.IsActive, w.HasToken = item.IsActive, item.HasToken
+	w.IsActive, w.HasToken, w.Status = item.IsActive, item.HasToken, normStatus
+
+	// Update statusButton visibility and state
+	if w.statusButton != nil {
+		if !w.HasToken && !w.IsActive {
+			// Thẻ [Cần OAuth]: Tuyệt đối không hiển thị nút [ON/OFF]
+			w.statusButton.Hide()
+		} else {
+			// Thẻ có token hoặc đang active: hiển thị [ON] hoặc [OFF] tương ứng
+			w.statusButton.SetPalette(palette)
+			w.statusButton.SetStatus(w.Status)
+			w.statusButton.Show()
+		}
+	}
+
 	var action fyne.CanvasObject
 	if w.IsActive || !w.HasToken {
 		text, tint := "[Cần OAuth]", palette.Warning
@@ -357,26 +585,41 @@ func (w *AccountCardWidget) UpdateState(item manager.AccountDisplayItem, palette
 		badge.Alignment = fyne.TextAlignTrailing
 		action = container.NewCenter(badge)
 	} else {
-		action = newSwitchTextButton(func() {
-			if w.HasToken && !w.IsActive && w.onSwitch != nil {
-				w.onSwitch(w.Email)
-			}
-		}, palette)
+		if w.Status == "off" {
+			// Khi w.Status == "off": Nút [Chuyển] bị làm mờ (màu chữ palette.TextMuted, desktop.DefaultCursor, click no-op)
+			action = newDisabledSwitchTextButton(palette)
+		} else {
+			// Khi w.Status == "on": Nút [Chuyển] hoạt động bình thường
+			action = newSwitchTextButton(func() {
+				if w.HasToken && !w.IsActive && w.Status != "off" && w.onSwitch != nil {
+					w.onSwitch(w.Email)
+				}
+			}, palette)
+		}
 	}
 	w.actionSlot.Objects = []fyne.CanvasObject{action}
 	w.actionSlot.Refresh()
-	if w.IsActive || w.HasToken {
-		w.refreshButton.Enable()
-	} else {
-		w.refreshButton.Disable()
+
+	// Update refreshButton
+	if w.refreshButton != nil {
+		if (w.IsActive || w.HasToken) && w.Status != "off" {
+			w.refreshButton.Enable()
+		} else {
+			w.refreshButton.Disable()
+		}
 	}
-	w.emailLabel.TextStyle.Bold = w.IsActive
-	w.emailLabel.Refresh()
-	w.cardBg.FillColor, w.cardBg.StrokeColor, w.cardBg.StrokeWidth = palette.Card, palette.BorderSubtle, 1.8
-	if w.IsActive {
-		w.cardBg.FillColor, w.cardBg.StrokeColor, w.cardBg.StrokeWidth = palette.CardActive, palette.BorderActive, 2
+
+	if w.emailLabel != nil {
+		w.emailLabel.TextStyle.Bold = w.IsActive
+		w.emailLabel.Refresh()
 	}
-	w.cardBg.Refresh()
+	if w.cardBg != nil {
+		w.cardBg.FillColor, w.cardBg.StrokeColor, w.cardBg.StrokeWidth = palette.Card, palette.BorderSubtle, 1.8
+		if w.IsActive {
+			w.cardBg.FillColor, w.cardBg.StrokeColor, w.cardBg.StrokeWidth = palette.CardActive, palette.BorderActive, 2
+		}
+		w.cardBg.Refresh()
+	}
 }
 
 // NewAccountCardWidgetWithQuota creates a card with in-place state and quota updates.
@@ -386,17 +629,40 @@ func NewAccountCardWidgetWithQuota(
 	palette ThemePalette,
 	onSwitch func(email string),
 	onRefreshSingle func(email string),
+	onToggleStatus ...func(email string),
 ) *AccountCardWidget {
-	w := &AccountCardWidget{Email: item.Email, onSwitch: onSwitch}
+	var toggleFn func(email string)
+	if len(onToggleStatus) > 0 {
+		toggleFn = onToggleStatus[0]
+	}
+
+	st := strings.ToLower(strings.TrimSpace(item.Status))
+	if st != "off" {
+		st = "on"
+	}
+
+	w := &AccountCardWidget{
+		Email:          item.Email,
+		Status:         st,
+		onSwitch:       onSwitch,
+		onToggleStatus: toggleFn,
+	}
 	emailLabel := newEmailLabelWithTooltip(item.Email, item.IsActive)
 	refreshBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
-		if (w.IsActive || w.HasToken) && onRefreshSingle != nil {
+		if (w.IsActive || w.HasToken) && w.Status != "off" && onRefreshSingle != nil {
 			onRefreshSingle(w.Email)
 		}
 	})
 	refreshBtn.Importance = widget.LowImportance
+
+	statusBtn := newStatusTextButton(st, func() {
+		if w.onToggleStatus != nil {
+			w.onToggleStatus(w.Email)
+		}
+	}, palette)
+
 	actionSlot := container.NewStack()
-	actionCluster := container.NewHBox(actionSlot, compactButton(refreshBtn))
+	actionCluster := container.NewHBox(actionSlot, compactButton(refreshBtn), statusBtn)
 	topRow := container.NewBorder(nil, nil, nil, actionCluster, emailLabel)
 
 	dq := ExtractDualCycleQuota(quota)
@@ -407,7 +673,7 @@ func NewAccountCardWidgetWithQuota(
 	root := container.NewStack(cardBg, container.NewPadded(cardVBox))
 
 	w.Root, w.cardBg, w.emailLabel = root, cardBg, emailLabel
-	w.actionCluster, w.actionSlot, w.refreshButton = actionCluster, actionSlot, refreshBtn
+	w.actionCluster, w.actionSlot, w.refreshButton, w.statusButton = actionCluster, actionSlot, refreshBtn, statusBtn
 	w.gemini5hCell, w.geminiWeekCell = cGemini5h, cGeminiWeek
 	w.claude5hCell, w.claudeWeekCell = cClaude5h, cClaudeWeek
 	w.gemini5hPct, w.gemini5hBar, w.gemini5hTime = cGemini5h.pctText, cGemini5h.fillBar, cGemini5h.timeText
@@ -426,6 +692,7 @@ func NewAccountCardWithQuota(
 	palette ThemePalette,
 	onSwitch func(email string),
 	onRefreshSingle func(email string),
+	onToggleStatus ...func(email string),
 ) fyne.CanvasObject {
-	return NewAccountCardWidgetWithQuota(item, quota, palette, onSwitch, onRefreshSingle).Root
+	return NewAccountCardWidgetWithQuota(item, quota, palette, onSwitch, onRefreshSingle, onToggleStatus...).Root
 }

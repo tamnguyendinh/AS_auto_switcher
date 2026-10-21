@@ -35,6 +35,7 @@ type AccountDisplayItem struct {
 	AvatarURL    string             `json:"avatar_url,omitempty"`
 	ProfileDir   string             `json:"profile_dir,omitempty"`
 	State        model.AccountState `json:"state"`
+	Status       string             `json:"status,omitempty"`
 	IsActive     bool               `json:"is_active"`
 	HasToken     bool               `json:"has_token"`
 	DisplayBadge string             `json:"display_badge"`
