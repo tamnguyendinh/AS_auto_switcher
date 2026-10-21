@@ -27,9 +27,6 @@ func (a *App) setupTray() {
 		fyne.NewMenuItem("Làm mới Chrome", func() {
 			a.Refresh()
 		}),
-		fyne.NewMenuItem("Lưu phiên hiện tại", func() {
-			a.SaveSession()
-		}),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Thoát", func() {
 			a.app.Quit()

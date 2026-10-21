@@ -234,6 +234,8 @@ func (a *App) setupLayout() {
 
 	// Status Bar: transient feedback for loading/success/error
 	a.statusBar = widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
+	// Long capture/path errors must not increase the window's minimum width.
+	a.statusBar.Truncation = fyne.TextTruncateEllipsis
 	a.statusBar.Hide()
 
 	// Main Layout

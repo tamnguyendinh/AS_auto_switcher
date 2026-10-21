@@ -634,6 +634,10 @@ func (c *matrixQuotaCell) update(fraction float64, resetTime time.Time, hasData 
 		return
 	}
 	const barWidth = float32(MatrixMiniBarWidth) // Ray tiến trình CỐ ĐỊNH 40.0 px
+	c.layout.fraction = fraction
+	if !hasData {
+		c.layout.fraction = -1
+	}
 
 	if !hasData || fraction < 0 {
 		c.pctText.Text = "--%"
@@ -669,6 +673,12 @@ func (c *matrixQuotaCell) update(fraction float64, resetTime time.Time, hasData 
 	c.fillBar.Refresh()
 	c.pctText.Refresh()
 	// TUYỆT ĐỐI KHÔNG GỌI c.container.Refresh()
+}
+
+func (c *matrixQuotaCell) setUnavailable() {
+	c.update(-1, time.Time{}, false)
+	c.pctText.Text = "N/A"
+	c.pctText.Refresh()
 }
 
 // createMatrixQuotaCell creates a graphical mini progress bar (40px) and percentage text label.

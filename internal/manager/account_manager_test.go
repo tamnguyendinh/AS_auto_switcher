@@ -220,8 +220,8 @@ func TestGetAccountStates(t *testing.T) {
 	if !overview.Accounts[0].IsActive || overview.Accounts[0].Email != activeEmail {
 		t.Errorf("Expected first account to be active %s, got %+v", activeEmail, overview.Accounts[0])
 	}
-	if overview.Accounts[0].DisplayBadge != "[ĐANG DÙNG]" {
-		t.Errorf("Expected [ĐANG DÙNG] badge, got %s", overview.Accounts[0].DisplayBadge)
+	if overview.Accounts[0].DisplayBadge != "[✔ Dùng]" {
+		t.Errorf("Expected [✔ Dùng] badge, got %s", overview.Accounts[0].DisplayBadge)
 	}
 
 	// Ready account must be present
@@ -229,7 +229,7 @@ func TestGetAccountStates(t *testing.T) {
 	for _, acc := range overview.Accounts {
 		if acc.Email == readyEmail {
 			foundReady = true
-			if acc.State != model.StateReady || acc.DisplayBadge != "[⚡ Chuyển]" {
+			if acc.State != model.StateReady || acc.DisplayBadge != "[Chuyển]" {
 				t.Errorf("Ready account bad state/badge: %+v", acc)
 			}
 		}

@@ -16,8 +16,8 @@ Từ phiên bản **Version 1.0.1.8**, ứng dụng tích hợp toàn diện h�
 - **Thuật toán thông minh Burn-down Sorter:** Lọc qua 5 tiêu chí sơ loại nghiêm ngặt và sắp xếp ứng viên theo 4 tầng ưu tiên nhằm tối đa hóa việc tận dụng hạn mức trước chu kỳ gia hạn.
 - **Bảo vệ liên tiến trình Single-Flight Concurrency Gate:** Điều phối độc quyền qua Windows Named Mutex, triệt tiêu hoàn toàn xung đột dữ liệu và race condition giữa chuyển tự động và thao tác chuyển thủ công trên GUI.
 - **Tích hợp Fyne GUI & Trạng thái thời gian thực:** Công tắc gạt con nhộng **AutoSwitchToggle** tại Header Row 2 và thanh trạng thái thời gian thực (`IDLE`, `EVALUATING`, `RETRYING`, `SWITCHING`, `SWITCHED`, `NO_CANDIDATE`, `ERROR`).
-- **Danh sách tài khoản hợp nhất:** Đọc thông tin từ các profile Chrome và kho `accounts_store/`, gộp theo email. Tài khoản đã lưu vẫn xuất hiện ngay cả khi không còn được tìm thấy trên Chrome.
-- **Lưu phiên Antigravity:** Lấy token của phiên đang đăng nhập từ Windows Credential Manager. Phiên hiện tại được tự thu thập khi làm mới danh sách; cũng có thể lưu qua menu khay hệ thống.
+- **Danh sách tài khoản hợp nhất:** Gộp tài khoản Chrome, danh bạ `discovered_accounts/` và kho credential `accounts_store/` theo email. Danh bạ chỉ lưu email và thời điểm quét; tài khoản đã phát hiện hoặc đã lưu credential vẫn xuất hiện khi Chrome không còn tìm thấy chúng.
+- **Lưu phiên Antigravity:** Tự lấy credential từ Windows Credential Manager khi làm mới danh sách và trước khi chuyển tài khoản. Tray không còn thao tác “Lưu phiên hiện tại” riêng. Card hiển thị `[✔ Dùng]`, `[Chuyển]` hoặc `[Cần OAuth]`; tài khoản thiếu credential không có nút chuyển và hiện quota `N/A`.
 - **Chuyển tài khoản đã lưu:** Nạp token, làm mới OAuth khi token sắp hết hạn và có refresh token, đồng bộ thông tin đăng nhập, khởi động lại Language Server rồi xác nhận email đang chạy.
 - **Hỗ trợ tiếp tục công việc:** Ghi lại danh sách hội thoại có hoạt động trong 2 giờ gần nhất và gửi prompt tiếp tục sau khi xác nhận tài khoản mới.
 - **Dashboard quota:** Hiển thị phần trăm còn lại và thanh tiến trình cho **Gemini / Claude**, với hai chu kỳ **5h / Week** khi API có dữ liệu. Có nút làm mới từng tài khoản, làm mới toàn bộ và tự cập nhật mỗi **60 giây** khi GUI đang chạy.
@@ -120,7 +120,7 @@ Hoặc click đúp trực tiếp vào file `bin\antigravity-switch.exe` từ Win
 ### Lưu thêm tài khoản
 
 1. Đăng nhập tài khoản cần lưu trong **Antigravity IDE**. Chỉ đăng nhập trên Chrome chưa đủ để Switcher có token Antigravity.
-2. Trong Switcher, bấm **Danh sách tài khoản** để quét lại và tự lưu phiên hiện tại. Hoặc chọn **Lưu phiên hiện tại** trong menu khay hệ thống.
+2. Trong Switcher, bấm **Danh sách tài khoản** để quét lại và tự lưu phiên hiện tại. Bấm thêm khi đang quét sẽ được bỏ qua; bấm lại sau khi hoàn tất cập nhật cùng bản ghi, không tạo tài khoản trùng.
 3. Lặp lại với các tài khoản còn lại. Mỗi tài khoản được lưu thành một file JSON trong `accounts_store/`.
 4. Khi cần đổi tài khoản thủ công, bấm **Chuyển** trên thẻ tài khoản đã lưu.
 
@@ -143,7 +143,7 @@ Tài khoản đang dùng ưu tiên lấy quota qua Language Server; tài khoản
 
 ## Dữ liệu lưu trên máy
 
-Kho mặc định là `accounts_store/` của repo. Để dùng thư mục khác, tạo thư mục trước rồi đặt biến môi trường **`ANTIGRAVITY_STORE_DIR`** trước khi chạy ứng dụng.
+Trong repo, kho mặc định là `accounts_store/` ở gốc, nằm ngoài `bin/` để không bị clean build xóa. Bản portable tiếp tục dùng kho hiện có gần executable, hoặc tạo kho cạnh executable khi chưa có dữ liệu. Biến môi trường **`ANTIGRAVITY_STORE_DIR`** chọn một kho khác; thư mục được tạo nếu chưa có và lỗi sẽ được báo thay vì âm thầm chuyển sang kho khác. Danh bạ `discovered_accounts/` nằm cạnh kho credential đã chọn.
 
 | Đường dẫn trong kho | Nội dung |
 | --- | --- |

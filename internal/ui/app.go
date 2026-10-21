@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -588,6 +589,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 					if quotaData == nil {
 						quotaData = data
 					}
+					a.accountCards[targetIdx].UpdateState(targetItem, palette)
 					a.accountCards[targetIdx].UpdateQuota(quotaData, palette)
 				} else if targetIdx >= 0 && targetIdx < len(a.accountListContainer.Objects) {
 					var quotaData *telemetry.AccountQuotaData
@@ -602,7 +604,6 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 						quotaData,
 						palette,
 						a.SwitchAccount,
-						a.SaveSession,
 						a.RefreshSingleAccountQuota,
 					)
 					if a.maskAccounts {
@@ -657,7 +658,7 @@ func (a *App) Refresh() {
 
 		overview, err := a.mgr.GetAccountStates(ctx)
 		if err != nil {
-
+			fyne.Do(func() { a.showStatusBar("Không lấy được danh sách tài khoản: " + err.Error()) })
 			return
 		}
 
@@ -667,7 +668,16 @@ func (a *App) Refresh() {
 
 		fyne.Do(func() {
 			a.updateUI(overview)
-
+			if len(overview.Warnings) > 0 {
+				msg := strings.Join(overview.Warnings, "; ")
+				if a.IsMaskAccounts() {
+					msg = maskMessageEmails(msg)
+				}
+				a.showStatusBar("⚠️ " + msg)
+			} else {
+				a.showStatusBar("Đã cập nhật danh sách tài khoản")
+				a.autoHideStatusBar(3 * time.Second)
+			}
 		})
 	}()
 }
@@ -753,58 +763,6 @@ func (a *App) SwitchAccount(targetEmail string) {
 				}
 			}
 			a.showStatusBar(msg)
-			a.autoHideStatusBar(3 * time.Second)
-		})
-	}()
-}
-
-// SaveSession saves the currently active Chrome session to disk.
-func (a *App) SaveSession() {
-	a.mu.Lock()
-	if a.isBusy {
-		a.mu.Unlock()
-		return
-	}
-	a.isBusy = true
-	a.mu.Unlock()
-
-	fyne.Do(func() {
-		a.showStatusBar("⏳ Đang lưu phiên...")
-	})
-
-	go func() {
-		defer func() {
-			a.mu.Lock()
-			a.isBusy = false
-			a.mu.Unlock()
-		}()
-
-		if a.mgr == nil {
-			return
-		}
-
-		_, err := a.mgr.CaptureCurrentSession()
-		if err != nil {
-			fyne.Do(func() {
-				if a.win != nil {
-					dialog.ShowError(err, a.win)
-				}
-				a.clearStatusBar()
-			})
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-
-		overview, _ := a.mgr.GetAccountStates(ctx)
-		a.mu.Lock()
-		a.overview = overview
-		a.mu.Unlock()
-
-		fyne.Do(func() {
-			a.updateUI(overview)
-			a.showStatusBar("✅ Đã lưu phiên thành công")
 			a.autoHideStatusBar(3 * time.Second)
 		})
 	}()
@@ -975,7 +933,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 		if len(a.accountCards) == len(overview.Accounts) && len(overview.Accounts) > 0 {
 			canUpdateInPlace = true
 			for i, acc := range overview.Accounts {
-				if a.accountCards[i] == nil || a.accountCards[i].Email != acc.Email || a.accountCards[i].IsActive != acc.IsActive {
+				if a.accountCards[i] == nil || a.accountCards[i].Email != acc.Email {
 					canUpdateInPlace = false
 					break
 				}
@@ -989,6 +947,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 				if a.quotaCache != nil {
 					quotaData, _ = a.quotaCache.Get(acc.Email)
 				}
+				a.accountCards[i].UpdateState(acc, palette)
 				a.accountCards[i].UpdateQuota(quotaData, palette)
 			}
 		} else {
@@ -1003,7 +962,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 					if a.quotaCache != nil {
 						quotaData, _ = a.quotaCache.Get(acc.Email)
 					}
-					cardWidget := NewAccountCardWidgetWithQuota(acc, quotaData, palette, a.SwitchAccount, a.SaveSession, a.RefreshSingleAccountQuota)
+					cardWidget := NewAccountCardWidgetWithQuota(acc, quotaData, palette, a.SwitchAccount, a.RefreshSingleAccountQuota)
 					if a.maskAccounts {
 						cardWidget.SetMasked(true)
 					}

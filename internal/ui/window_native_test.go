@@ -108,7 +108,7 @@ func TestNativeWindowMaximizeRestoreAndGrid(t *testing.T) {
 		find(a.win.Content())
 		originalSize = a.win.Canvas().Size()
 		for i := 0; i < 12; i++ {
-			card := NewAccountCardWithQuota(manager.AccountDisplayItem{Email: fmt.Sprintf("account-%02d@example.invalid", i)}, nil, DarkPalette, nil, nil, nil)
+			card := NewAccountCardWithQuota(manager.AccountDisplayItem{Email: fmt.Sprintf("account-%02d@example.invalid", i)}, nil, DarkPalette, nil, nil)
 			a.accountListContainer.Add(card)
 		}
 	})

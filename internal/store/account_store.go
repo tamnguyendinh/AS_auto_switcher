@@ -43,6 +43,9 @@ func NewAccountStore(storeDir string) (*AccountStore, error) {
 	if storeDir == "" {
 		storeDir = GetDefaultStoreDir()
 	}
+	if storeDir == "" {
+		return nil, errors.New("cannot determine account store directory; set ANTIGRAVITY_STORE_DIR")
+	}
 
 	absDir, err := filepath.Abs(storeDir)
 	if err != nil {

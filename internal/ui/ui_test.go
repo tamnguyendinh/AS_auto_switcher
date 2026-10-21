@@ -299,44 +299,6 @@ func TestUpdateUI_Empty(t *testing.T) {
 	waitForIdle(app, 3*time.Second)
 }
 
-func TestNewAccountCard_Callbacks(t *testing.T) {
-	switched := false
-	saved := false
-
-	readyItem := manager.AccountDisplayItem{
-		Email:    "ready@example.com",
-		State:    model.StateReady,
-		IsActive: false,
-	}
-
-	card := NewAccountCardWithQuota(readyItem, nil, DarkPalette, func(email string) {
-		if email == "ready@example.com" {
-			switched = true
-		}
-	}, func() {
-		saved = true
-	}, nil)
-
-	if card == nil {
-		t.Fatalf("expected non-nil card")
-	}
-
-	unauthActiveItem := manager.AccountDisplayItem{
-		Email:    "active_unauth@example.com",
-		State:    model.StateUnauth,
-		IsActive: true,
-	}
-
-	card2 := NewAccountCardWithQuota(unauthActiveItem, nil, DarkPalette, func(email string) {}, func() {
-		saved = true
-	}, nil)
-	if card2 == nil {
-		t.Fatalf("expected non-nil card for active unauth")
-	}
-	_ = switched
-	_ = saved
-}
-
 func TestStatusDot(t *testing.T) {
 	dot := NewStatusDot(ColorGreen, 12)
 	if dot == nil {
@@ -394,9 +356,9 @@ func TestElevationTokensAndBorders(t *testing.T) {
 	readyItem := manager.AccountDisplayItem{
 		Email:    "ready@example.com",
 		State:    model.StateReady,
-		IsActive: false,
+		IsActive: false, HasToken: true,
 	}
-	readyCard := NewAccountCardWithQuota(readyItem, nil, DarkPalette, nil, nil, nil)
+	readyCard := NewAccountCardWithQuota(readyItem, nil, DarkPalette, nil, nil)
 	stack, ok := readyCard.(*fyne.Container)
 	if !ok || len(stack.Objects) == 0 {
 		t.Fatalf("expected stack container for readyCard")
@@ -415,9 +377,9 @@ func TestElevationTokensAndBorders(t *testing.T) {
 	activeItem := manager.AccountDisplayItem{
 		Email:    "active@example.com",
 		State:    model.StateReady,
-		IsActive: true,
+		IsActive: true, HasToken: true,
 	}
-	activeCard := NewAccountCardWithQuota(activeItem, nil, DarkPalette, nil, nil, nil)
+	activeCard := NewAccountCardWithQuota(activeItem, nil, DarkPalette, nil, nil)
 	activeStack, ok := activeCard.(*fyne.Container)
 	if !ok || len(activeStack.Objects) == 0 {
 		t.Fatalf("expected stack container for activeCard")
@@ -494,26 +456,6 @@ func TestSwitchAccount_WithContinuationSummary(t *testing.T) {
 
 	if app.overview.ActiveEmail != "target@gmail.com" {
 		t.Errorf("expected active email target@gmail.com, got: %s", app.overview.ActiveEmail)
-	}
-}
-
-func TestSaveSession_NoModalPopup(t *testing.T) {
-	mgr := createTestManager(t)
-	testApp := test.NewApp()
-	app := newIsolatedApp(testApp, mgr)
-	defer app.Close()
-	app.Init()
-
-	waitForIdle(app, 3*time.Second)
-
-	app.SaveSession()
-
-	waitForIdle(app, 3*time.Second)
-
-	// SaveSession executed without modal dialogs
-
-	if app.win.Canvas().Overlays().Top() != nil {
-		t.Errorf("expected zero modal dialogs on canvas, but found an active overlay")
 	}
 }
 
@@ -739,7 +681,7 @@ func TestAccountCardWithQuotaAndRefresh(t *testing.T) {
 	item := manager.AccountDisplayItem{
 		Email:    "test@example.com",
 		State:    model.StateReady,
-		IsActive: false,
+		IsActive: false, HasToken: true,
 	}
 
 	quota := &telemetry.AccountQuotaData{
@@ -753,7 +695,7 @@ func TestAccountCardWithQuotaAndRefresh(t *testing.T) {
 		quota,
 		DarkPalette,
 		func(email string) {},
-		func() {},
+
 		func(email string) {
 			singleRefreshed = email
 		},
@@ -904,11 +846,11 @@ func TestUITraceabilityChecklist(t *testing.T) {
 
 	// UI-TR-02: Row-Level Single Refresh Button
 	card := NewAccountCardWithQuota(
-		manager.AccountDisplayItem{Email: "acc@example.com", State: model.StateReady},
+		manager.AccountDisplayItem{Email: "acc@example.com", State: model.StateReady, HasToken: true},
 		nil,
 		DarkPalette,
 		nil,
-		nil,
+
 		func(email string) {},
 	)
 	if card == nil {
@@ -1148,12 +1090,12 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 	itemActive := manager.AccountDisplayItem{
 		Email:    "active_owner@gmail.com",
 		IsActive: true,
-		State:    model.StateReady,
+		State:    model.StateReady, HasToken: true,
 	}
 	itemInactive := manager.AccountDisplayItem{
 		Email:    "inactive_owner@gmail.com",
 		IsActive: false,
-		State:    model.StateReady,
+		State:    model.StateReady, HasToken: true,
 	}
 
 	quota := &telemetry.AccountQuotaData{
@@ -1178,7 +1120,7 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 
 	cardActive := NewAccountCardWithQuota(itemActive, quota, DarkPalette,
 		func(email string) { switchedEmail = email },
-		func() {},
+
 		func(email string) { singleRefreshedEmail = email },
 	)
 
@@ -1210,7 +1152,7 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 	hasActiveBadge := false
 	var walkObj func(fyne.CanvasObject)
 	walkObj = func(o fyne.CanvasObject) {
-		if lbl, ok := o.(*widget.Label); ok {
+		if lbl, ok := o.(*canvas.Text); ok {
 			if strings.Contains(lbl.Text, "[✔ Dùng]") {
 				hasActiveBadge = true
 			}
@@ -1239,7 +1181,7 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 	// Test inactive card has [Chuyển] button
 	cardInactive := NewAccountCardWithQuota(itemInactive, quota, DarkPalette,
 		func(email string) { switchedEmail = email },
-		func() {},
+
 		func(email string) { singleRefreshedEmail = email },
 	)
 	var switchBtn *switchTextButton
@@ -1302,10 +1244,10 @@ func TestOwnerRedesign_EmailTruncationAndTooltip(t *testing.T) {
 	item := manager.AccountDisplayItem{
 		Email:    email,
 		IsActive: false,
-		State:    model.StateReady,
+		State:    model.StateReady, HasToken: true,
 	}
 
-	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil, nil)
+	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil)
 	var emailLbl *emailLabelWithTooltip
 	var findEmailLbl func(fyne.CanvasObject)
 	findEmailLbl = func(o fyne.CanvasObject) {
@@ -1348,7 +1290,7 @@ func TestOwnerRedesign_ThreeColumnGrid(t *testing.T) {
 		accounts[i] = manager.AccountDisplayItem{
 			Email:    fmt.Sprintf("account%d@gmail.com", i+1),
 			IsActive: i == 0,
-			State:    model.StateReady,
+			State:    model.StateReady, HasToken: true,
 		}
 	}
 
@@ -1386,11 +1328,11 @@ func TestOwnerRedesign_NoGPTInCardsOrSummary(t *testing.T) {
 	}
 
 	card := NewAccountCardWithQuota(
-		manager.AccountDisplayItem{Email: "user@example.com", State: model.StateReady},
+		manager.AccountDisplayItem{Email: "user@example.com", State: model.StateReady, HasToken: true},
 		quota,
 		DarkPalette,
 		nil,
-		nil,
+
 		nil,
 	)
 
@@ -1601,8 +1543,8 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	// Populate 6 cards
 	palette := DarkPalette
 	for i := 1; i <= 6; i++ {
-		item := manager.AccountDisplayItem{Email: fmt.Sprintf("user%d@example.com", i)}
-		card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
+		item := manager.AccountDisplayItem{Email: fmt.Sprintf("user%d@example.com", i), HasToken: true}
+		card := NewAccountCardWithQuota(item, nil, palette, nil, nil)
 		app.accountListContainer.Add(card)
 	}
 	minH := app.accountListContainer.MinSize().Height
@@ -1693,11 +1635,11 @@ func TestF1_ExtractDualCycleQuota_BothCyclesZero_NoRaw_NoReset(t *testing.T) {
 
 	// Verify card UI rendering
 	card := NewAccountCardWithQuota(
-		manager.AccountDisplayItem{Email: bothZeroQuota.Email},
+		manager.AccountDisplayItem{Email: bothZeroQuota.Email, HasToken: true},
 		bothZeroQuota,
 		LightPalette,
 		nil,
-		nil,
+
 		nil,
 	)
 	var cardTexts []string
@@ -1844,9 +1786,9 @@ func TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero(t *t
 	item := manager.AccountDisplayItem{
 		Email:    "both_pos_legacy_zero@example.com",
 		State:    model.StateReady,
-		IsActive: false,
+		IsActive: false, HasToken: true,
 	}
-	card := NewAccountCardWithQuota(item, bothPosLegacyBothZeroCycles, DarkPalette, nil, nil, nil)
+	card := NewAccountCardWithQuota(item, bothPosLegacyBothZeroCycles, DarkPalette, nil, nil)
 	texts := extractTexts(card)
 
 	claudeCount := 0
@@ -2365,9 +2307,9 @@ func TestPurgeAllResizing_AccountGridWrapFixedSize(t *testing.T) {
 	}
 
 	// Verify accountListContainer uses GridWrap layout with fixed 318x100 size
-	item := manager.AccountDisplayItem{Email: "user@example.com"}
+	item := manager.AccountDisplayItem{Email: "user@example.com", HasToken: true}
 	palette := DarkPalette
-	card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
+	card := NewAccountCardWithQuota(item, nil, palette, nil, nil)
 	app.accountListContainer.Add(card)
 	app.accountListContainer.Refresh()
 
@@ -2403,9 +2345,9 @@ func TestArchitectSpec_QuotaStackedLayoutCard280x130_FullConformance(t *testing.
 	}
 
 	// AC-3: Account card size in GridWrap is 280x130
-	item := manager.AccountDisplayItem{Email: "stacked@example.com"}
+	item := manager.AccountDisplayItem{Email: "stacked@example.com", HasToken: true}
 	palette := DarkPalette
-	card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
+	card := NewAccountCardWithQuota(item, nil, palette, nil, nil)
 	app.accountListContainer.Add(card)
 	app.accountListContainer.Refresh()
 
@@ -2632,8 +2574,8 @@ func TestArchitectSpec_CompactWindowWidth920px_FullConformance(t *testing.T) {
 	}
 	palette := DarkPalette
 	for i := 1; i <= 6; i++ {
-		item := manager.AccountDisplayItem{Email: fmt.Sprintf("test%d@example.com", i)}
-		card := NewAccountCardWithQuota(item, nil, palette, nil, nil, nil)
+		item := manager.AccountDisplayItem{Email: fmt.Sprintf("test%d@example.com", i), HasToken: true}
+		card := NewAccountCardWithQuota(item, nil, palette, nil, nil)
 		app.accountListContainer.Add(card)
 	}
 	app.accountListContainer.Refresh()
@@ -2715,11 +2657,11 @@ func TestArchitectSpec_CompactSwitchButtonHeight70Pct_FullConformance(t *testing
 	var refreshedEmail string
 	itemInactive := manager.AccountDisplayItem{
 		Email:    "inactive_test@example.com",
-		IsActive: false,
+		IsActive: false, HasToken: true,
 	}
 	cardInactive := NewAccountCardWithQuota(itemInactive, nil, DarkPalette,
 		func(email string) { switchedEmail = email },
-		nil,
+
 		func(email string) { refreshedEmail = email },
 	)
 
@@ -2745,11 +2687,11 @@ func TestArchitectSpec_CompactSwitchButtonHeight70Pct_FullConformance(t *testing
 	var activeRefreshedEmail string
 	itemActive := manager.AccountDisplayItem{
 		Email:    "active_test@example.com",
-		IsActive: true,
+		IsActive: true, HasToken: true,
 	}
 	cardActive := NewAccountCardWithQuota(itemActive, nil, DarkPalette,
 		nil,
-		nil,
+
 		func(email string) { activeRefreshedEmail = email },
 	)
 
@@ -2783,11 +2725,11 @@ func TestArchitectSpec_FlatTextSwitchButton_FullConformance(t *testing.T) {
 		var switchedEmail string
 		itemInactive := manager.AccountDisplayItem{
 			Email:    "flat_switch_test@example.com",
-			IsActive: false,
+			IsActive: false, HasToken: true,
 		}
 		card := NewAccountCardWithQuota(itemInactive, nil, palette,
 			func(email string) { switchedEmail = email },
-			nil,
+
 			nil,
 		)
 
@@ -3000,8 +2942,8 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 	if app.accountListContainer == nil {
 		t.Fatal("expected non-nil accountListContainer")
 	}
-	item := manager.AccountDisplayItem{Email: "user@example.com"}
-	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil, nil)
+	item := manager.AccountDisplayItem{Email: "user@example.com", HasToken: true}
+	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil)
 	cardMin := card.MinSize()
 	if cardMin.Width > 280.0 || cardMin.Height > 130.0 {
 		t.Errorf("AC-4 VIOLATION: expected card min size within 280x130, got %fx%f", cardMin.Width, cardMin.Height)
@@ -3039,8 +2981,8 @@ func TestSymmetricGridWrapLayout_ExactSymmetry(t *testing.T) {
 	cellSize := fyne.NewSize(280, 130)
 	objects := make([]fyne.CanvasObject, 6)
 	for i := 0; i < 6; i++ {
-		item := manager.AccountDisplayItem{Email: fmt.Sprintf("card%d@example.com", i+1)}
-		card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil, nil)
+		item := manager.AccountDisplayItem{Email: fmt.Sprintf("card%d@example.com", i+1), HasToken: true}
+		card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil)
 		objects[i] = card
 	}
 
@@ -3415,8 +3357,8 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
 		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 920 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
-	item := manager.AccountDisplayItem{Email: "compact_theme_test@example.com"}
-	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil, nil)
+	item := manager.AccountDisplayItem{Email: "compact_theme_test@example.com", HasToken: true}
+	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil)
 	cardMin := card.MinSize()
 	if cardMin.Width > 280.0 || cardMin.Height > 130.0 {
 		t.Errorf("AC-4 VIOLATION: expected card min size within 280x130, got %fx%f", cardMin.Width, cardMin.Height)
@@ -4279,4 +4221,3 @@ func TestArchitectSpec_MaskAccounts_NewCardInitialMask(t *testing.T) {
 	// Allow goroutines to settle
 	time.Sleep(150 * time.Millisecond)
 }
-

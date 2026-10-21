@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -41,10 +42,11 @@ type AccountDisplayItem struct {
 
 // AccountOverview encapsulates the current state of all accounts and language server status.
 type AccountOverview struct {
-	ActiveEmail           string               `json:"active_email"`
-	Accounts              []AccountDisplayItem `json:"accounts"`
-	LanguageServerRunning bool                 `json:"language_server_running"`
+	ActiveEmail           string                `json:"active_email"`
+	Accounts              []AccountDisplayItem  `json:"accounts"`
+	LanguageServerRunning bool                  `json:"language_server_running"`
 	ServerInfo            *connector.ServerInfo `json:"server_info,omitempty"`
+	Warnings              []string              `json:"warnings,omitempty"`
 }
 
 // SwitchResult contains the outcome and latency of an account hot-swap operation.
@@ -61,14 +63,15 @@ type SwitchResult struct {
 
 // AccountManager orchestrates AccountStore, WinCred, ChromeScanner, Connector, and Reloader.
 type AccountManager struct {
-	mu            sync.RWMutex
-	store         *store.AccountStore
-	reloader      *reloader.SessionReloader
-	chromeDir     string
-	clientFinder  func(ctx context.Context) (*connector.Client, error)
-	wincredReader func() (*model.TokenData, error)
-	wincredWriter func(token *model.TokenData) error
-	oauthRefresher connector.OAuthRefresher
+	mu              sync.RWMutex
+	store           *store.AccountStore
+	discoveredStore *store.DiscoveredStore
+	reloader        *reloader.SessionReloader
+	chromeDir       string
+	clientFinder    func(ctx context.Context) (*connector.Client, error)
+	wincredReader   func() (*model.TokenData, error)
+	wincredWriter   func(token *model.TokenData) error
+	oauthRefresher  connector.OAuthRefresher
 }
 
 // NewAccountManager creates a fully initialized AccountManager with default production dependencies.
@@ -83,14 +86,24 @@ func NewAccountManager(accStore *store.AccountStore, sessionReloader *reloader.S
 	if sessionReloader == nil {
 		sessionReloader = reloader.NewSessionReloader()
 	}
+	// The catalog shares the selected data location, never the launch CWD.
+	// A temporary catalog I/O failure must not prevent use of saved credentials.
+	discovered, err := store.NewDiscoveredStore(filepath.Join(filepath.Dir(accStore.GetStoreDir()), "discovered_accounts"))
+	if discovered == nil {
+		return nil, fmt.Errorf("failed resolving discovered store: %w", err)
+	}
+	if sessionReloader.OutputDir == "" {
+		sessionReloader.OutputDir = filepath.Join(accStore.GetStoreDir(), "active_threads_history")
+	}
 
 	mgr := &AccountManager{
-		store:         accStore,
-		reloader:      sessionReloader,
-		chromeDir:     scanner.GetDefaultChromeUserDataDir(),
-		wincredReader: wincred.ReadToken,
-		wincredWriter: wincred.WriteToken,
-		oauthRefresher: connector.NewGoogleOAuthRefresher(nil),
+		store:           accStore,
+		discoveredStore: discovered,
+		reloader:        sessionReloader,
+		chromeDir:       scanner.GetDefaultChromeUserDataDir(),
+		wincredReader:   wincred.ReadToken,
+		wincredWriter:   wincred.WriteToken,
+		oauthRefresher:  connector.NewGoogleOAuthRefresher(nil),
 		clientFinder: func(ctx context.Context) (*connector.Client, error) {
 			proc, err := connector.DiscoverLanguageServer()
 			if err != nil {
@@ -144,7 +157,6 @@ func (m *AccountManager) Store() *store.AccountStore {
 	defer m.mu.RUnlock()
 	return m.store
 }
-
 
 // ExtractEmailFromToken extracts the email address from a TokenData payload or its JWT id_token.
 func ExtractEmailFromToken(token *model.TokenData) string {
@@ -247,134 +259,125 @@ func (m *AccountManager) GetCurrentActiveEmail(ctx context.Context) (string, err
 	return "", nil
 }
 
-// GetAccountStates returns the comprehensive state of all accounts across Chrome and accounts_store/.
+// GetAccountStates merges live Chrome identities, remembered identities, and
+// credentials. Partial capture/catalog errors are returned as visible warnings.
 func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview, error) {
-	// Proactively capture active session into store if possible
-	_, _ = m.CaptureCurrentSession()
-
+	var warnings []string
+	if _, err := m.CaptureCurrentSession(); err != nil && !errors.Is(err, wincred.ErrNotFound) {
+		warnings = append(warnings, fmt.Sprintf("Không lưu được phiên hiện tại: %v", err))
+	}
 	activeEmail, _ := m.GetCurrentActiveEmail(ctx)
 
 	m.mu.RLock()
-	cDir := m.chromeDir
-	finder := m.clientFinder
+	cDir, finder, discovered := m.chromeDir, m.clientFinder, m.discoveredStore
 	m.mu.RUnlock()
 
-	// Discover Chrome accounts
-	chromeAccounts, _ := scanner.ScanChromeAccountDetails(cDir)
-
-	// Discover stored JSON accounts
-	storedEmails, _ := m.store.ListAccounts()
+	chromeAccounts, scanErr := scanner.ScanChromeAccountDetails(cDir)
+	if scanErr != nil {
+		warnings = append(warnings, fmt.Sprintf("Không quét được Chrome: %v", scanErr))
+	}
+	storedEmails, storeErr := m.store.ListAccounts()
+	if storeErr != nil {
+		warnings = append(warnings, fmt.Sprintf("Không đọc được kho tài khoản: %v", storeErr))
+	}
 	storedSet := make(map[string]bool)
 	for _, email := range storedEmails {
 		storedSet[strings.ToLower(strings.TrimSpace(email))] = true
 	}
 
-	// Deduplicate accounts
 	itemsMap := make(map[string]*AccountDisplayItem)
+	add := func(email string) *AccountDisplayItem {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email == "" {
+			return nil
+		}
+		if item := itemsMap[email]; item != nil {
+			return item
+		}
+		item := &AccountDisplayItem{Email: email}
+		itemsMap[email] = item
+		return item
+	}
 
-	// Add Chrome accounts
+	var catalogWriteErr error
 	for _, ca := range chromeAccounts {
-		norm := strings.ToLower(strings.TrimSpace(ca.Email))
-		if norm == "" {
+		item := add(ca.Email)
+		if item == nil {
 			continue
 		}
-
-		item := &AccountDisplayItem{
-			Email:      norm,
-			Name:       ca.Name,
-			AvatarURL:  ca.AvatarURL,
-			ProfileDir: ca.ProfileDir,
+		item.Name, item.AvatarURL, item.ProfileDir = ca.Name, ca.AvatarURL, ca.ProfileDir
+		if discovered != nil {
+			if err := discovered.SaveDiscovered(item.Email); err != nil && catalogWriteErr == nil {
+				catalogWriteErr = err
+			}
 		}
-
-		if activeEmail != "" && norm == activeEmail {
-			item.IsActive = true
-			item.State = model.StateActive
-			item.DisplayBadge = "[ĐANG DÙNG]"
-		} else if storedSet[norm] {
-			item.HasToken = true
-			item.State = model.StateReady
-			item.DisplayBadge = "[⚡ Chuyển]"
-		} else {
-			item.HasToken = false
-			item.State = model.StateUnauth
-			item.DisplayBadge = "[Chưa lưu]"
-		}
-
-		itemsMap[norm] = item
 	}
-
-	// Add stored accounts that may not be in Chrome profiles
+	if catalogWriteErr != nil {
+		warnings = append(warnings, fmt.Sprintf("Không lưu được danh bạ Chrome: %v", catalogWriteErr))
+	}
+	if discovered != nil {
+		emails, err := discovered.ListDiscovered()
+		for _, email := range emails {
+			add(email)
+		}
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("Không đọc đầy đủ danh bạ Chrome: %v", err))
+		}
+	}
 	for _, email := range storedEmails {
-		norm := strings.ToLower(strings.TrimSpace(email))
-		if norm == "" {
-			continue
-		}
-
-		if _, exists := itemsMap[norm]; !exists {
-			item := &AccountDisplayItem{
-				Email:    norm,
-				HasToken: true,
-			}
-			if activeEmail != "" && norm == activeEmail {
-				item.IsActive = true
-				item.State = model.StateActive
-				item.DisplayBadge = "[ĐANG DÙNG]"
-			} else {
-				item.State = model.StateReady
-				item.DisplayBadge = "[⚡ Chuyển]"
-			}
-			itemsMap[norm] = item
-		} else {
-			itemsMap[norm].HasToken = true
-		}
+		add(email)
 	}
+	// Live identity is still displayable when its credential cannot be saved.
+	add(activeEmail)
 
-	// Sort accounts: Active first, then Ready, then Unauth, then alphabetically by email
-	accountsList := make([]AccountDisplayItem, 0, len(itemsMap))
+	accounts := make([]AccountDisplayItem, 0, len(itemsMap))
 	for _, item := range itemsMap {
-		accountsList = append(accountsList, *item)
+		item.HasToken = storedSet[item.Email]
+		item.IsActive = activeEmail != "" && item.Email == activeEmail
+		switch {
+		case item.IsActive:
+			item.State, item.DisplayBadge = model.StateActive, "[✔ Dùng]"
+		case item.HasToken:
+			item.State, item.DisplayBadge = model.StateReady, "[Chuyển]"
+		default:
+			item.State, item.DisplayBadge = model.StateUnauth, "[Cần OAuth]"
+		}
+		accounts = append(accounts, *item)
 	}
-
-	sort.Slice(accountsList, func(i, j int) bool {
-		if accountsList[i].IsActive != accountsList[j].IsActive {
-			return accountsList[i].IsActive // Active first
+	sort.Slice(accounts, func(i, j int) bool {
+		if accounts[i].IsActive != accounts[j].IsActive {
+			return accounts[i].IsActive
 		}
-		if (accountsList[i].State == model.StateReady) != (accountsList[j].State == model.StateReady) {
-			return accountsList[i].State == model.StateReady // Ready second
+		if accounts[i].HasToken != accounts[j].HasToken {
+			return accounts[i].HasToken
 		}
-		return accountsList[i].Email < accountsList[j].Email
+		return accounts[i].Email < accounts[j].Email
 	})
 
-	overview := &AccountOverview{
-		ActiveEmail: activeEmail,
-		Accounts:    accountsList,
-	}
-
-	// Check Language Server status
+	overview := &AccountOverview{ActiveEmail: activeEmail, Accounts: accounts, Warnings: warnings}
 	if finder != nil {
 		if client, err := finder(ctx); err == nil && client != nil {
 			overview.LanguageServerRunning = true
 			overview.ServerInfo = client.ServerInfo()
 		}
 	}
-
 	return overview, nil
 }
 
 // SwitchAccount performs a closed-loop hot-swap:
-// 1. Probe live RAM -> verify if already active on targetEmail (no-op).
-// 2. Snapshot active threads BEFORE switch to preserve in-flight conversation state (P0-04).
-// 3. Auto-capture active session to ensure credentials are safe.
-// 4. Load target token from store.
-// 5. Parity with Python core/state_resolver.py:380-425:
-//    Default is False (smooth zero-chrome hot-swap without OAuth popups).
-//    NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true! (P0-02).
-// 6. Write target token from accounts_store/<email>.json to Windows Credential Manager.
-// 7. Pre-patch ToS in app_storage.json (jetski.onboarding.lastLoginIsGcpTos = "false").
-// 8. Ensure Antigravity window in foreground.
-// 9. Recycle language_server.exe via taskkill /F and wait for monitorLsCrashInternal to respawn (P0-03).
-// 10. Re-probe fresh Language Server instance and verify active identity via GetUserStatus.
-// 11. In-Flight Session Continuation (SmartFocus -> LoadTrajectory -> SendUserCascadeMessage) (P0-04).
+//  1. Probe live RAM -> verify if already active on targetEmail (no-op).
+//  2. Snapshot active threads BEFORE switch to preserve in-flight conversation state (P0-04).
+//  3. Auto-capture active session to ensure credentials are safe.
+//  4. Load target token from store.
+//  5. Parity with Python core/state_resolver.py:380-425:
+//     Default is False (smooth zero-chrome hot-swap without OAuth popups).
+//     NEVER call AuthLogout during hot-swap unless forceLogout is explicitly true! (P0-02).
+//  6. Write target token from accounts_store/<email>.json to Windows Credential Manager.
+//  7. Pre-patch ToS in app_storage.json (jetski.onboarding.lastLoginIsGcpTos = "false").
+//  8. Ensure Antigravity window in foreground.
+//  9. Recycle language_server.exe via taskkill /F and wait for monitorLsCrashInternal to respawn (P0-03).
+//  10. Re-probe fresh Language Server instance and verify active identity via GetUserStatus.
+//  11. In-Flight Session Continuation (SmartFocus -> LoadTrajectory -> SendUserCascadeMessage) (P0-04).
 func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, forceLogout ...bool) (*SwitchResult, error) {
 	start := time.Now()
 	normTarget := strings.ToLower(strings.TrimSpace(targetEmail))

@@ -234,22 +234,26 @@ func (l *emailLabelWithTooltip) MouseOut() {
 type AccountCardWidget struct {
 	Email         string
 	IsActive      bool
+	HasToken      bool
 	Root          *fyne.Container
 	cardBg        *canvas.Rectangle
 	emailLabel    *emailLabelWithTooltip
 	actionCluster fyne.CanvasObject
+	actionSlot    *fyne.Container
+	refreshButton *widget.Button
+	onSwitch      func(string)
 
-	gemini5hPct   *canvas.Text
-	gemini5hBar   *canvas.Rectangle
-	gemini5hTime  *canvas.Text
-	geminiWeekPct *canvas.Text
-	geminiWeekBar *canvas.Rectangle
+	gemini5hPct    *canvas.Text
+	gemini5hBar    *canvas.Rectangle
+	gemini5hTime   *canvas.Text
+	geminiWeekPct  *canvas.Text
+	geminiWeekBar  *canvas.Rectangle
 	geminiWeekTime *canvas.Text
-	claude5hPct   *canvas.Text
-	claude5hBar   *canvas.Rectangle
-	claude5hTime  *canvas.Text
-	claudeWeekPct *canvas.Text
-	claudeWeekBar *canvas.Rectangle
+	claude5hPct    *canvas.Text
+	claude5hBar    *canvas.Rectangle
+	claude5hTime   *canvas.Text
+	claudeWeekPct  *canvas.Text
+	claudeWeekBar  *canvas.Rectangle
 	claudeWeekTime *canvas.Text
 
 	gemini5hCell   *matrixQuotaCell
@@ -300,6 +304,14 @@ func (w *AccountCardWidget) UpdateQuota(quota *telemetry.AccountQuotaData, palet
 	if w == nil {
 		return
 	}
+	if !w.IsActive && !w.HasToken {
+		for _, cell := range []*matrixQuotaCell{w.gemini5hCell, w.geminiWeekCell, w.claude5hCell, w.claudeWeekCell} {
+			if cell != nil {
+				cell.setUnavailable()
+			}
+		}
+		return
+	}
 	dq := ExtractDualCycleQuota(quota)
 
 	hasGemini5h := !dq.IsError && dq.HasData && dq.Gemini5h >= 0
@@ -323,108 +335,97 @@ func (w *AccountCardWidget) UpdateQuota(quota *telemetry.AccountQuotaData, palet
 	}
 }
 
-// NewAccountCardWidgetWithQuota creates an AccountCardWidget with direct widget references for in-place reactive updates.
+// UpdateState updates the existing card's actions without replacing its quota
+// cells or email label (including the current privacy masking state).
+func (w *AccountCardWidget) UpdateState(item manager.AccountDisplayItem, palette ThemePalette) {
+	if w == nil || w.actionSlot == nil {
+		return
+	}
+	if w.IsActive == item.IsActive && w.HasToken == item.HasToken && len(w.actionSlot.Objects) > 0 {
+		return
+	}
+	w.IsActive, w.HasToken = item.IsActive, item.HasToken
+	var action fyne.CanvasObject
+	if w.IsActive || !w.HasToken {
+		text, tint := "[Cần OAuth]", palette.Warning
+		if w.IsActive {
+			text, tint = "[✔ Dùng]", palette.Primary
+		}
+		badge := canvas.NewText(text, tint)
+		badge.TextSize = BodyTextSize
+		badge.TextStyle = fyne.TextStyle{Bold: true}
+		badge.Alignment = fyne.TextAlignTrailing
+		action = container.NewCenter(badge)
+	} else {
+		action = newSwitchTextButton(func() {
+			if w.HasToken && !w.IsActive && w.onSwitch != nil {
+				w.onSwitch(w.Email)
+			}
+		}, palette)
+	}
+	w.actionSlot.Objects = []fyne.CanvasObject{action}
+	w.actionSlot.Refresh()
+	if w.IsActive || w.HasToken {
+		w.refreshButton.Enable()
+	} else {
+		w.refreshButton.Disable()
+	}
+	w.emailLabel.TextStyle.Bold = w.IsActive
+	w.emailLabel.Refresh()
+	w.cardBg.FillColor, w.cardBg.StrokeColor, w.cardBg.StrokeWidth = palette.Card, palette.BorderSubtle, 1.8
+	if w.IsActive {
+		w.cardBg.FillColor, w.cardBg.StrokeColor, w.cardBg.StrokeWidth = palette.CardActive, palette.BorderActive, 2
+	}
+	w.cardBg.Refresh()
+}
+
+// NewAccountCardWidgetWithQuota creates a card with in-place state and quota updates.
 func NewAccountCardWidgetWithQuota(
 	item manager.AccountDisplayItem,
 	quota *telemetry.AccountQuotaData,
 	palette ThemePalette,
 	onSwitch func(email string),
-	onSave func(),
 	onRefreshSingle func(email string),
 ) *AccountCardWidget {
-	// Line 1: Email label with anti-break truncation and hover tooltip
+	w := &AccountCardWidget{Email: item.Email, onSwitch: onSwitch}
 	emailLabel := newEmailLabelWithTooltip(item.Email, item.IsActive)
-
-	// Single Refresh Button [🔄]
 	refreshBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
-		if onRefreshSingle != nil {
-			onRefreshSingle(item.Email)
+		if (w.IsActive || w.HasToken) && onRefreshSingle != nil {
+			onRefreshSingle(w.Email)
 		}
 	})
 	refreshBtn.Importance = widget.LowImportance
-
-	// Right Action Cluster
-	compactRefresh := compactButton(refreshBtn)
-	var actionCluster fyne.CanvasObject
-	if item.IsActive {
-		activeBadge := widget.NewLabelWithStyle("[✔ Dùng]", fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
-		actionCluster = container.NewHBox(activeBadge, compactRefresh)
-	} else {
-		switchBtn := newSwitchTextButton(func() {
-			if onSwitch != nil {
-				onSwitch(item.Email)
-			}
-		}, palette)
-		actionCluster = container.NewHBox(switchBtn, compactRefresh)
-	}
-
+	actionSlot := container.NewStack()
+	actionCluster := container.NewHBox(actionSlot, compactButton(refreshBtn))
 	topRow := container.NewBorder(nil, nil, nil, actionCluster, emailLabel)
 
-	// Extract Dual Cycle Quota (Claude and Gemini only, no GPT)
 	dq := ExtractDualCycleQuota(quota)
-
-	// 3x3 Matrix Quota Table with direct cell references
 	matrixTable, cGemini5h, cGeminiWeek, cClaude5h, cClaudeWeek := createMatrixQuotaTableWithCells(dq, palette)
-
-	cardVBox := container.NewVBox(
-		topRow,
-		matrixTable,
-	)
-
-	// Card Background with Elevation & Micro-Border adapted to current theme palette
+	cardVBox := container.NewVBox(topRow, matrixTable)
 	cardBg := canvas.NewRectangle(palette.Card)
 	cardBg.CornerRadius = 8
-	if item.IsActive {
-		cardBg.FillColor = palette.CardActive
-		cardBg.StrokeColor = palette.BorderActive
-		cardBg.StrokeWidth = 2.0
-	} else {
-		cardBg.FillColor = palette.Card
-		cardBg.StrokeColor = palette.BorderSubtle
-		cardBg.StrokeWidth = 1.8
-	}
-
 	root := container.NewStack(cardBg, container.NewPadded(cardVBox))
 
-	return &AccountCardWidget{
-		Email:         item.Email,
-		IsActive:      item.IsActive,
-		Root:          root,
-		cardBg:        cardBg,
-		emailLabel:    emailLabel,
-		actionCluster: actionCluster,
-
-		gemini5hPct:   cGemini5h.pctText,
-		gemini5hBar:   cGemini5h.fillBar,
-		gemini5hTime:  cGemini5h.timeText,
-		geminiWeekPct: cGeminiWeek.pctText,
-		geminiWeekBar: cGeminiWeek.fillBar,
-		geminiWeekTime: cGeminiWeek.timeText,
-		claude5hPct:   cClaude5h.pctText,
-		claude5hBar:   cClaude5h.fillBar,
-		claude5hTime:  cClaude5h.timeText,
-		claudeWeekPct: cClaudeWeek.pctText,
-		claudeWeekBar: cClaudeWeek.fillBar,
-		claudeWeekTime: cClaudeWeek.timeText,
-
-		gemini5hCell:   cGemini5h,
-		geminiWeekCell: cGeminiWeek,
-		claude5hCell:   cClaude5h,
-		claudeWeekCell: cClaudeWeek,
-	}
+	w.Root, w.cardBg, w.emailLabel = root, cardBg, emailLabel
+	w.actionCluster, w.actionSlot, w.refreshButton = actionCluster, actionSlot, refreshBtn
+	w.gemini5hCell, w.geminiWeekCell = cGemini5h, cGeminiWeek
+	w.claude5hCell, w.claudeWeekCell = cClaude5h, cClaudeWeek
+	w.gemini5hPct, w.gemini5hBar, w.gemini5hTime = cGemini5h.pctText, cGemini5h.fillBar, cGemini5h.timeText
+	w.geminiWeekPct, w.geminiWeekBar, w.geminiWeekTime = cGeminiWeek.pctText, cGeminiWeek.fillBar, cGeminiWeek.timeText
+	w.claude5hPct, w.claude5hBar, w.claude5hTime = cClaude5h.pctText, cClaude5h.fillBar, cClaude5h.timeText
+	w.claudeWeekPct, w.claudeWeekBar, w.claudeWeekTime = cClaudeWeek.pctText, cClaudeWeek.fillBar, cClaudeWeek.timeText
+	w.UpdateState(item, palette)
+	w.UpdateQuota(quota, palette)
+	return w
 }
 
-// NewAccountCardWithQuota creates a standardized account card matching the Owner's specification:
-// Line 1: Email (with truncation/tooltip) + Action Cluster: [✔ Dùng]/[Chuyển] + [🔄]
-// Line 2: 3x3 Matrix Table: Quota | 5h | Week with 2-tier stacked layout (time countdown on top, minibar + % on bottom).
+// NewAccountCardWithQuota wraps the reactive card for callers needing only its root.
 func NewAccountCardWithQuota(
 	item manager.AccountDisplayItem,
 	quota *telemetry.AccountQuotaData,
 	palette ThemePalette,
 	onSwitch func(email string),
-	onSave func(),
 	onRefreshSingle func(email string),
 ) fyne.CanvasObject {
-	w := NewAccountCardWidgetWithQuota(item, quota, palette, onSwitch, onSave, onRefreshSingle)
-	return w.Root
+	return NewAccountCardWidgetWithQuota(item, quota, palette, onSwitch, onRefreshSingle).Root
 }

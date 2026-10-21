@@ -102,132 +102,58 @@ func SafeAccountPath(storeDir, email string) (string, error) {
 	return absTargetPath, nil
 }
 
-// GetDefaultStoreDir returns the canonical "accounts_store" directory across all execution environments.
-// It resolves the repository root containing "accounts_store" and "go.mod" by:
-// 1. Checking ANTIGRAVITY_STORE_DIR environment variable if explicitly specified.
-// 2. Checking if current working directory (os.Getwd()) is the repository root (contains accounts_store and go.mod).
-// 3. Inspecting the executable path (os.Executable()) and walking up its parents (e.g. bin/..).
-// 4. Walking up parent directories from CWD (up to 5 levels) to support testing from subdirectories (e.g. internal/store).
-// 5. Falling back to the default workspace path or local accounts_store directory.
-// Always returns a clean, absolute path.
+// GetDefaultStoreDir resolves one data location for credentials and their consumers.
+// An explicit override is never discarded just because it does not exist yet.
 func GetDefaultStoreDir() string {
-	// 0. Explicit environment variable override
-	if envDir := strings.TrimSpace(os.Getenv("ANTIGRAVITY_STORE_DIR")); envDir != "" {
-		if stat, err := os.Stat(envDir); err == nil && stat.IsDir() {
-			if abs, err := filepath.Abs(envDir); err == nil {
-				return abs
-			}
-			return envDir
+	cwd, _ := os.Getwd()
+	exe, _ := os.Executable()
+	return resolveStoreDir(os.Getenv("ANTIGRAVITY_STORE_DIR"), cwd, exe)
+}
+
+func resolveStoreDir(override, cwd, exe string) string {
+	absolute := func(path string) string {
+		if abs, err := filepath.Abs(path); err == nil {
+			return abs
 		}
+		return filepath.Clean(path)
 	}
-
-	isDir := func(p string) bool {
-		stat, err := os.Stat(p)
-		return err == nil && stat.IsDir()
+	if override = strings.TrimSpace(override); override != "" {
+		return absolute(override)
 	}
-
-	isFile := func(p string) bool {
-		stat, err := os.Stat(p)
-		return err == nil && !stat.IsDir()
-	}
-
-	// isProjectRootWithStore verifies that dir contains both accounts_store (directory) and go.mod (file)
-	isProjectRootWithStore := func(dir string) bool {
-		storePath := filepath.Join(dir, "accounts_store")
-		goModPath := filepath.Join(dir, "go.mod")
-		return isDir(storePath) && isFile(goModPath)
-	}
-
-	// findRootWithStore walks up parent directories (up to maxLevels) to find a directory containing go.mod and accounts_store
-	findRootWithStore := func(startDir string, maxLevels int) string {
-		curr := startDir
-		for i := 0; i < maxLevels; i++ {
-			if isProjectRootWithStore(curr) {
-				return filepath.Join(curr, "accounts_store")
+	// A repo's data lives outside its disposable build output, including on
+	// first run when accounts_store has not been created yet.
+	findRepo := func(start string) string {
+		for dir, level := start, 0; dir != "" && level < 6; level++ {
+			if info, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && !info.IsDir() {
+				return filepath.Join(dir, "accounts_store")
 			}
-			parent := filepath.Dir(curr)
-			if parent == curr || parent == "" {
+			parent := filepath.Dir(dir)
+			if parent == dir {
 				break
 			}
-			curr = parent
+			dir = parent
 		}
 		return ""
 	}
-
-	// 1. Check if current working directory is the project root
-	cwd, cwdErr := os.Getwd()
-	if cwdErr == nil {
-		if isProjectRootWithStore(cwd) {
-			storePath := filepath.Join(cwd, "accounts_store")
-			if abs, err := filepath.Abs(storePath); err == nil {
-				return abs
-			}
-			return storePath
+	exeDir := ""
+	if exe != "" {
+		exeDir = filepath.Dir(exe)
+		if path := findRepo(exeDir); path != "" {
+			return absolute(path)
 		}
 	}
-
-	// 2. Check binary executable location (os.Executable())
-	if exePath, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exePath)
-
-		// 2a. Walk up from executable directory up to 5 levels (e.g. bin/.. -> repo root)
-		if found := findRootWithStore(exeDir, 5); found != "" {
-			if abs, err := filepath.Abs(found); err == nil {
-				return abs
-			}
-			return found
-		}
-
-		// 2b. Standalone distribution support (without go.mod): check exeDir/../accounts_store or exeDir/accounts_store
-		exeParent := filepath.Dir(exeDir)
-		parentStore := filepath.Join(exeParent, "accounts_store")
-		if isDir(parentStore) {
-			if abs, err := filepath.Abs(parentStore); err == nil {
-				return abs
-			}
-			return parentStore
-		}
-		dirStore := filepath.Join(exeDir, "accounts_store")
-		if isDir(dirStore) {
-			if abs, err := filepath.Abs(dirStore); err == nil {
-				return abs
-			}
-			return dirStore
-		}
+	if path := findRepo(cwd); path != "" {
+		return absolute(path)
 	}
-
-	// 3. Walk up from current working directory up to 5 levels (e.g. internal/store -> repo root during go test)
-	if cwdErr == nil {
-		if found := findRootWithStore(cwd, 5); found != "" {
-			if abs, err := filepath.Abs(found); err == nil {
-				return abs
+	if exeDir != "" {
+		// Preserve existing standalone distributions, including bin/../store.
+		for _, path := range []string{filepath.Join(filepath.Dir(exeDir), "accounts_store"), filepath.Join(exeDir, "accounts_store")} {
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				return absolute(path)
 			}
-			return found
 		}
-
-		// Check if cwd itself has accounts_store directory
-		cwdStore := filepath.Join(cwd, "accounts_store")
-		if isDir(cwdStore) {
-			if abs, err := filepath.Abs(cwdStore); err == nil {
-				return abs
-			}
-			return cwdStore
-		}
+		return absolute(filepath.Join(exeDir, "accounts_store"))
 	}
-
-	// 4. Well-known fallback for this workspace
-	defaultWorkspaceStore := `G:\antigravity_auto_switch\accounts_store`
-	if isDir(defaultWorkspaceStore) {
-		return defaultWorkspaceStore
-	}
-
-	// 5. Final fallback
-	if cwdErr == nil {
-		storePath := filepath.Join(cwd, "accounts_store")
-		if abs, err := filepath.Abs(storePath); err == nil {
-			return abs
-		}
-		return storePath
-	}
-	return "accounts_store"
+	// No arbitrary-CWD fallback: initialization must surface the error.
+	return ""
 }
