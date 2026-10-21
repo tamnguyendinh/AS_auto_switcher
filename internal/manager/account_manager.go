@@ -35,7 +35,7 @@ type AccountDisplayItem struct {
 	AvatarURL    string             `json:"avatar_url,omitempty"`
 	ProfileDir   string             `json:"profile_dir,omitempty"`
 	State        model.AccountState `json:"state"`
-	Status       string             `json:"status,omitempty"`
+	Status       string             `json:"status"` // "on" or "off"
 	IsActive     bool               `json:"is_active"`
 	HasToken     bool               `json:"has_token"`
 	DisplayBadge string             `json:"display_badge"`
@@ -158,6 +158,37 @@ func (m *AccountManager) Store() *store.AccountStore {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.store
+}
+
+// AccountStore returns the underlying AccountStore instance (alias for Store).
+func (m *AccountManager) AccountStore() *store.AccountStore {
+	return m.Store()
+}
+
+// SetAccountStatus updates the status ("on" or "off") of an account in the store.
+func (m *AccountManager) SetAccountStatus(email string, status string) error {
+	m.mu.RLock()
+	st := m.store
+	m.mu.RUnlock()
+	if st == nil {
+		return errors.New("account store is nil")
+	}
+	return st.SetAccountStatus(email, status)
+}
+
+// GetAccountStatus returns the status ("on" or "off") of an account, defaulting to "on" on error.
+func (m *AccountManager) GetAccountStatus(email string) string {
+	m.mu.RLock()
+	st := m.store
+	m.mu.RUnlock()
+	if st == nil {
+		return "on"
+	}
+	status, err := st.GetAccountStatus(email)
+	if err != nil || status == "" {
+		return "on"
+	}
+	return status
 }
 
 // ExtractEmailFromToken extracts the email address from a TokenData payload or its JWT id_token.
@@ -336,6 +367,10 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 	for _, item := range itemsMap {
 		item.HasToken = storedSet[item.Email]
 		item.IsActive = activeEmail != "" && item.Email == activeEmail
+		item.Status = "on"
+		if item.HasToken {
+			item.Status = m.GetAccountStatus(item.Email)
+		}
 		switch {
 		case item.IsActive:
 			item.State, item.DisplayBadge = model.StateActive, "[✔ Dùng]"

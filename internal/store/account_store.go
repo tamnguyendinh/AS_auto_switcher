@@ -24,9 +24,10 @@ var (
 
 // StoredAccountEnvelope defines the JSON schema for accounts_store/<email>.json.
 // Matches Python core/account_store.py schema exactly:
-// { "email": "...", "saved_at": 1792056078.91, "token_data": { ... } }
+// { "email": "...", "status": "on", "saved_at": 1792056078.91, "token_data": { ... } }
 type StoredAccountEnvelope struct {
 	Email     string           `json:"email"`
+	Status    string           `json:"status,omitempty"` // "on" or "off", defaults to "on" if empty
 	SavedAt   float64          `json:"saved_at"`
 	TokenData *model.TokenData `json:"token_data"`
 }
@@ -69,6 +70,8 @@ func (s *AccountStore) GetStoreDir() string {
 // SaveAccount atomically writes or updates the account JSON file for a given email.
 // It uses an atomic temp file + fsync + rename pattern to guarantee that a sudden crash
 // or power cut will never leave a half-written or corrupted file on disk.
+// Invariant-Token-Update-Preservation: Before overwriting, it checks if the account already
+// exists with status == "off", and strictly preserves "off" so refresh/capture does not reset it.
 func (s *AccountStore) SaveAccount(email string, token *model.TokenData) error {
 	if strings.TrimSpace(email) == "" {
 		return ErrInvalidEmail
@@ -86,8 +89,21 @@ func (s *AccountStore) SaveAccount(email string, token *model.TokenData) error {
 	defer s.mu.Unlock()
 
 	normEmail := strings.ToLower(strings.TrimSpace(email))
+
+	// Invariant-Token-Update-Preservation: preserve "off" status if already present on disk
+	status := "on"
+	if existingData, readErr := os.ReadFile(targetPath); readErr == nil {
+		var existingEnv StoredAccountEnvelope
+		if jsonErr := json.Unmarshal(existingData, &existingEnv); jsonErr == nil {
+			if strings.EqualFold(strings.TrimSpace(existingEnv.Status), "off") {
+				status = "off"
+			}
+		}
+	}
+
 	envelope := StoredAccountEnvelope{
 		Email:     normEmail,
+		Status:    status,
 		SavedAt:   float64(time.Now().UnixNano()) / 1e9,
 		TokenData: token,
 	}
@@ -134,6 +150,113 @@ func (s *AccountStore) SaveAccount(email string, token *model.TokenData) error {
 
 	success = true
 	return nil
+}
+
+// SetAccountStatus atomically updates only the status field ("on" or "off") of an existing account file.
+func (s *AccountStore) SetAccountStatus(email string, status string) error {
+	if strings.TrimSpace(email) == "" {
+		return ErrInvalidEmail
+	}
+	normStatus := strings.ToLower(strings.TrimSpace(status))
+	if normStatus != "off" {
+		normStatus = "on"
+	}
+	targetPath, err := SafeAccountPath(s.storeDir, email)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrAccountNotFound
+		}
+		return fmt.Errorf("failed to read account file: %w", err)
+	}
+
+	var env StoredAccountEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return ErrCorruptedStoreFile
+	}
+
+	env.Status = normStatus
+
+	// Ghi tệp an toàn bằng atomic temp file + os.Rename
+	tmpFile, err := os.CreateTemp(s.storeDir, "acc_tmp_*.json")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file for atomic write: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	encoder := json.NewEncoder(tmpFile)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(env); err != nil {
+		return fmt.Errorf("failed to encode account envelope: %w", err)
+	}
+
+	if err := tmpFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync temp file to disk: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		_ = os.Remove(targetPath)
+		if retryErr := os.Rename(tmpPath, targetPath); retryErr != nil {
+			return fmt.Errorf("failed to rename temp file to target %s: %w", targetPath, retryErr)
+		}
+	}
+
+	success = true
+	return nil
+}
+
+// GetAccountStatus returns the current status ("on" or "off") of an account in the store.
+// If the account does not exist, it returns ErrAccountNotFound.
+// If the status field is missing or empty (legacy accounts), it returns "on", nil for backward compatibility.
+func (s *AccountStore) GetAccountStatus(email string) (string, error) {
+	if strings.TrimSpace(email) == "" {
+		return "on", ErrInvalidEmail
+	}
+	targetPath, err := SafeAccountPath(s.storeDir, email)
+	if err != nil {
+		return "on", err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "on", ErrAccountNotFound
+		}
+		return "on", fmt.Errorf("failed to read account file: %w", err)
+	}
+
+	var env StoredAccountEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return "on", ErrCorruptedStoreFile
+	}
+
+	normStatus := strings.ToLower(strings.TrimSpace(env.Status))
+	if normStatus == "off" {
+		return "off", nil
+	}
+	return "on", nil
 }
 
 // GetAccount reads and parses the TokenData for an email from its JSON file.

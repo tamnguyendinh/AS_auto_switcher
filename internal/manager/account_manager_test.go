@@ -19,6 +19,7 @@ import (
 	"antigravity-switch/internal/model"
 	"antigravity-switch/internal/reloader"
 	"antigravity-switch/internal/store"
+	"antigravity-switch/internal/wincred"
 
 	"golang.org/x/sys/windows"
 )
@@ -1132,5 +1133,153 @@ func TestSwitchAccount_ReAuthFallback_ClientNil(t *testing.T) {
 	}
 	if killerCallCount.Load() != 1 {
 		t.Errorf("Expected exactly 1 killer call on recycle, got %d", killerCallCount.Load())
+	}
+}
+
+
+func TestAccountManager_SetAndGetAccountStatus(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, err := store.NewAccountStore(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed creating store: %v", err)
+	}
+
+	mgr, err := NewAccountManager(accStore, nil)
+	if err != nil {
+		t.Fatalf("Failed creating manager: %v", err)
+	}
+
+	email := "mgr.status@example.com"
+	token := &model.TokenData{
+		AccessToken:  "mgr_access",
+		RefreshToken: "mgr_refresh",
+	}
+
+	// 1. Initially non-existent account -> GetAccountStatus returns "on"
+	st := mgr.GetAccountStatus(email)
+	if st != "on" {
+		t.Errorf("expected default 'on' for missing account, got: %q", st)
+	}
+
+	// 2. Save account to store
+	if err := accStore.SaveAccount(email, token); err != nil {
+		t.Fatalf("SaveAccount failed: %v", err)
+	}
+
+	// Should still be "on"
+	st = mgr.GetAccountStatus(email)
+	if st != "on" {
+		t.Errorf("expected 'on' after initial save, got: %q", st)
+	}
+
+	// 3. SetAccountStatus to "off"
+	if err := mgr.SetAccountStatus(email, "off"); err != nil {
+		t.Fatalf("SetAccountStatus failed: %v", err)
+	}
+	st = mgr.GetAccountStatus(email)
+	if st != "off" {
+		t.Errorf("expected 'off' after SetAccountStatus, got: %q", st)
+	}
+
+	// 4. SetAccountStatus to "on"
+	if err := mgr.SetAccountStatus(email, "on"); err != nil {
+		t.Fatalf("SetAccountStatus to 'on' failed: %v", err)
+	}
+	st = mgr.GetAccountStatus(email)
+	if st != "on" {
+		t.Errorf("expected 'on' after SetAccountStatus to 'on', got: %q", st)
+	}
+
+	// 5. Test with nil store
+	nilMgr := &AccountManager{}
+	if err := nilMgr.SetAccountStatus(email, "off"); err == nil {
+		t.Error("expected error from SetAccountStatus when store is nil")
+	}
+	if st := nilMgr.GetAccountStatus(email); st != "on" {
+		t.Errorf("expected 'on' when store is nil, got: %q", st)
+	}
+
+	// 6. AccountStore() accessor
+	if mgr.AccountStore() != accStore {
+		t.Errorf("expected AccountStore() to return accStore instance")
+	}
+}
+
+func TestAccountManager_GetAccountStates_WithStatus(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, err := store.NewAccountStore(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed creating store: %v", err)
+	}
+
+	mgr, err := NewAccountManager(accStore, nil)
+	if err != nil {
+		t.Fatalf("Failed creating manager: %v", err)
+	}
+
+	// Override ChromeDir to empty temp dir so no real local Chrome profiles interfere
+	emptyChromeDir := t.TempDir()
+	mgr.SetChromeDir(emptyChromeDir)
+
+	// Account 1: on
+	email1 := "acc1.on@example.com"
+	tok1 := &model.TokenData{AccessToken: "tok1", RefreshToken: "ref1"}
+	if err := accStore.SaveAccount(email1, tok1); err != nil {
+		t.Fatalf("SaveAccount 1 failed: %v", err)
+	}
+
+	// Account 2: off
+	email2 := "acc2.off@example.com"
+	tok2 := &model.TokenData{AccessToken: "tok2", RefreshToken: "ref2"}
+	if err := accStore.SaveAccount(email2, tok2); err != nil {
+		t.Fatalf("SaveAccount 2 failed: %v", err)
+	}
+	if err := accStore.SetAccountStatus(email2, "off"); err != nil {
+		t.Fatalf("SetAccountStatus 2 failed: %v", err)
+	}
+
+	// Account 3: legacy file without status field
+	email3 := "acc3.legacy@example.com"
+	legacyFile := filepath.Join(tmpDir, "acc3.legacy@example.com.json")
+	legacyJSON := `{
+		"email": "acc3.legacy@example.com",
+		"saved_at": 1700000000.0,
+		"token_data": {
+			"access_token": "tok3",
+			"refresh_token": "ref3"
+		}
+	}`
+	if err := os.WriteFile(legacyFile, []byte(legacyJSON), 0644); err != nil {
+		t.Fatalf("failed to write legacy file: %v", err)
+	}
+
+	// Mock wincred handler so CaptureCurrentSession doesn't fail with real wincred
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return nil, wincred.ErrNotFound
+		},
+		func(token *model.TokenData) error {
+			return nil
+		},
+	)
+
+	overview, err := mgr.GetAccountStates(context.Background())
+	if err != nil {
+		t.Fatalf("GetAccountStates failed: %v", err)
+	}
+
+	statusMap := make(map[string]string)
+	for _, acc := range overview.Accounts {
+		statusMap[acc.Email] = acc.Status
+	}
+
+	if statusMap[email1] != "on" {
+		t.Errorf("expected account 1 status 'on', got: %q", statusMap[email1])
+	}
+	if statusMap[email2] != "off" {
+		t.Errorf("expected account 2 status 'off', got: %q", statusMap[email2])
+	}
+	if statusMap[email3] != "on" {
+		t.Errorf("expected legacy account 3 status 'on', got: %q", statusMap[email3])
 	}
 }

@@ -474,3 +474,192 @@ func TestGetDefaultStoreDir_EnvVarOverride(t *testing.T) {
 		t.Errorf("expected env var override %s, got %s", expected, resolved)
 	}
 }
+
+
+func TestAccountStore_Status_Persistence_And_Preservation(t *testing.T) {
+	tempDir := t.TempDir()
+	store, err := NewAccountStore(tempDir)
+	if err != nil {
+		t.Fatalf("failed to create AccountStore: %v", err)
+	}
+
+	email := "status.test@example.com"
+	token := &model.TokenData{
+		AccessToken:  "access_token_1",
+		RefreshToken: "refresh_token_1",
+	}
+
+	// 1. Save new account -> should default to "on"
+	if err := store.SaveAccount(email, token); err != nil {
+		t.Fatalf("SaveAccount failed: %v", err)
+	}
+
+	status, err := store.GetAccountStatus(email)
+	if err != nil {
+		t.Fatalf("GetAccountStatus failed: %v", err)
+	}
+	if status != "on" {
+		t.Errorf("expected default status 'on', got: %q", status)
+	}
+
+	// 2. Set status to "off"
+	if err := store.SetAccountStatus(email, "off"); err != nil {
+		t.Fatalf("SetAccountStatus('off') failed: %v", err)
+	}
+
+	status, err = store.GetAccountStatus(email)
+	if err != nil {
+		t.Fatalf("GetAccountStatus after off failed: %v", err)
+	}
+	if status != "off" {
+		t.Errorf("expected status 'off', got: %q", status)
+	}
+
+	// 3. Invariant-Token-Update-Preservation:
+	// Overwrite token using SaveAccount (simulating token refresh or credential capture)
+	newToken := &model.TokenData{
+		AccessToken:  "access_token_refreshed",
+		RefreshToken: "refresh_token_refreshed",
+	}
+	if err := store.SaveAccount(email, newToken); err != nil {
+		t.Fatalf("SaveAccount overwrite failed: %v", err)
+	}
+
+	// Status must strictly remain "off"
+	status, err = store.GetAccountStatus(email)
+	if err != nil {
+		t.Fatalf("GetAccountStatus after token overwrite failed: %v", err)
+	}
+	if status != "off" {
+		t.Errorf("Invariant-Token-Update-Preservation violated: expected 'off', got: %q", status)
+	}
+
+	// Verify token was indeed updated
+	loadedToken, err := store.GetAccount(email)
+	if err != nil {
+		t.Fatalf("GetAccount failed: %v", err)
+	}
+	if loadedToken.AccessToken != "access_token_refreshed" {
+		t.Errorf("expected updated AccessToken, got: %q", loadedToken.AccessToken)
+	}
+
+	// 4. Set status back to "on"
+	if err := store.SetAccountStatus(email, "on"); err != nil {
+		t.Fatalf("SetAccountStatus('on') failed: %v", err)
+	}
+	status, err = store.GetAccountStatus(email)
+	if err != nil {
+		t.Fatalf("GetAccountStatus after on failed: %v", err)
+	}
+	if status != "on" {
+		t.Errorf("expected status 'on', got: %q", status)
+	}
+
+	// 5. Invariant-Backward-Compatibility-Default-On:
+	// Write a raw legacy JSON file without any status field
+	legacyEmail := "legacy.user@example.com"
+	legacyFile := filepath.Join(tempDir, "legacy.user@example.com.json")
+	legacyJSON := `{
+		"email": "legacy.user@example.com",
+		"saved_at": 1700000000.0,
+		"token_data": {
+			"access_token": "legacy_access",
+			"refresh_token": "legacy_refresh"
+		}
+	}`
+	if err := os.WriteFile(legacyFile, []byte(legacyJSON), 0644); err != nil {
+		t.Fatalf("failed to write legacy file: %v", err)
+	}
+
+	legacyStatus, err := store.GetAccountStatus(legacyEmail)
+	if err != nil {
+		t.Fatalf("GetAccountStatus on legacy file failed: %v", err)
+	}
+	if legacyStatus != "on" {
+		t.Errorf("expected legacy file to default to 'on', got: %q", legacyStatus)
+	}
+
+	// SaveAccount on legacy file without status should preserve "on"
+	if err := store.SaveAccount(legacyEmail, token); err != nil {
+		t.Fatalf("SaveAccount on legacy account failed: %v", err)
+	}
+	legacyStatus, err = store.GetAccountStatus(legacyEmail)
+	if err != nil {
+		t.Fatalf("GetAccountStatus after save on legacy file failed: %v", err)
+	}
+	if legacyStatus != "on" {
+		t.Errorf("expected legacy file after save to remain 'on', got: %q", legacyStatus)
+	}
+}
+
+func TestAccountStore_Status_ErrorAndEdgeCases(t *testing.T) {
+	tempDir := t.TempDir()
+	store, err := NewAccountStore(tempDir)
+	if err != nil {
+		t.Fatalf("failed to create AccountStore: %v", err)
+	}
+
+	// 1. Non-existent account
+	_, err = store.GetAccountStatus("nonexistent@example.com")
+	if !errors.Is(err, ErrAccountNotFound) {
+		t.Errorf("expected ErrAccountNotFound for non-existent account, got: %v", err)
+	}
+
+	err = store.SetAccountStatus("nonexistent@example.com", "off")
+	if !errors.Is(err, ErrAccountNotFound) {
+		t.Errorf("expected ErrAccountNotFound when setting status on non-existent account, got: %v", err)
+	}
+
+	// 2. Empty or invalid email
+	_, err = store.GetAccountStatus("")
+	if !errors.Is(err, ErrInvalidEmail) {
+		t.Errorf("expected ErrInvalidEmail for empty email, got: %v", err)
+	}
+
+	err = store.SetAccountStatus("", "off")
+	if !errors.Is(err, ErrInvalidEmail) {
+		t.Errorf("expected ErrInvalidEmail for empty email on SetAccountStatus, got: %v", err)
+	}
+
+	// 3. Normalization of status strings
+	email := "norm@example.com"
+	token := &model.TokenData{AccessToken: "tok"}
+	if err := store.SaveAccount(email, token); err != nil {
+		t.Fatalf("SaveAccount failed: %v", err)
+	}
+
+	// Case and whitespace insensitive " OFF " -> "off"
+	if err := store.SetAccountStatus(email, "  OFF  "); err != nil {
+		t.Fatalf("SetAccountStatus failed: %v", err)
+	}
+	st, _ := store.GetAccountStatus(email)
+	if st != "off" {
+		t.Errorf("expected 'off' after normalization, got: %q", st)
+	}
+
+	// Any non-"off" value (e.g. "random", "disabled", "true") -> "on"
+	if err := store.SetAccountStatus(email, "something_else"); err != nil {
+		t.Fatalf("SetAccountStatus failed: %v", err)
+	}
+	st, _ = store.GetAccountStatus(email)
+	if st != "on" {
+		t.Errorf("expected 'on' for arbitrary non-off string, got: %q", st)
+	}
+
+	// 4. Corrupted file
+	corruptEmail := "corrupt@example.com"
+	corruptFile := filepath.Join(tempDir, "corrupt@example.com.json")
+	if err := os.WriteFile(corruptFile, []byte("{ bad json"), 0644); err != nil {
+		t.Fatalf("failed to write corrupt file: %v", err)
+	}
+
+	_, err = store.GetAccountStatus(corruptEmail)
+	if !errors.Is(err, ErrCorruptedStoreFile) {
+		t.Errorf("expected ErrCorruptedStoreFile for corrupt json, got: %v", err)
+	}
+
+	err = store.SetAccountStatus(corruptEmail, "off")
+	if !errors.Is(err, ErrCorruptedStoreFile) {
+		t.Errorf("expected ErrCorruptedStoreFile for SetAccountStatus on corrupt json, got: %v", err)
+	}
+}
