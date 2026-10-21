@@ -4,9 +4,9 @@
 
 An toàn tuyệt đối vì tuân thủ theo cơ chế chuyển đổi tài khoản được Google cho phép.
 
-Ứng dụng Windows viết bằng **Go**, giúp quản lý nhiều tài khoản Google, theo dõi quota và chuyển đổi tài khoản đang dùng trong Antigravity IDE một cách linh hoạt, an toàn. Hỗ trợ cả giao diện desktop **Fyne** đồ họa trực quan và bộ công cụ dòng lệnh **CLI** mạnh mẽ.
+Ứng dụng Windows viết bằng **Go**, giúp quản lý nhiều tài khoản Google, theo dõi quota và chuyển đổi tài khoản đang dùng trong Antigravity IDE một cách linh hoạt, an toàn. Ứng dụng cung cấp giao diện desktop **Fyne** đồ họa trực quan, hiện đại, mang lại trải nghiệm Zero-Console mượt mà với duy nhất một file thực thi `antigravity-switch.exe`.
 
-Từ phiên bản **Version 1.0.1.8**, ứng dụng tích hợp toàn diện hệ thống **Chuyển Đổi Tài Khoản Tự Động (Autonomous Multi-Account Switcher & Failover Daemon)**. Người dùng có thể linh hoạt chọn giữa chuyển tài khoản thủ công (bằng nút **Chuyển** trên GUI hoặc lệnh CLI `--switch`) và chuyển đổi tự động hoàn toàn (AutoSwitch). Khi bật chế độ Tự động, hệ thống tự động giám sát quota, phát hiện cạn kiệt tài nguyên (lỗi 429 / RESOURCE_EXHAUSTED), tự phục hồi thử lại trong bộ nhớ, và tự động chọn tài khoản dự phòng tối ưu nhất theo thuật toán **Burn-down Sorter** mà không làm gián đoạn dòng suy nghĩ công việc của lập trình viên.
+Từ phiên bản **Version 1.0.1.8**, ứng dụng tích hợp toàn diện hệ thống **Chuyển Đổi Tài Khoản Tự Động (Autonomous Multi-Account Switcher & Failover Daemon)**. Người dùng có thể linh hoạt chọn giữa chuyển tài khoản thủ công (bằng nút **Chuyển** trên GUI) và chuyển đổi tự động hoàn toàn (AutoSwitch). Khi bật chế độ Tự động, hệ thống tự động giám sát quota, phát hiện cạn kiệt tài nguyên (lỗi 429 / RESOURCE_EXHAUSTED), tự phục hồi thử lại trong bộ nhớ, và tự động chọn tài khoản dự phòng tối ưu nhất theo thuật toán **Burn-down Sorter** mà không làm gián đoạn dòng suy nghĩ công việc của lập trình viên.
 
 ## Tính năng hiện có
 
@@ -14,16 +14,16 @@ Từ phiên bản **Version 1.0.1.8**, ứng dụng tích hợp toàn diện h�
 - **Van kích hoạt kép (Dual-Trigger Engine):** Kết hợp kích hoạt chủ động (chu kỳ telemetry 60 giây khi quota 5h <= 2% hoặc tuần <= 1%) và kích hoạt bị động tức thì (lắng nghe stream Connect-RPC khi gặp lỗi 429 / `RESOURCE_EXHAUSTED`).
 - **Phục hồi Native In-Memory 3-Retry:** Tự động thử lại tối đa 3 lần qua Connect-RPC `SendUserCascadeMessage` với danh sách nội dung rỗng (`empty content list`) để xác thực trạng thái tài nguyên thực tế trước khi quyết định chuyển đổi.
 - **Thuật toán thông minh Burn-down Sorter:** Lọc qua 5 tiêu chí sơ loại nghiêm ngặt và sắp xếp ứng viên theo 4 tầng ưu tiên nhằm tối đa hóa việc tận dụng hạn mức trước chu kỳ gia hạn.
-- **Bảo vệ liên tiến trình Single-Flight Concurrency Gate:** Điều phối độc quyền qua Windows Named Mutex, triệt tiêu hoàn toàn xung đột dữ liệu và race condition giữa chuyển tự động, thao tác thủ công trên GUI và lệnh gọi CLI `--switch`.
+- **Bảo vệ liên tiến trình Single-Flight Concurrency Gate:** Điều phối độc quyền qua Windows Named Mutex, triệt tiêu hoàn toàn xung đột dữ liệu và race condition giữa chuyển tự động và thao tác chuyển thủ công trên GUI.
 - **Tích hợp Fyne GUI & Trạng thái thời gian thực:** Công tắc gạt con nhộng **AutoSwitchToggle** tại Header Row 2 và thanh trạng thái thời gian thực (`IDLE`, `EVALUATING`, `RETRYING`, `SWITCHING`, `SWITCHED`, `NO_CANDIDATE`, `ERROR`).
 - **Danh sách tài khoản hợp nhất:** Đọc thông tin từ các profile Chrome và kho `accounts_store/`, gộp theo email. Tài khoản đã lưu vẫn xuất hiện ngay cả khi không còn được tìm thấy trên Chrome.
-- **Lưu phiên Antigravity:** Lấy token của phiên đang đăng nhập từ Windows Credential Manager. Phiên hiện tại được tự thu thập khi làm mới danh sách; cũng có thể lưu qua menu khay hệ thống hoặc `--capture`.
+- **Lưu phiên Antigravity:** Lấy token của phiên đang đăng nhập từ Windows Credential Manager. Phiên hiện tại được tự thu thập khi làm mới danh sách; cũng có thể lưu qua menu khay hệ thống.
 - **Chuyển tài khoản đã lưu:** Nạp token, làm mới OAuth khi token sắp hết hạn và có refresh token, đồng bộ thông tin đăng nhập, khởi động lại Language Server rồi xác nhận email đang chạy.
 - **Hỗ trợ tiếp tục công việc:** Ghi lại danh sách hội thoại có hoạt động trong 2 giờ gần nhất và gửi prompt tiếp tục sau khi xác nhận tài khoản mới.
 - **Dashboard quota:** Hiển thị phần trăm còn lại và thanh tiến trình cho **Gemini / Claude**, với hai chu kỳ **5h / Week** khi API có dữ liệu. Có nút làm mới từng tài khoản, làm mới toàn bộ và tự cập nhật mỗi **60 giây** khi GUI đang chạy.
 - **Giao diện desktop hiện đại:** Thẻ tài khoản dạng lưới, đánh dấu tài khoản đang dùng bằng **[✔ Dùng]**, nút **Chuyển**, tooltip email đầy đủ, ba theme **Dark / Light / Warm** và nút ghim **Always on Top**.
 - **Tích hợp Windows toàn diện:** Menu khay hệ thống (System Tray), thanh tiêu đề riêng với nút thu nhỏ/phóng to/đóng và cơ chế chỉ mở một phiên GUI duy nhất (Single Instance).
-- **CLI đa năng:** Xem danh sách tài khoản, trạng thái phiên/Language Server, bảng quota, lưu phiên và chuyển tài khoản an toàn với gate bảo vệ.
+- **Đơn Artifact GUI duy nhất:** Toàn bộ tính năng quản lý, theo dõi quota, chuyển đổi thủ công và tự động được tích hợp trọn vẹn trong một file thực thi duy nhất `antigravity-switch.exe` không cửa sổ console.
 
 ## Cơ chế Chuyển Đổi Tự Động (Autonomous Failover Engine)
 
@@ -77,8 +77,8 @@ Các ứng viên đạt chuẩn sơ loại sẽ được sắp xếp theo 4 tầ
 
 Để đảm bảo an toàn tuyệt đối khi vận hành đa luồng và đa tiến trình:
 - **Windows Named Mutex:** Hệ thống tạo một Named Mutex trên Windows được cô lập theo Windows Session của từng người dùng (`AntigravitySwitch_SwitchGate_<USERNAME>`), không xung đột với các phiên làm việc khác và tách biệt với GUI Single-Instance Mutex.
-- **Đồng bộ đa kênh toàn diện:**
-  - Áp dụng thống nhất cho cả 3 luồng: Chuyển tự động từ Failover Daemon, nút bấm **Chuyển** thủ công trên giao diện Fyne GUI, và câu lệnh CLI `antigravity-switch --switch <email>`.
+- **Đồng bộ toàn diện:**
+  - Áp dụng thống nhất cho các luồng chuyển: Chuyển tự động từ Failover Daemon và nút bấm **Chuyển** thủ công trên giao diện Fyne GUI.
   - Khi một thao tác chuyển tài khoản đang diễn ra, mọi lệnh chuyển khác phát sinh từ bất kỳ luồng nào đều bị chặn và từ chối an toàn (`Single-Flight Dropped` hoặc `ErrGateBusy`).
   - Triệt tiêu hoàn toàn xung đột ghi đè Windows Credential Manager, file lock trong `accounts_store/`, hoặc tình trạng khởi động lại Language Server đồng thời.
 
@@ -107,42 +107,22 @@ Các ứng viên đạt chuẩn sơ loại sẽ được sắp xếp theo 4 tầ
 - Google Chrome nếu muốn tự phát hiện tài khoản từ các profile Chrome.
 - Kết nối mạng để làm mới OAuth và lấy quota từ Google.
 
-Với bản `.exe` đã build, chạy trực tiếp ứng dụng. Các lệnh PowerShell dưới đây thực hiện từ thư mục gốc của repo:
+### Khởi Chạy Ứng Dụng
+
+Khởi chạy ứng dụng đồ họa trực quan:
 
 ```powershell
-.\bin\antigravity-switch-gui.exe
+.\bin\antigravity-switch.exe
 ```
 
-### Hướng dẫn sử dụng CLI
-
-Bộ công cụ dòng lệnh hỗ trợ quản lý và kiểm soát toàn diện:
-
-```powershell
-# Liệt kê tất cả các tài khoản tìm thấy (Chrome profiles + accounts_store/)
-.\bin\antigravity-switch.exe --list
-
-# Hiển thị trạng thái phiên Antigravity và Language Server hiện tại
-.\bin\antigravity-switch.exe --status
-
-# Hiển thị bảng đo lường Quota chi tiết (Gemini / Claude theo 5h và Week)
-.\bin\antigravity-switch.exe --quota
-
-# Thu thập và lưu phiên đăng nhập hiện tại từ Windows Credential Manager
-.\bin\antigravity-switch.exe --capture
-
-# Hoán đổi tài khoản sang email chỉ định (bảo vệ an toàn qua Single-Flight Gate)
-.\bin\antigravity-switch.exe --switch dev@work.com
-
-# Mở giao diện đồ họa GUI Fyne
-.\bin\antigravity-switch.exe --gui
-```
+Hoặc click đúp trực tiếp vào file `bin\antigravity-switch.exe` từ Windows File Explorer. Ứng dụng khởi động ngay tức thì với giao diện Fyne GUI hiện đại, không nhấp nháy cửa sổ console đen (Zero-Console experience).
 
 ### Lưu thêm tài khoản
 
 1. Đăng nhập tài khoản cần lưu trong **Antigravity IDE**. Chỉ đăng nhập trên Chrome chưa đủ để Switcher có token Antigravity.
-2. Trong Switcher, bấm **Danh sách tài khoản** để quét lại và tự lưu phiên hiện tại. Hoặc chọn **Lưu phiên hiện tại** trong menu khay hệ thống, hoặc chạy lệnh CLI `.\bin\antigravity-switch.exe --capture`.
+2. Trong Switcher, bấm **Danh sách tài khoản** để quét lại và tự lưu phiên hiện tại. Hoặc chọn **Lưu phiên hiện tại** trong menu khay hệ thống.
 3. Lặp lại với các tài khoản còn lại. Mỗi tài khoản được lưu thành một file JSON trong `accounts_store/`.
-4. Khi cần đổi tài khoản thủ công, bấm **Chuyển** trên thẻ tài khoản đã lưu hoặc dùng lệnh CLI `--switch`.
+4. Khi cần đổi tài khoản thủ công, bấm **Chuyển** trên thẻ tài khoản đã lưu.
 
 Nếu chưa có phiên hợp lệ của tài khoản đích trong kho, cần đăng nhập tài khoản đó trong IDE rồi lưu lại trước khi chuyển.
 
@@ -174,58 +154,59 @@ Kho mặc định là `accounts_store/` của repo. Để dùng thư mục khác
 
 **Các file token trong kho được lưu dạng JSON văn bản thuần, chưa được mã hóa bằng DPAPI.** Credential của phiên IDE được đọc/ghi riêng qua Windows Credential Manager. Thư mục `accounts_store/` đã được đưa vào `.gitignore`; không chia sẻ các file token.
 
+## Kiến trúc & Artifact
+
+Ứng dụng được thiết kế theo mô hình **Đơn Artifact GUI Duy Nhất**:
+- Toàn bộ giao diện desktop Fyne, quản lý tài khoản, đồng bộ credential, kiểm soát quota và hệ thống chuyển đổi tự động (Failover Daemon) được đóng gói bên trong duy nhất một tệp thực thi: `bin/antigravity-switch.exe`.
+- Ứng dụng được biên dịch với cờ `-ldflags="-H windowsgui -s -w"` kèm resource PE (`rsrc_windows_amd64.syso`), bảo đảm trải nghiệm **Zero-Console** tuyệt đối (không nhấp nháy cửa sổ đen khi khởi động) và hiển thị biểu tượng icon sắc nét trên thanh tác vụ (Taskbar).
+- Cơ chế **Single Instance Lock** bảo vệ ứng dụng chỉ mở duy nhất một phiên làm việc; khi người dùng mở lại file, cửa sổ hiện tại sẽ tự động được đưa lên trên cùng màn hình.
+
 ## Build từ mã nguồn
 
 ### Công cụ cần có
 
 - **Go 1.26.3 trở lên**, theo `go.mod`.
-- Với GUI: **CGO** và trình biên dịch C tương thích, ví dụ GCC trong **MSYS2 UCRT64 / MinGW-w64**, có trong `PATH`.
-- Với script build Windows: **`windres.exe`** để nhúng icon từ `logo/app.ico`. Script tìm trong `PATH` hoặc `C:\msys64\ucrt64\bin\windres.exe`.
+- **CGO** và trình biên dịch C tương thích: GCC trong **MSYS2 UCRT64 / MinGW-w64**, có trong `PATH`.
+- Trình biên dịch tài nguyên Windows: **`windres.exe`** để nhúng icon từ `logo/app.ico`. Script tự tìm trong `PATH` hoặc tại `C:\msys64\ucrt64\bin\windres.exe`.
 
-Build cả CLI và GUI bằng PowerShell:
+### Biên dịch ứng dụng bằng PowerShell
+
+Quy trình biên dịch tự động hóa chuẩn cho môi trường Windows:
 
 ```powershell
-.\scripts\build_windows.ps1 -Mode all
+.\scripts\build_windows.ps1 -Clean
 ```
 
-Có thể dùng `-Mode cli` hoặc `-Mode gui` để build riêng. Script chạy kiểm tra trước khi build và tạo:
+Các tùy chọn tham số:
+- `-Clean`: Dọn dẹp sạch thư mục đầu ra `bin/`, tắt tiến trình cũ trước khi biên dịch mới.
+- `-SkipTests`: Bỏ qua khâu pre-flight test để tăng tốc độ đóng gói.
+- `-OutDir <thư mục>`: Tùy chỉnh thư mục xuất file nhị phân (mặc định: `bin`).
+
+Kết quả biên dịch xuất ra **DUY NHẤT 1 file artifact**:
 
 ```text
 bin/
-  antigravity-switch.exe       # CLI
-  antigravity-switch-gui.exe   # GUI
+  antigravity-switch.exe   # Ứng dụng Desktop Fyne GUI Zero-Console (kèm PE icon)
 ```
 
-Nếu chỉ cần CLI, có thể build trực tiếp mà không cần CGO hoặc bộ công cụ đồ họa:
+### Khởi chạy từ mã nguồn
 
-```powershell
-$env:CGO_ENABLED = "0"
-go build -o .\bin\antigravity-switch.exe .\cmd\switcher
-```
-
-Chạy GUI từ mã nguồn với GCC đã sẵn sàng:
+Chạy trực tiếp từ mã nguồn với CGO:
 
 ```powershell
 $env:CGO_ENABLED = "1"
-go run -tags gui ./cmd/switcher
+go run ./cmd/switcher
 ```
 
-Build GUI cần **`-tags gui`**. Build entrypoint không có tag này sẽ dùng chế độ CLI.
+*(Lưu ý: Yêu cầu môi trường GCC/MinGW-w64 trong PATH và CGO_ENABLED=1. Không cần cờ `-tags gui` do mã nguồn đã được hợp nhất hoàn toàn).*
 
 ## Kiểm thử
 
-Kiểm thử engine và CLI không cần CGO:
-
-```powershell
-$env:CGO_ENABLED = "0"
-go test ./internal/model ./internal/wincred ./internal/store ./internal/scanner ./internal/connector ./internal/reloader ./internal/manager ./internal/telemetry ./internal/automation ./cmd/switcher
-```
-
-Kiểm thử toàn bộ, gồm giao diện Fyne:
+Kiểm thử toàn bộ hệ thống và giao diện Fyne:
 
 ```powershell
 $env:CGO_ENABLED = "1"
-go test -tags gui ./...
+go test ./...
 ```
 
 Kiểm thử chuyên sâu hệ thống Tự Động Chuyển Đổi với Race Detector và ma trận 14 tình huống biên (Hermetic E2E Test Harness):

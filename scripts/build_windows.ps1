@@ -110,7 +110,7 @@ function Build-GUI {
     param([string]$TargetDir)
     Write-Host "  -> Building Standalone GUI Binary (Fyne, CGO_ENABLED=1)..." -ForegroundColor Cyan
     $env:CGO_ENABLED = "1"
-    $outFile = Join-Path $TargetDir "antigravity-switch-gui.exe"
+    $outFile = Join-Path $TargetDir "antigravity-switch.exe"
     if (Test-Path $outFile) {
         $baseName = [System.IO.Path]::GetFileNameWithoutExtension($outFile)
         Get-Process -Name $baseName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -159,8 +159,8 @@ function Verify-BinaryIcon {
     }
 }
 
-Verify-BinaryIcon -FilePath (Join-Path $OutDir "antigravity-switch-gui.exe")
-Write-Host "  [INFO] GUI binary built at $(Join-Path $OutDir "antigravity-switch-gui.exe")." -ForegroundColor Green
+Verify-BinaryIcon -FilePath (Join-Path $OutDir "antigravity-switch.exe")
+Write-Host "  [INFO] GUI binary built at $(Join-Path $OutDir "antigravity-switch.exe")." -ForegroundColor Green
 
 Write-Host "================================================================================" -ForegroundColor Cyan
 Write-Host "⚡ BUILD SUCCESSFUL" -ForegroundColor Green
