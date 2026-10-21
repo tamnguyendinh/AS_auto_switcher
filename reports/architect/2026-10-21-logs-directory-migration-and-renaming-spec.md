@@ -5,14 +5,14 @@
 - **Vai trò:** System Architect (Kiến trúc sư Hệ thống)
 - **Thẩm quyền:** Phê chuẩn trực tiếp từ Human Owner
 - **Mã văn kiện:** `SPEC-ARCH-20261021-LOGS-AND-DAILY-QUOTA-SPEC`
-- **Trạng thái:** BẢN CHÍNH THỨC BAN HÀNH (OFFICIAL RELEASE)
+- **Trạng thái:** BẢN CHÍNH THỨC BAN HÀNH (OFFICIAL RELEASE — ĐÃ ĐỐI SOÁT CODEBASE 100%)
 - **Đối tượng đọc:** Coder, Supervisor, QA
 
 ---
 
 ## I. TỔNG QUAN VÀ NGUYÊN TẮC CỐT LÕI (OBJECTIVES & INVARIANTS)
 
-Bản đặc tả này cung cấp **công thức triển khai chính xác đến từng dòng mã (step-by-step recipe)** cho toàn bộ 6 giai đoạn chuẩn hóa cấu trúc lưu trữ và nhật ký vận hành của dự án `antigravity_auto_switch`.
+Bản đặc tả này cung cấp **công thức triển khai chính xác đến từng dòng mã (step-by-step recipe)** cho toàn bộ 6 giai đoạn chuẩn hóa cấu trúc lưu trữ và nhật ký vận hành của dự án `antigravity_auto_switch`. Mọi đường dẫn, tên biến, tên hằng số và vị trí file đã được đối chiếu thực tế với codebase hiện hữu.
 
 ### Các điều khoản kỷ luật sắt (Mandatory Invariants):
 1. **QUY TRÌNH 6 GIAI ĐOẠN ĐỘC LẬP (STRICT 6-PHASE GATE):** Coder triển khai lần lượt từ Phase 1 đến Phase 6. Không được nhảy cóc hoặc làm xáo trộn thứ tự.
@@ -40,13 +40,13 @@ Bản đặc tả này cung cấp **công thức triển khai chính xác đến
 ### GIAI ĐOẠN 1 (PHASE 1): SỬA UNIT TEST & XÓA RÁC CÂY MÃ NGUỒN
 
 #### 1. Xóa thư mục rác
-Chạy lệnh xóa thư mục rác đã bị rò rỉ:
+Chạy lệnh xóa thư mục rác đã bị rò rỉ trong cây mã nguồn:
 ```powershell
 Remove-Item -Recurse -Force "internal\telemetry\accounts_store"
 ```
 
 #### 2. Sửa mã nguồn test tại `internal/telemetry/telemetry_test.go`
-Tìm đến hàm `TestTelemetryPool_AdditionalCoverage` (khoảng dòng 943–956):
+Tìm đến hàm `TestTelemetryPool_AdditionalCoverage` (dòng 944–955):
 - **Code hiện tại (gây rò rỉ):**
   ```go
   // Dòng 945:
@@ -85,26 +85,30 @@ Move-Item -Path "accounts_store\switch_timeline.log" -Destination "logs\switch_t
 ```
 
 #### 3. Cập nhật mã nguồn hệ thống
-1. **Trong `internal/telemetry/cache.go`:**
+1. **Trong `internal/telemetry/cache.go` (dòng 16):**
    Sửa hằng số:
    ```go
    const (
        DefaultQuotaCachePath = "logs/.quota_cache.json"
    )
    ```
-2. **Trong `internal/ui/app.go`:**
-   - Sửa hằng số:
-     ```go
-     const (
-         DefaultUIPreferencesPath = "logs/.ui_preferences.json"
-     )
-     ```
-   - Trong hàm `NewAppWithFyne`:
-     ```go
-     cachePath := filepath.Join("logs", ".quota_cache.json")
-     a.preferencesPath = filepath.Join("logs", ".ui_preferences.json")
-     ```
-     *(Bỏ logic `filepath.Join(mgr.Store().GetStoreDir(), ...)` cũ để không còn gắn vào `accounts_store`)*.
+2. **Trong `internal/ui/themes.go` (dòng 27):**
+   Sửa hằng số:
+   ```go
+   const (
+       DefaultUIPreferencesPath = "logs/.ui_preferences.json"
+   )
+   ```
+3. **Trong `internal/ui/app.go` (dòng 100-104):**
+   Sửa logic gán đường dẫn trong `NewAppWithFyne`:
+   ```go
+   logsDir := "logs"
+   if mgr != nil && mgr.Store() != nil && mgr.Store().GetStoreDir() != "" {
+       logsDir = filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "logs")
+   }
+   cachePath := filepath.Join(logsDir, ".quota_cache.json")
+   a.preferencesPath = filepath.Join(logsDir, ".ui_preferences.json")
+   ```
 
 ---
 
@@ -117,22 +121,26 @@ Rename-Item -Path "logs\.quota_cache.json" -NewName "quota_log.json"
 ```
 
 #### 2. Cập nhật mã nguồn hệ thống
-1. **Trong `internal/telemetry/cache.go`:**
+1. **Trong `internal/telemetry/cache.go` (dòng 16):**
    ```go
    const (
        DefaultQuotaCachePath = "logs/quota_log.json"
    )
    ```
-2. **Trong `internal/ui/app.go`:**
+2. **Trong `internal/ui/themes.go` (dòng 27):**
    ```go
    const (
        DefaultUIPreferencesPath = "logs/ui_preferences.json"
    )
    ```
-   Và trong `NewAppWithFyne`:
+3. **Trong `internal/ui/app.go` (dòng 100-104):**
    ```go
-   cachePath := filepath.Join("logs", "quota_log.json")
-   a.preferencesPath = filepath.Join("logs", "ui_preferences.json")
+   logsDir := "logs"
+   if mgr != nil && mgr.Store() != nil && mgr.Store().GetStoreDir() != "" {
+       logsDir = filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "logs")
+   }
+   cachePath := filepath.Join(logsDir, "quota_log.json")
+   a.preferencesPath = filepath.Join(logsDir, "ui_preferences.json")
    ```
    *(Trỏ trực tiếp vào tên mới, không viết code fallback chuyển tiếp rườm rà).*
 
@@ -141,7 +149,7 @@ Rename-Item -Path "logs\.quota_cache.json" -NewName "quota_log.json"
 ### GIAI ĐOẠN 4 (PHASE 4): PHÂN MẢNH QUOTA THEO NGÀY (`logs/quota_log/YYYY-MM-DD_quota_log.json`)
 
 #### 1. Cấu trúc lưu trữ
-`logs/quota_log.json` được chuyển đổi thành thư mục:
+`logs/quota_log.json` được chuyển đổi thành thư mục con:
 ```text
 logs/
 ├── quota_log/
@@ -171,7 +179,7 @@ logs/
 2. Cập nhật hàm `LoadFromDisk`:
    - Nếu `c.filePath` trỏ đến thư mục hoặc đường dẫn mặc định:
      1. Kiểm tra file ngày hôm nay (`GetTodayQuotaLogPath()`). Nếu tồn tại, nạp file này.
-     2. Nếu file ngày hôm nay chưa tồn tại: Quét thư mục `DefaultQuotaLogDir`, lọc các file có đuôi `_quota_log.json`, sắp xếp giảm dần theo tên file, nạp file của ngày gần nhất trước đó.
+     2. Nếu file ngày hôm nay chưa tồn tại: Quét thư mục `DefaultQuotaLogDir`, lọc các file có đuôi `_quota_log.json`, sắp xếp giảm dần theo tên file, nạp file của ngày gần nhất trước đó để UI có thông số ngay.
      3. Nếu thư mục rỗng, bắt đầu với ma trận rỗng (chờ auto-poll nạp dữ liệu).
 3. Cập nhật hàm `SaveToDisk`:
    - Ghi dữ liệu trực tiếp vào file ngày hôm nay: `GetTodayQuotaLogPath()`.
@@ -180,7 +188,12 @@ logs/
 #### 3. Cập nhật `internal/ui/app.go`
 Trong `NewAppWithFyne`:
 ```go
-cachePath := telemetry.GetTodayQuotaLogPath()
+logsDir := "logs"
+if mgr != nil && mgr.Store() != nil && mgr.Store().GetStoreDir() != "" {
+    logsDir = filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "logs")
+}
+quotaDir := filepath.Join(logsDir, "quota_log")
+cachePath := telemetry.GetTodayQuotaLogPath(quotaDir)
 a.quotaCache = telemetry.NewQuotaCache(cachePath)
 _ = a.quotaCache.LoadFromDisk()
 ```
@@ -244,7 +257,8 @@ Trong hàm `NewAppWithFyne` (ngay cuối hàm trước khi `return a`):
 ```go
 // Tự động dọn dẹp các log quota cũ hơn 7 ngày trong goroutine nền nhẹ
 go func() {
-    _, _ = telemetry.PruneDailyQuotaLogs(telemetry.DefaultQuotaLogDir, telemetry.DefaultQuotaLogRetentionDays)
+    quotaDir := filepath.Join(logsDir, "quota_log")
+    _, _ = telemetry.PruneDailyQuotaLogs(quotaDir, telemetry.DefaultQuotaLogRetentionDays)
 }()
 ```
 
@@ -262,7 +276,7 @@ Move-Item -Path "accounts_store\active_threads_history" -Destination "logs\activ
 ```
 
 #### 3. Cập nhật mã nguồn hệ thống
-1. **Trong `internal/reloader/active_threads.go`:**
+1. **Trong `internal/reloader/active_threads.go` (dòng 38–45):**
    Sửa hàm `GetDefaultThreadsHistoryDir`:
    ```go
    // GetDefaultThreadsHistoryDir returns the canonical logs/active_threads_history directory.
@@ -273,25 +287,34 @@ Move-Item -Path "accounts_store\active_threads_history" -Destination "logs\activ
    }
    ```
 2. **Trong `internal/manager/account_manager.go`:**
-   - Tại hàm `NewAccountManager` (khoảng dòng 95-97):
+   - Tại hàm `NewAccountManager` (dòng 95-97):
      ```go
      if sessionReloader.OutputDir == "" {
-         sessionReloader.OutputDir = filepath.Join("logs", "active_threads_history")
+         rootDir := filepath.Dir(accStore.GetStoreDir())
+         sessionReloader.OutputDir = filepath.Join(rootDir, "logs", "active_threads_history")
      }
      ```
-   - Tại cuối hàm `SwitchAccount` (bước dọn dẹp lịch sử thread):
+   - Tại cuối hàm `SwitchAccount` (dòng 605–615):
      ```go
      historyDir := ""
      if rel != nil && rel.OutputDir != "" {
          historyDir = rel.OutputDir
+     } else if m.store != nil {
+         rootDir := filepath.Dir(m.store.GetStoreDir())
+         historyDir = filepath.Join(rootDir, "logs", "active_threads_history")
      } else {
-         historyDir = filepath.Join("logs", "active_threads_history")
+         historyDir = reloader.GetDefaultThreadsHistoryDir()
      }
-     _, _ = reloader.PruneActiveThreadsHistory(historyDir, 2)
+     _, _ = reloader.PruneActiveThreadsHistory(historyDir, reloader.DefaultHistoryKeepCount)
      ```
-3. **Cập nhật các bài test:**
-   - Trong `internal/manager/two_store_test.go`:
-     Sửa kỳ vọng `m.reloader.OutputDir` từ `filepath.Join(m.Store().GetStoreDir(), "active_threads_history")` thành `filepath.Join("logs", "active_threads_history")`.
+3. **Cập nhật bài test tại `internal/manager/two_store_test.go` (dòng 70):**
+   Sửa câu lệnh kiểm tra:
+   ```go
+   expectedHistory := filepath.Join(filepath.Dir(m.Store().GetStoreDir()), "logs", "active_threads_history")
+   if m.reloader.OutputDir != expectedHistory {
+       t.Fatalf("history escaped selected logs directory: got %s, want %s", m.reloader.OutputDir, expectedHistory)
+   }
+   ```
 
 ---
 
@@ -329,7 +352,7 @@ Move-Item -Path "accounts_store\active_threads_history" -Destination "logs\activ
 1. `go test ./...` chạy PASS 100% không có bất kỳ lỗi nào.
 2. Thư mục `accounts_store/` **thuần khiết 100%**, chỉ chứa duy nhất các file `<email>.json`.
 3. Thư mục `logs/` tồn tại, được ignore trên Git, bên trong có:
-   - `logs/quota_log/` chứa log quota theo ngày.
+   - `logs/quota_log/` chứa log quota theo ngày (tối đa 7 ngày gần nhất).
    - `logs/active_threads_history/` chứa snapshot lịch sử (duy trì $\le 2$ file).
    - `logs/ui_preferences.json`.
    - `logs/switch_timeline.log`.
