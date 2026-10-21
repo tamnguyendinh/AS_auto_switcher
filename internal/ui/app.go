@@ -51,6 +51,7 @@ type App struct {
 	alwaysOnTopBtn       *widget.Button
 	themeSelect          *widget.Select
 	autoSwitchToggle     *AutoSwitchToggle
+	autoSwitchCheck      *widget.Check
 	autoSwitchLabel      *canvas.Text
 	maskAccountsToggle   *CapsuleToggle
 	row2Divider1         *canvas.Rectangle
@@ -449,14 +450,16 @@ func (a *App) handleAutomationStatus(evt automation.StatusEvent) {
 		a.showStatusBar(fmt.Sprintf("🔍 %s", msg))
 
 	case automation.StatusNoCandidate:
-		a.showStatusBar(fmt.Sprintf("⚠️ %s", msg))
-		a.autoHideStatusBar(4 * time.Second)
+		a.stopAutoSwitchWithNoCandidate()
 
 	case automation.StatusError:
 		a.showStatusBar(fmt.Sprintf("❌ %s", msg))
 		a.autoHideStatusBar(5 * time.Second)
 
 	case automation.StatusIdle:
+		if a.statusBar != nil && a.statusBar.Text == "⚠️ Không có tài khoản để chuyển." {
+			return
+		}
 		a.showStatusBar(msg)
 		a.autoHideStatusBar(3 * time.Second)
 
@@ -464,6 +467,77 @@ func (a *App) handleAutomationStatus(evt automation.StatusEvent) {
 		a.showStatusBar(msg)
 		a.autoHideStatusBar(3 * time.Second)
 	}
+}
+
+// stopAutoSwitchWithNoCandidate implements the Safety Stop cycle:
+// turns off auto-switch UI toggle & check, resets autoSwitchEnabled flag,
+// persists auto_switch: false to ui_preferences.json, and displays the standard status notice.
+func (a *App) stopAutoSwitchWithNoCandidate() {
+	a.mu.Lock()
+	a.autoSwitchEnabled = false
+	toggle := a.autoSwitchToggle
+	check := a.autoSwitchCheck
+	prefPath := a.preferencesPath
+	theme := a.currentTheme
+	mask := a.maskAccounts
+	alwaysOnTop := a.alwaysOnTop
+	ctrl := a.controller
+	a.mu.Unlock()
+
+	fyne.Do(func() {
+		if toggle != nil {
+			toggle.SetOn(false)
+		}
+		if check != nil {
+			check.SetChecked(false)
+		}
+		a.showStatusBar("⚠️ Không có tài khoản để chuyển.")
+		a.autoHideStatusBar(4 * time.Second)
+	})
+
+	if ctrl != nil {
+		ctrl.SetEnabled(false)
+	}
+
+	go func() {
+		a.prefSaveMu.Lock()
+		defer a.prefSaveMu.Unlock()
+
+		pref, err := LoadUIPreferences(prefPath)
+		if err != nil || pref == nil {
+			pref = &UIPreferences{Theme: theme, MaskAccounts: mask, AutoSwitch: false, AlwaysOnTop: &alwaysOnTop}
+		} else {
+			pref.AutoSwitch = false
+		}
+		_ = SaveUIPreferences(prefPath, pref)
+	}()
+}
+
+// OnStatusChange handles automation status events dispatched from the controller.
+func (a *App) OnStatusChange(evt automation.StatusEvent) {
+	a.handleAutomationStatus(evt)
+}
+
+// SetAutoSwitchCheck allows injecting an optional widget.Check for auto-switch UI binding / testing.
+func (a *App) SetAutoSwitchCheck(check *widget.Check) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.autoSwitchCheck = check
+}
+
+// AutoSwitchCheck returns the injected or configured widget.Check, if any.
+func (a *App) AutoSwitchCheck() *widget.Check {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.autoSwitchCheck
+}
+
+// StatusBarText returns the current text in the status bar (for testing).
+func (a *App) StatusBarText() string {
+	if a.statusBar == nil {
+		return ""
+	}
+	return a.statusBar.Text
 }
 
 // AccountCards returns current AccountCardWidgets (useful for testing in-place updates).
@@ -638,6 +712,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 						palette,
 						a.SwitchAccount,
 						a.RefreshSingleAccountQuota,
+						a.ToggleAccountStatus,
 					)
 					if a.maskAccounts {
 						cardWidget.SetMasked(true)
@@ -799,6 +874,120 @@ func (a *App) SwitchAccount(targetEmail string) {
 			a.autoHideStatusBar(3 * time.Second)
 		})
 	}()
+}
+
+// ToggleAccountStatus toggles an account's status between "on" and "off",
+// persists the change to accounts_store/<email>.json, updates the card widget in-place,
+// and initiates switch / safety stop if the active account is toggled to "off".
+func (a *App) ToggleAccountStatus(email string) {
+	a.mu.Lock()
+	if a.isBusy {
+		a.mu.Unlock()
+		return
+	}
+	mgr := a.mgr
+	overview := a.overview
+	currentTheme := a.currentTheme
+	activeEmail := ""
+	if overview != nil {
+		activeEmail = overview.ActiveEmail
+	}
+	a.mu.Unlock()
+
+	if mgr == nil {
+		return
+	}
+
+	// 1. Xác định trạng thái hiện tại và đảo trạng thái
+	targetIdx := -1
+	currentStatus := mgr.GetAccountStatus(email)
+	if overview != nil {
+		for idx, acc := range overview.Accounts {
+			if acc.Email == email {
+				targetIdx = idx
+				if currentStatus == "" && acc.Status != "" {
+					currentStatus = acc.Status
+				}
+				break
+			}
+		}
+	}
+
+	newStatus := "off"
+	if currentStatus == "off" {
+		newStatus = "on"
+	}
+
+	// 2. Ghi bền vững vào kho accounts_store/<email>.json
+	if err := mgr.SetAccountStatus(email, newStatus); err != nil {
+		fyne.Do(func() {
+			a.showStatusBar(fmt.Sprintf("❌ Lỗi cập nhật trạng thái: %v", err))
+		})
+		return
+	}
+
+	// 3. Cập nhật overview và widget thẻ tại chỗ
+	a.mu.Lock()
+	if overview != nil && targetIdx >= 0 && targetIdx < len(overview.Accounts) {
+		overview.Accounts[targetIdx].Status = newStatus
+	}
+	a.mu.Unlock()
+
+	palette := GetThemePalette(currentTheme)
+	fyne.Do(func() {
+		if overview != nil && targetIdx >= 0 && targetIdx < len(a.accountCards) && a.accountCards[targetIdx] != nil {
+			a.accountCards[targetIdx].UpdateState(overview.Accounts[targetIdx], palette)
+		} else {
+			for _, card := range a.accountCards {
+				if card != nil && card.Email == email {
+					item := manager.AccountDisplayItem{
+						Email:    email,
+						Status:   newStatus,
+						HasToken: card.HasToken,
+						IsActive: card.IsActive,
+					}
+					card.UpdateState(item, palette)
+					break
+				}
+			}
+		}
+	})
+
+	// 4. Xử lý đặc biệt: Nếu người dùng TẮT chính tài khoản đang Active
+	if activeEmail == "" && overview != nil {
+		activeEmail = overview.ActiveEmail
+	}
+	if activeEmail == "" && mgr != nil {
+		activeEmail, _ = mgr.GetCurrentActiveEmail(context.Background())
+	}
+
+	if email == activeEmail && newStatus == "off" {
+		a.mu.RLock()
+		isAuto := a.autoSwitchEnabled
+		ctrl := a.controller
+		a.mu.RUnlock()
+
+		if isAuto {
+			hasOtherOn := false
+			if overview != nil {
+				for _, acc := range overview.Accounts {
+					if acc.Email != email && acc.Status == "on" && acc.HasToken {
+						hasOtherOn = true
+						break
+					}
+				}
+			}
+
+			if !hasOtherOn {
+				// Không còn tài khoản nào hợp lệ đang "on" -> Kích hoạt chu trình Dừng an toàn (Safety Stop)
+				a.stopAutoSwitchWithNoCandidate()
+			} else if ctrl != nil {
+				go func() {
+					_, _ = ctrl.TriggerSwitch(context.Background(), "tài khoản active bị tắt")
+				}()
+			}
+		}
+	}
 }
 
 // ToggleAlwaysOnTop switches the state of the Always-on-Top flag and persists the preference.
@@ -1085,7 +1274,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 					if a.quotaCache != nil {
 						quotaData, _ = a.quotaCache.Get(acc.Email)
 					}
-					cardWidget := NewAccountCardWidgetWithQuota(acc, quotaData, palette, a.SwitchAccount, a.RefreshSingleAccountQuota)
+					cardWidget := NewAccountCardWidgetWithQuota(acc, quotaData, palette, a.SwitchAccount, a.RefreshSingleAccountQuota, a.ToggleAccountStatus)
 					if a.maskAccounts {
 						cardWidget.SetMasked(true)
 					}
