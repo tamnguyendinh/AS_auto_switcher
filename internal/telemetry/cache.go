@@ -13,7 +13,7 @@ import (
 
 const (
 	// DefaultQuotaCachePath is the canonical disk cache file for quota telemetry.
-	DefaultQuotaCachePath = "accounts_store/.quota_cache.json"
+	DefaultQuotaCachePath = "logs/.quota_cache.json"
 )
 
 var (

@@ -24,7 +24,7 @@ const (
 	ThemeWarm  = "warm"
 
 	// DefaultUIPreferencesPath is the canonical disk path for UI settings.
-	DefaultUIPreferencesPath = "accounts_store/.ui_preferences.json"
+	DefaultUIPreferencesPath = "logs/.ui_preferences.json"
 )
 
 // UIPreferences stores persistent user interface settings.

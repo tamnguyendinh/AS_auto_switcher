@@ -3,6 +3,7 @@ __pycache__/
 *$py.class
 *.enc
 accounts_store/
+logs/
 discovered_accounts/
 .idea/
 .vscode/
