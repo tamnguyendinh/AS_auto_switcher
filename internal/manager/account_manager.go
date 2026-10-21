@@ -386,6 +386,11 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		return nil, ErrEmptyTargetEmail
 	}
 
+	timelineDir := DefaultSwitchTimelineDir
+	if m.store != nil && m.store.GetStoreDir() != "" {
+		timelineDir = filepath.Join(filepath.Dir(m.store.GetStoreDir()), "logs", "switch_timeline")
+	}
+
 	// 1. Kiểm tra tài khoản hiện tại trong RAM, nếu đã là targetEmail thì no-op
 	currentEmail, _ := m.GetCurrentActiveEmail(ctx)
 	if currentEmail != "" && currentEmail == normTarget {
@@ -396,6 +401,13 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
 		}, nil
+	}
+
+	LogSwitchEvent(timelineDir, "SWITCH_START", fmt.Sprintf("Bắt đầu chuyển tài khoản từ %s sang %s", currentEmail, normTarget))
+
+	failSwitch := func(res *SwitchResult, err error) (*SwitchResult, error) {
+		LogSwitchEvent(timelineDir, "SWITCH_FAILED", fmt.Sprintf("Thất bại: %v", err), time.Since(start))
+		return res, err
 	}
 
 	m.mu.RLock()
@@ -425,6 +437,7 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	} else {
 		snapshotPath, activeThreads, _ = reloader.CaptureActiveThreadsSnapshot("", "", "")
 	}
+	LogSwitchEvent(timelineDir, "SNAPSHOT_DONE", fmt.Sprintf("Đã snapshot %d thread(s) đang hoạt động", len(activeThreads)), time.Since(start))
 
 	// Tự động lưu phiên làm việc hiện tại
 	_, _ = m.CaptureCurrentSession()
@@ -432,14 +445,14 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	// Tải token của tài khoản mục tiêu từ accounts_store/
 	targetToken, err := m.store.GetAccount(normTarget)
 	if err != nil {
-		return &SwitchResult{
+		return failSwitch(&SwitchResult{
 			Success:       false,
 			Message:       fmt.Sprintf("Chưa có file JSON của %s trong accounts_store/!", normTarget),
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
 			ActiveThreads: activeThreads,
-		}, ErrTargetNotFound
+		}, ErrTargetNotFound)
 	}
 
 	// Auto-refresh token nếu sắp hết hạn trong 5 phút
@@ -470,18 +483,19 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 
 	// 2.2 Ghi token vào Windows Credential Manager
 	if writer == nil {
-		return nil, errors.New("wincred writer not configured")
+		return failSwitch(nil, errors.New("wincred writer not configured"))
 	}
 	if err := writer(targetToken); err != nil {
-		return &SwitchResult{
+		return failSwitch(&SwitchResult{
 			Success:       false,
 			Message:       fmt.Sprintf("Không thể ghi Token vào Windows Credential Manager: %v", err),
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
 			ActiveThreads: activeThreads,
-		}, fmt.Errorf("%w: %v", ErrWriteCredFailed, err)
+		}, fmt.Errorf("%w: %v", ErrWriteCredFailed, err))
 	}
+	LogSwitchEvent(timelineDir, "WINCRED_WRITE", fmt.Sprintf("Đã ghi token mới của %s vào WinCred", normTarget), time.Since(start))
 
 	// 2.3 Đưa cửa sổ Antigravity lên foreground
 	_ = reloader.EnsureAntigravityForeground()
@@ -497,15 +511,16 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		recycleErr = reloader.RecycleLanguageServer(ctx, waitDuration)
 	}
 	if recycleErr != nil {
-		return &SwitchResult{
+		return failSwitch(&SwitchResult{
 			Success:       false,
 			Message:       fmt.Sprintf("Khởi động lại Language Server thất bại: %v", recycleErr),
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
 			ActiveThreads: activeThreads,
-		}, fmt.Errorf("failed recycling language server: %w", recycleErr)
+		}, fmt.Errorf("failed recycling language server: %w", recycleErr))
 	}
+	LogSwitchEvent(timelineDir, "KILL_LS", "Language Server đã được yêu cầu khởi động lại", time.Since(start))
 
 	// 2.5 Dò tìm Language Server mới sau 8 giây ổn định và xác nhận danh tính trong RAM (F1)
 	var newClient *connector.Client
@@ -524,60 +539,61 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	if newClient == nil {
 		errMsg := "không tìm thấy language server mới sau khi khởi động lại"
 		if clientErr != nil {
-			return &SwitchResult{
+			return failSwitch(&SwitchResult{
 				Success:       false,
 				Message:       fmt.Sprintf("Không thể kết nối với Language Server mới sau khi chuyển sang %s: %v", normTarget, clientErr),
 				TargetEmail:   normTarget,
 				PreviousEmail: currentEmail,
 				Duration:      time.Since(start),
 				ActiveThreads: activeThreads,
-			}, fmt.Errorf("%s: %w", errMsg, clientErr)
+			}, fmt.Errorf("%s: %w", errMsg, clientErr))
 		}
-		return &SwitchResult{
+		return failSwitch(&SwitchResult{
 			Success:       false,
 			Message:       fmt.Sprintf("Không thể kết nối với Language Server mới sau khi chuyển sang %s", normTarget),
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
 			ActiveThreads: activeThreads,
-		}, errors.New(errMsg)
+		}, errors.New(errMsg))
 	}
 
 	// F1 [P1 - CỐT TỬ]: Bắt buộc xác thực email trong RAM qua GetUserStatus trước khi gửi tin nhắn hoặc báo thành công
 	status, statusErr := newClient.GetUserStatus(ctx)
 	if statusErr != nil {
-		return &SwitchResult{
+		return failSwitch(&SwitchResult{
 			Success:       false,
 			Message:       fmt.Sprintf("Không thể xác thực trạng thái người dùng trong RAM sau khi đổi tài khoản: %v", statusErr),
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
 			ActiveThreads: activeThreads,
-		}, fmt.Errorf("failed verifying user status in RAM: %w", statusErr)
+		}, fmt.Errorf("failed verifying user status in RAM: %w", statusErr))
 	}
 
 	if status == nil || strings.TrimSpace(status.Email) == "" {
-		return &SwitchResult{
+		return failSwitch(&SwitchResult{
 			Success:       false,
 			Message:       "Không thể xác thực trạng thái người dùng trong RAM sau khi đổi tài khoản: email rỗng hoặc trạng thái không hợp lệ",
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
 			ActiveThreads: activeThreads,
-		}, errors.New("failed verifying user status in RAM: empty status or email")
+		}, errors.New("failed verifying user status in RAM: empty status or email"))
 	}
 
 	ramEmail := strings.ToLower(strings.TrimSpace(status.Email))
 	if ramEmail != normTarget {
-		return &SwitchResult{
+		return failSwitch(&SwitchResult{
 			Success:       false,
 			Message:       fmt.Sprintf("Xác thực RAM thất bại: Language Server vẫn đang chạy tài khoản %s, không khớp mục tiêu %s", ramEmail, normTarget),
 			TargetEmail:   normTarget,
 			PreviousEmail: currentEmail,
 			Duration:      time.Since(start),
 			ActiveThreads: activeThreads,
-		}, fmt.Errorf("identity mismatch in RAM: expected %s, got %s", normTarget, ramEmail)
+		}, fmt.Errorf("identity mismatch in RAM: expected %s, got %s", normTarget, ramEmail))
 	}
+	LogSwitchEvent(timelineDir, "RAM_CHECK_DONE", fmt.Sprintf("Xác thực RAM thành công: %s", ramEmail), time.Since(start))
 
 	// =========================================================================
 	// BƯỚC 3: Đọc đúng file JSON của bước 1
@@ -594,10 +610,14 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	// =========================================================================
 	var contSummary *reloader.ContinuationSummary
 	if newClient != nil && len(threadsToContinue) > 0 {
+		LogSwitchEvent(timelineDir, "DISPATCH_START", fmt.Sprintf("Bắt đầu gửi tin nhắn tiếp tục phiên vào %d thread", len(threadsToContinue)), time.Since(start))
 		if rel != nil {
 			contSummary, _ = rel.PerformSessionContinuation(ctx, newClient, threadsToContinue, "")
 		} else {
 			contSummary, _ = reloader.PerformSessionContinuation(ctx, newClient, threadsToContinue, "")
+		}
+		if contSummary != nil {
+			LogSwitchEvent(timelineDir, "DISPATCH_DONE", fmt.Sprintf("Gửi tiếp tục phiên hoàn tất: %d/%d thành công", contSummary.SuccessCount, contSummary.TotalThreads), time.Since(start))
 		}
 	}
 
@@ -621,6 +641,8 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		msg = fmt.Sprintf("Chuyển sang tài khoản %s thành công! Đã gửi prompt tiếp tục phiên vào %d/%d thread.",
 			normTarget, contSummary.SuccessCount, contSummary.TotalThreads)
 	}
+
+	LogSwitchEvent(timelineDir, "SWITCH_SUCCESS", fmt.Sprintf("Chuyển sang %s thành công hoàn tất", normTarget), time.Since(start))
 
 	return &SwitchResult{
 		Success:             true,
