@@ -686,6 +686,9 @@ func TestQuotaCache_EdgeCasesAndFlatMap(t *testing.T) {
 	cachePath := filepath.Join(tempDir, "flat_cache.json")
 
 	// 1. Default path constructor
+	if DefaultQuotaCachePath != "logs/quota_log.json" {
+		t.Errorf("expected DefaultQuotaCachePath to be 'logs/quota_log.json', got %s", DefaultQuotaCachePath)
+	}
 	defCache := NewQuotaCache("")
 	if defCache.FilePath() != DefaultQuotaCachePath {
 		t.Errorf("expected default path %s, got %s", DefaultQuotaCachePath, defCache.FilePath())

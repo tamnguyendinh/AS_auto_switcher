@@ -723,7 +723,7 @@ func TestGlobalQuotaRefreshAndIndicator(t *testing.T) {
 	testApp := test.NewApp()
 	app := newIsolatedApp(testApp, mgr)
 	tmpDir := t.TempDir()
-	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
+	app.SetPreferencesPath(filepath.Join(tmpDir, "ui_preferences.json"))
 	cache := telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json"))
 	app.SetQuotaCache(cache)
 	app.Init()
@@ -832,7 +832,7 @@ func TestUITraceabilityChecklist(t *testing.T) {
 	testApp := test.NewApp()
 	app := newIsolatedApp(testApp, mgr)
 	tmpDir := t.TempDir()
-	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
+	app.SetPreferencesPath(filepath.Join(tmpDir, "ui_preferences.json"))
 	app.SetQuotaCache(telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_cache.json")))
 	app.Init()
 	defer app.Close()
@@ -3880,7 +3880,7 @@ func TestArchitectSpec_Row2Layout_ThemeSync(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	app := newIsolatedApp(testApp, nil)
-	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
+	app.SetPreferencesPath(filepath.Join(tmpDir, "ui_preferences.json"))
 	defer app.Close()
 	app.Init()
 
@@ -3928,7 +3928,7 @@ func TestArchitectSpec_MaskAccounts_Persistence(t *testing.T) {
 	defer testApp.Quit()
 
 	tmpDir := t.TempDir()
-	prefFile := filepath.Join(tmpDir, ".ui_preferences.json")
+	prefFile := filepath.Join(tmpDir, "ui_preferences.json")
 
 	// Pre-create preference file with mask_accounts = true
 	initialPref := &UIPreferences{

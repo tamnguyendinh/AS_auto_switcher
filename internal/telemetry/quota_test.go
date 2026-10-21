@@ -704,7 +704,7 @@ func TestDisabledMetadataPassThrough_ParserCacheRoundTrip(t *testing.T) {
 
 	// Test QuotaCache round-trip
 	tmpDir := t.TempDir()
-	cachePath := filepath.Join(tmpDir, ".quota_cache.json")
+	cachePath := filepath.Join(tmpDir, "quota_log.json")
 	cache := NewQuotaCache(cachePath)
 
 	data := &AccountQuotaData{

@@ -112,9 +112,15 @@ func TestNewThemeInstance(t *testing.T) {
 	}
 }
 
+func TestDefaultUIPreferencesPath(t *testing.T) {
+	if DefaultUIPreferencesPath != "logs/ui_preferences.json" {
+		t.Errorf("expected DefaultUIPreferencesPath to be 'logs/ui_preferences.json', got %s", DefaultUIPreferencesPath)
+	}
+}
+
 func TestUIPreferencesPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
-	prefFile := filepath.Join(tmpDir, ".ui_preferences.json")
+	prefFile := filepath.Join(tmpDir, "ui_preferences.json")
 
 	// 1. Missing file returns default dark theme
 	pref, err := LoadUIPreferences(prefFile)
@@ -154,8 +160,8 @@ func TestAppSetThemeRuntime(t *testing.T) {
 	fyneApp := test.NewApp()
 	app := newIsolatedApp(fyneApp, nil)
 	tmpDir := t.TempDir()
-	app.SetPreferencesPath(filepath.Join(tmpDir, ".ui_preferences.json"))
-	app.SetQuotaCache(telemetry.NewQuotaCache(filepath.Join(tmpDir, ".quota_cache.json")))
+	app.SetPreferencesPath(filepath.Join(tmpDir, "ui_preferences.json"))
+	app.SetQuotaCache(telemetry.NewQuotaCache(filepath.Join(tmpDir, "quota_log.json")))
 
 	app.Init()
 
