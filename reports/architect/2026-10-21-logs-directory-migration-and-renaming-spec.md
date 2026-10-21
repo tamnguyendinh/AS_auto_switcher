@@ -1,5 +1,5 @@
-# Đặc Tả Kiến Trúc & Chỉ Dẫn Kỹ Thuật Chi Tiết Cho Coder: Chuẩn Hóa Thư Mục Logs, Phân Mảnh Quota Theo Ngày & Tự Động Dọn Dẹp 7 Ngày
-(Logs Directory Standardization, Daily Quota Sharding & 7-Day Rolling Retention — Complete Implementation Recipe)
+# Đặc Tả Kiến Trúc & Chỉ Dẫn Kỹ Thuật Chi Tiết Cho Coder: Chuẩn Hóa Thư Mục Logs, Phân Mảnh Quota Theo Ngày & Tự Động Dọn Dẹp
+(Logs Directory Standardization, Daily Quota Sharding, 7-Day Retention & Active Threads History Migration — 6-Phase Implementation Recipe)
 
 - **Ngày lập:** 2026-10-21
 - **Vai trò:** System Architect (Kiến trúc sư Hệ thống)
@@ -12,15 +12,24 @@
 
 ## I. TỔNG QUAN VÀ NGUYÊN TẮC CỐT LÕI (OBJECTIVES & INVARIANTS)
 
-Bản đặc tả này cung cấp **công thức triển khai chính xác đến từng dòng mã (step-by-step recipe)**, đảm bảo Coder đọc vào có thể code được ngay mà không cần suy nghĩ hay phán đoán thêm.
+Bản đặc tả này cung cấp **công thức triển khai chính xác đến từng dòng mã (step-by-step recipe)** cho toàn bộ 6 giai đoạn chuẩn hóa cấu trúc lưu trữ và nhật ký vận hành của dự án `antigravity_auto_switch`.
 
 ### Các điều khoản kỷ luật sắt (Mandatory Invariants):
-1. **QUY TRÌNH 5 GIAI ĐOẠN ĐỘC LẬP (STRICT 5-PHASE GATE):** Coder triển khai lần lượt từ Phase 1 đến Phase 5. Không được nhảy cóc hoặc làm xáo trộn thứ tự.
-2. **KHO TÀI KHOẢN THUẦN KHIẾT (PURE ACCOUNT STORE):** Sau khi hoàn thành Phase 2, `accounts_store/` CHỈ CHỨA các file credential tài khoản (`<email>.json`) và thư mục snapshot lịch sử (`active_threads_history/`). Tuyệt đối không còn file log, cache hay preference nào.
-3. **CẤU TRÚC PHÂN MẢNH THEO NGÀY (DAILY SHARDING):** Nhật ký quota được lưu tại `logs/quota_log/YYYY-MM-DD_quota_log.json`. Mỗi ngày lưu đúng một file theo định dạng chuẩn ISO.
-4. **GIỮ TỐI ĐA 7 FILE GẦN NHẤT (7-DAY ROLLING RETENTION):** Tự động dọn dẹp các file cũ hơn 7 ngày tại `logs/quota_log/`, chỉ giữ lại đúng 7 file mới nhất tương ứng với 7 ngày gần nhất.
-5. **KHỞI ĐỘNG NON-BLOCKING & FAIL-SAFE:** Cơ chế dọn dẹp chạy ngầm sau khi khởi động app xong, nếu gặp lỗi I/O (file locked) thì bỏ qua an toàn, không bao giờ làm gián đoạn UI.
-6. **KHÔNG VIẾT CODE CHUYỂN TIẾP RƯỜM RÀ (ZERO LEGACY MIGRATION BLOAT):** Tuyệt đối không viết thêm logic copy/convert dữ liệu cũ qua lại giữa các phase để tránh làm phình to codebase.
+1. **QUY TRÌNH 6 GIAI ĐOẠN ĐỘC LẬP (STRICT 6-PHASE GATE):** Coder triển khai lần lượt từ Phase 1 đến Phase 6. Không được nhảy cóc hoặc làm xáo trộn thứ tự.
+2. **KHO TÀI KHOẢN THUẦN KHIẾT TUYỆT ĐỐI (100% PURE ACCOUNT STORE):**
+   - Sau khi hoàn thành Phase 6, thư mục `accounts_store/` **CHỈ CHỨA DUY NHẤT các file credential tài khoản (`<email>.json`)**.
+   - Tuyệt đối không còn bất kỳ file log, file cache, file cấu hình hay thư mục con lịch sử nào bên trong `accounts_store/`.
+3. **QUY TỤ TẤT CẢ VỀ `logs/` (CENTRALIZED LOGS ECOSYSTEM):**
+   - Thư mục `logs/` là nơi quản lý tập trung toàn bộ dữ liệu phụ trợ và telemetry runtime:
+     - `logs/quota_log/YYYY-MM-DD_quota_log.json` (nhật ký quota theo ngày).
+     - `logs/active_threads_history/` (lịch sử snapshot hội thoại, giữ tối đa 2 file).
+     - `logs/ui_preferences.json` (cấu hình giao diện).
+     - `logs/switch_timeline.log` (nhật ký sự kiện chuyển đổi).
+4. **BẢO MẬT MÃ NGUỒN TRÊN GIT:** Thư mục `logs/` phải được khai báo trong `.gitignore` ngay ở Phase 2 để ngăn chặn đưa file runtime lên GitHub.
+5. **CẤU TRÚC PHÂN MẢNH THEO NGÀY (DAILY SHARDING):** Nhật ký quota được lưu tại `logs/quota_log/YYYY-MM-DD_quota_log.json`. Mỗi ngày lưu đúng một file theo định dạng chuẩn ISO.
+6. **GIỮ TỐI ĐA 7 FILE GẦN NHẤT (7-DAY ROLLING RETENTION):** Tự động dọn dẹp các file cũ hơn 7 ngày tại `logs/quota_log/`, chỉ giữ lại đúng 7 file mới nhất tương ứng với 7 ngày gần nhất.
+7. **KHỞI ĐỘNG NON-BLOCKING & FAIL-SAFE:** Cơ chế dọn dẹp chạy ngầm sau khi khởi động app xong, nếu gặp lỗi I/O (file locked) thì bỏ qua an toàn, không bao giờ làm gián đoạn UI.
+8. **KHÔNG VIẾT CODE CHUYỂN TIẾP RƯỜM RÀ (ZERO LEGACY MIGRATION BLOAT):** Tuyệt đối không viết thêm logic copy/convert dữ liệu cũ qua lại giữa các phase để tránh làm phình to codebase.
 
 ---
 
@@ -241,6 +250,51 @@ go func() {
 
 ---
 
+### GIAI ĐOẠN 6 (PHASE 6): DI DỜI `active_threads_history/` VÀO THƯ MỤC `logs/`
+
+#### 1. Mục tiêu
+- Chuyển toàn bộ thư mục `accounts_store\active_threads_history\` sang `logs\active_threads_history\`.
+- **Giải phóng triệt để 100%:** `accounts_store\` từ nay chỉ chứa duy nhất các file `<email>.json`, hoàn toàn không còn bất kỳ thư mục con hay file phụ trợ nào.
+
+#### 2. Di dời thư mục trên đĩa
+```powershell
+Move-Item -Path "accounts_store\active_threads_history" -Destination "logs\active_threads_history"
+```
+
+#### 3. Cập nhật mã nguồn hệ thống
+1. **Trong `internal/reloader/active_threads.go`:**
+   Sửa hàm `GetDefaultThreadsHistoryDir`:
+   ```go
+   // GetDefaultThreadsHistoryDir returns the canonical logs/active_threads_history directory.
+   func GetDefaultThreadsHistoryDir() string {
+       historyDir := filepath.Join("logs", "active_threads_history")
+       _ = os.MkdirAll(historyDir, 0755)
+       return historyDir
+   }
+   ```
+2. **Trong `internal/manager/account_manager.go`:**
+   - Tại hàm `NewAccountManager` (khoảng dòng 95-97):
+     ```go
+     if sessionReloader.OutputDir == "" {
+         sessionReloader.OutputDir = filepath.Join("logs", "active_threads_history")
+     }
+     ```
+   - Tại cuối hàm `SwitchAccount` (bước dọn dẹp lịch sử thread):
+     ```go
+     historyDir := ""
+     if rel != nil && rel.OutputDir != "" {
+         historyDir = rel.OutputDir
+     } else {
+         historyDir = filepath.Join("logs", "active_threads_history")
+     }
+     _, _ = reloader.PruneActiveThreadsHistory(historyDir, 2)
+     ```
+3. **Cập nhật các bài test:**
+   - Trong `internal/manager/two_store_test.go`:
+     Sửa kỳ vọng `m.reloader.OutputDir` từ `filepath.Join(m.Store().GetStoreDir(), "active_threads_history")` thành `filepath.Join("logs", "active_threads_history")`.
+
+---
+
 ## III. MA TRẬN KIỂM THỬ TỰ ĐỘNG BẮT BUỘC CHO CODER (TEST MATRIX)
 
 ### 1. Unit Tests tại `internal/telemetry/cache_test.go`
@@ -261,11 +315,22 @@ go func() {
    - Kết quả: Nạp thành công dữ liệu từ file hôm qua.
    - Gọi `SaveToDisk` $\rightarrow$ Kết quả: Sinh ra file đúng ngày hôm nay `2026-10-21_quota_log.json`.
 
+### 2. Unit/Integration Tests cho Reloader & Manager (Phase 6)
+1. **`TestDefaultThreadsHistoryDir_LogsPath`:**
+   - Kiểm tra `reloader.GetDefaultThreadsHistoryDir()` trả về chính xác đường dẫn chứa `logs/active_threads_history`.
+2. **`TestSwitchAccount_UsesLogsActiveThreads`:**
+   - Thực hiện `SwitchAccount` trong test environment.
+   - Snapshot mới được lưu vào `logs/active_threads_history/` (hoặc thư mục test tương ứng), không ghi vào `accounts_store/`.
+
 ---
 
 ## IV. TIÊU CHÍ NGHIỆM THU CUỐI CÙNG (FINAL ACCEPTANCE CRITERIA)
 
-1. `go test ./...` chạy PASS 100% không có lỗi.
-2. Thư mục `accounts_store/` tuyệt đối không còn file `.quota_cache.json`, `.ui_preferences.json` hay `switch_timeline.log`.
-3. Thư mục `logs/` tồn tại, được ignore trên Git, bên trong có thư mục `logs/quota_log/` chứa log ngày và các file `ui_preferences.json`, `switch_timeline.log`.
+1. `go test ./...` chạy PASS 100% không có bất kỳ lỗi nào.
+2. Thư mục `accounts_store/` **thuần khiết 100%**, chỉ chứa duy nhất các file `<email>.json`.
+3. Thư mục `logs/` tồn tại, được ignore trên Git, bên trong có:
+   - `logs/quota_log/` chứa log quota theo ngày.
+   - `logs/active_threads_history/` chứa snapshot lịch sử (duy trì $\le 2$ file).
+   - `logs/ui_preferences.json`.
+   - `logs/switch_timeline.log`.
 4. App khởi động mượt mà, hiển thị đầy đủ thông số quota và theme của người dùng.
