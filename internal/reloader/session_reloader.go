@@ -431,3 +431,18 @@ func CaptureActiveThreadsSnapshot(conversationsDir, summariesDbPath, outputDir s
 func (r *SessionReloader) ReloadAntigravitySession(ctx context.Context, client *connector.Client, reloadWindow bool) error {
 	return r.RecycleLanguageServer(ctx, 2*time.Second)
 }
+
+// PruneActiveThreadsHistory prunes old snapshot files in r.OutputDir, keeping keepCount newest files.
+// If keepCount <= 0, DefaultHistoryKeepCount is used.
+func (r *SessionReloader) PruneActiveThreadsHistory(keepCount int) (int, error) {
+	if r == nil {
+		return PruneActiveThreadsHistory("", keepCount)
+	}
+	r.mu.RLock()
+	dir := r.OutputDir
+	r.mu.RUnlock()
+	if dir == "" {
+		dir = GetDefaultThreadsHistoryDir()
+	}
+	return PruneActiveThreadsHistory(dir, keepCount)
+}

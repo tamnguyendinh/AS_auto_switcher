@@ -34,6 +34,9 @@ type ActiveThreadsSnapshot struct {
 
 var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+// DefaultHistoryKeepCount defines the maximum number of active threads snapshot files retained.
+const DefaultHistoryKeepCount = 2
+
 
 // GetDefaultThreadsHistoryDir returns the canonical accounts_store/active_threads_history directory.
 func GetDefaultThreadsHistoryDir() string {
@@ -271,4 +274,56 @@ func cleanFileURI(raw string) string {
 func isFile(p string) bool {
 	stat, err := os.Stat(p)
 	return err == nil && !stat.IsDir()
+}
+
+// PruneActiveThreadsHistory prunes active threads snapshot files in historyDir,
+// retaining only the newest keepCount files (sorted descending by timestamp in filename).
+// If keepCount <= 0, DefaultHistoryKeepCount (2) is used.
+// If historyDir is empty, GetDefaultThreadsHistoryDir() is used.
+// If historyDir does not exist, it safely returns (0, nil).
+func PruneActiveThreadsHistory(historyDir string, keepCount int) (int, error) {
+	if keepCount <= 0 {
+		keepCount = DefaultHistoryKeepCount
+	}
+	if historyDir == "" {
+		historyDir = GetDefaultThreadsHistoryDir()
+	}
+
+	entries, err := os.ReadDir(historyDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed reading history dir %s: %w", historyDir, err)
+	}
+
+	var snapshots []os.DirEntry
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(entry.Name(), "_active_threads.json") {
+			snapshots = append(snapshots, entry)
+		}
+	}
+
+	if len(snapshots) <= keepCount {
+		return 0, nil
+	}
+
+	// Filename format YYYY-MM-DD-HH-mm-ss_active_threads.json sorts descending alphabetically
+	// identical to chronological descending (newest first).
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].Name() > snapshots[j].Name()
+	})
+
+	deleted := 0
+	for k := keepCount; k < len(snapshots); k++ {
+		filePath := filepath.Join(historyDir, snapshots[k].Name())
+		if err := os.Remove(filePath); err == nil {
+			deleted++
+		}
+	}
+
+	return deleted, nil
 }

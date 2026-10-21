@@ -486,3 +486,115 @@ func TestSwitchAccount_F1_RAMConfirmation_ClientNilWithoutError(t *testing.T) {
 		t.Fatalf("Expected result.Success = false when newClient is nil, got %+v", result)
 	}
 }
+
+// TestSwitchAccount_PrunesHistoryToMax2 verifies that SwitchAccount automatically prunes
+// active_threads_history to keep at most 2 snapshots upon successful account switch (SPEC-ARCH-20261021-ACTIVE-THREADS-HISTORY-PRUNING).
+func TestSwitchAccount_PrunesHistoryToMax2(t *testing.T) {
+	tmpDir := t.TempDir()
+	accStore, err := store.NewAccountStore(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed creating account store: %v", err)
+	}
+
+	targetEmail := "switch-prune-test@example.com"
+	currentEmail := "current-prune-test@example.com"
+	mockActiveEmail := currentEmail
+
+	_ = accStore.SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "target-tok",
+		IDToken:     makeTestJWT(targetEmail),
+		Expiry:      time.Now().Add(1 * time.Hour),
+	})
+
+	historyDir := filepath.Join(tmpDir, "active_threads_history")
+	_ = os.MkdirAll(historyDir, 0755)
+
+	// Pre-create 5 older snapshot files in active_threads_history
+	for i := 1; i <= 5; i++ {
+		name := filepath.Join(historyDir, "2026-10-20-0"+string(rune('0'+i))+"-00-00_active_threads.json")
+		if err := os.WriteFile(name, []byte(`{"test":true}`), 0644); err != nil {
+			t.Fatalf("Failed writing initial snapshot file: %v", err)
+		}
+	}
+
+	rel := reloader.NewSessionReloader()
+	rel.OutputDir = historyDir
+	rel.ConversationsDir = tmpDir
+	rel.WindowFinder = func() ([]windows.HWND, error) { return []windows.HWND{windows.HWND(101)}, nil }
+	rel.ProcessKiller = func(ctx context.Context) error { return nil }
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	rel.SnapshotCapturer = func(storagePath, brainDir, outputDir string) (string, []reloader.ActiveThread, error) {
+		snapPath := filepath.Join(historyDir, "2026-10-21-12-00-00_active_threads.json")
+		_ = os.WriteFile(snapPath, []byte(`{"active_threads":[]}`), 0644)
+		return snapPath, []reloader.ActiveThread{}, nil
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "GetUserStatus") || strings.Contains(r.URL.Path, "user_status") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"email":"` + mockActiveEmail + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	parts := strings.Split(server.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	client := connector.NewClientWithHTTP(&connector.ServerInfo{
+		PID:       8888,
+		Port:      port,
+		CSRFToken: "test-csrf-token",
+	}, server.Client())
+
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{PID: 8888, Port: port, CSRFToken: "test-csrf-token"}, nil
+	}
+
+	mgr, _ := NewAccountManager(accStore, rel)
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-tok",
+				IDToken:     makeTestJWT(mockActiveEmail),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			if email := ExtractEmailFromToken(token); email != "" {
+				mockActiveEmail = email
+			}
+			return nil
+		},
+	)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return client, nil
+	})
+
+	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
+	if err != nil {
+		t.Fatalf("SwitchAccount failed: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Expected SwitchAccount to succeed, got: %s", result.Message)
+	}
+
+	// Verify pruning in active_threads_history
+	entries, err := os.ReadDir(historyDir)
+	if err != nil {
+		t.Fatalf("Failed reading historyDir: %v", err)
+	}
+
+	var remainingSnapshots []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), "_active_threads.json") {
+			remainingSnapshots = append(remainingSnapshots, e.Name())
+		}
+	}
+
+	if len(remainingSnapshots) > 2 {
+		t.Fatalf("Expected at most 2 snapshots in active_threads_history, found %d: %v", len(remainingSnapshots), remainingSnapshots)
+	}
+	if len(remainingSnapshots) != 2 {
+		t.Errorf("Expected exactly 2 snapshots retained after pruning, found %d: %v", len(remainingSnapshots), remainingSnapshots)
+	}
+}

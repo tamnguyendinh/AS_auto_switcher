@@ -600,6 +600,19 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 		}
 	}
 
+	// =========================================================================
+	// BƯỚC 5: Tự động dọn dẹp lịch sử snapshot (Chỉ giữ đúng 2 file mới nhất)
+	// =========================================================================
+	historyDir := ""
+	if rel != nil && rel.OutputDir != "" {
+		historyDir = rel.OutputDir
+	} else if m.store != nil {
+		historyDir = filepath.Join(m.store.GetStoreDir(), "active_threads_history")
+	} else {
+		historyDir = reloader.GetDefaultThreadsHistoryDir()
+	}
+	_, _ = reloader.PruneActiveThreadsHistory(historyDir, reloader.DefaultHistoryKeepCount)
+
 	// Cập nhật thông điệp hoàn tất minh bạch
 	msg := fmt.Sprintf("Chuyển sang tài khoản %s thành công!", normTarget)
 	if contSummary != nil && contSummary.TotalThreads > 0 {

@@ -258,3 +258,156 @@ func TestSupervisorStoragePathDoesNotReplaceConversationsDirectory(t *testing.T)
 		t.Fatalf("Expected 1 thread with ID %s, got: %+v", tID, threads)
 	}
 }
+
+func TestPruneActiveThreadsHistory_UnderLimit(t *testing.T) {
+	// 1. Zero files
+	tmpDir0 := t.TempDir()
+	deleted, err := PruneActiveThreadsHistory(tmpDir0, 2)
+	if err != nil {
+		t.Fatalf("PruneActiveThreadsHistory failed on empty dir: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("Expected 0 deleted files for empty dir, got %d", deleted)
+	}
+
+	// 2. Exactly 1 file
+	tmpDir1 := t.TempDir()
+	f1 := filepath.Join(tmpDir1, "2026-10-21-10-00-00_active_threads.json")
+	_ = os.WriteFile(f1, []byte("{}"), 0644)
+	deleted, err = PruneActiveThreadsHistory(tmpDir1, 2)
+	if err != nil {
+		t.Fatalf("PruneActiveThreadsHistory failed on 1-file dir: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("Expected 0 deleted files for 1 file, got %d", deleted)
+	}
+	if _, err := os.Stat(f1); err != nil {
+		t.Errorf("File f1 was unexpectedly deleted: %v", err)
+	}
+
+	// 3. Exactly 2 files
+	tmpDir2 := t.TempDir()
+	f2a := filepath.Join(tmpDir2, "2026-10-21-10-00-00_active_threads.json")
+	f2b := filepath.Join(tmpDir2, "2026-10-21-11-00-00_active_threads.json")
+	_ = os.WriteFile(f2a, []byte("{}"), 0644)
+	_ = os.WriteFile(f2b, []byte("{}"), 0644)
+	deleted, err = PruneActiveThreadsHistory(tmpDir2, 2)
+	if err != nil {
+		t.Fatalf("PruneActiveThreadsHistory failed on 2-file dir: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("Expected 0 deleted files for 2 files, got %d", deleted)
+	}
+	if _, err := os.Stat(f2a); err != nil {
+		t.Errorf("File f2a was unexpectedly deleted: %v", err)
+	}
+	if _, err := os.Stat(f2b); err != nil {
+		t.Errorf("File f2b was unexpectedly deleted: %v", err)
+	}
+}
+
+func TestPruneActiveThreadsHistory_OverLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create 10 files with simulated timestamps from 2026-10-18 to 2026-10-21
+	filenames := []string{
+		"2026-10-18-08-00-00_active_threads.json",
+		"2026-10-18-12-00-00_active_threads.json",
+		"2026-10-19-09-00-00_active_threads.json",
+		"2026-10-19-15-00-00_active_threads.json",
+		"2026-10-20-10-00-00_active_threads.json",
+		"2026-10-20-14-00-00_active_threads.json",
+		"2026-10-20-18-00-00_active_threads.json",
+		"2026-10-21-08-00-00_active_threads.json",
+		"2026-10-21-10-00-00_active_threads.json", // 2nd newest
+		"2026-10-21-12-00-00_active_threads.json", // 1st newest
+	}
+
+	for _, name := range filenames {
+		p := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(p, []byte(`{"test":true}`), 0644); err != nil {
+			t.Fatalf("Failed creating file %s: %v", name, err)
+		}
+	}
+
+	// Also add an unrelated file and a subdirectory to ensure they are NOT touched
+	unrelatedFile := filepath.Join(tmpDir, "readme.txt")
+	_ = os.WriteFile(unrelatedFile, []byte("preserve me"), 0644)
+	subDir := filepath.Join(tmpDir, "subfolder")
+	_ = os.MkdirAll(subDir, 0755)
+
+	deleted, err := PruneActiveThreadsHistory(tmpDir, 2)
+	if err != nil {
+		t.Fatalf("PruneActiveThreadsHistory failed: %v", err)
+	}
+
+	if deleted != 8 {
+		t.Errorf("Expected exactly 8 deleted files, got %d", deleted)
+	}
+
+	// Verify the 2 newest files exist
+	expectedRetained := []string{
+		"2026-10-21-12-00-00_active_threads.json",
+		"2026-10-21-10-00-00_active_threads.json",
+	}
+	for _, name := range expectedRetained {
+		p := filepath.Join(tmpDir, name)
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("Expected newest file %s to be retained, but got error: %v", name, err)
+		}
+	}
+
+	// Verify the 8 older files were deleted
+	for _, name := range filenames[:8] {
+		p := filepath.Join(tmpDir, name)
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("Expected older file %s to be deleted, but it still exists", name)
+		}
+	}
+
+	// Verify unrelated file and subfolder are untouched
+	if _, err := os.Stat(unrelatedFile); err != nil {
+		t.Errorf("Unrelated file %s should be preserved, but got: %v", unrelatedFile, err)
+	}
+	if fi, err := os.Stat(subDir); err != nil || !fi.IsDir() {
+		t.Errorf("Subdirectory %s should be preserved", subDir)
+	}
+}
+
+func TestPruneActiveThreadsHistory_NonExistentDir(t *testing.T) {
+	nonExistent := filepath.Join(t.TempDir(), "does_not_exist_dir")
+	deleted, err := PruneActiveThreadsHistory(nonExistent, 2)
+	if err != nil {
+		t.Fatalf("Expected err == nil for non-existent dir, got %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("Expected 0 deleted for non-existent dir, got %d", deleted)
+	}
+}
+
+func TestSessionReloader_PruneActiveThreadsHistory(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	for i := 1; i <= 5; i++ {
+		name := filepath.Join(tmpDir, "2026-10-21-0"+string(rune('0'+i))+"-00-00_active_threads.json")
+		_ = os.WriteFile(name, []byte("{}"), 0644)
+	}
+
+	rel := NewSessionReloader()
+	rel.OutputDir = tmpDir
+
+	// keepCount <= 0 should default to DefaultHistoryKeepCount (2)
+	deleted, err := rel.PruneActiveThreadsHistory(0)
+	if err != nil {
+		t.Fatalf("rel.PruneActiveThreadsHistory failed: %v", err)
+	}
+	if deleted != 3 {
+		t.Errorf("Expected 3 deleted files with default keepCount, got %d", deleted)
+	}
+
+	// Check 2 remaining
+	entries, _ := os.ReadDir(tmpDir)
+	if len(entries) != 2 {
+		t.Errorf("Expected 2 files remaining in tmpDir, got %d", len(entries))
+	}
+}
