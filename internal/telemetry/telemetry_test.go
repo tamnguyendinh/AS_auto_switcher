@@ -942,12 +942,13 @@ func TestCoverageBooster(t *testing.T) {
 
 	// 5. QuotaCache custom path SaveToDisk & LoadFromDisk
 	cachePathCustom := filepath.Join(tempDir, "custom_sub", "cache.json")
-	cache := NewQuotaCache("")
+	testCachePath := filepath.Join(tempDir, "test_quota_cache.json")
+	cache := NewQuotaCache(testCachePath)
 	cache.Update(&AccountQuotaData{Email: "custom@example.com", Status: StatusPristine})
 	if err := cache.SaveToDisk(cachePathCustom); err != nil {
 		t.Fatalf("SaveToDisk custom failed: %v", err)
 	}
-	cacheLoad := NewQuotaCache("")
+	cacheLoad := NewQuotaCache(testCachePath)
 	if err := cacheLoad.LoadFromDisk(cachePathCustom); err != nil {
 		t.Fatalf("LoadFromDisk custom failed: %v", err)
 	}
