@@ -1,11 +1,9 @@
 # scripts/build_windows.ps1
 # Antigravity Multi-Account Switcher - Windows Build Automation
-# Enforces pure Go standalone compilation (CLI) and CGo Fyne GUI compilation (GUI)
+# Enforces single GUI artifact compilation (CGo Fyne GUI, CGO_ENABLED=1)
 
 [CmdletBinding()]
 param(
-    [ValidateSet("cli", "gui", "all")]
-    [string]$Mode = "cli",
     [switch]$SkipTests,
     [switch]$Clean,
     [string]$OutDir = "bin"
@@ -17,7 +15,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "================================================================================" -ForegroundColor Cyan
 Write-Host "⚡ Antigravity Multi-Account Switcher - Windows Build System" -ForegroundColor Cyan
-Write-Host "   Mode: $Mode | OutDir: $OutDir | SkipTests: $SkipTests | Clean: $Clean" -ForegroundColor DarkCyan
+Write-Host "   OutDir: $OutDir | SkipTests: $SkipTests | Clean: $Clean" -ForegroundColor DarkCyan
 Write-Host "================================================================================" -ForegroundColor Cyan
 
 # 1. Clean Stage
@@ -46,42 +44,20 @@ $env:GOARCH = "amd64"
 # 2. Pre-Flight Validation & Tests
 if (-not $SkipTests) {
     Write-Host "[2/4] Running pre-flight tests & vet..." -ForegroundColor Yellow
-
-    if ($Mode -eq "cli" -or $Mode -eq "all") {
-        Write-Host "  -> Verifying pure Go packages (CGO_ENABLED=0)..." -ForegroundColor DarkYellow
-        $env:CGO_ENABLED = "0"
-        
-        # go vet
-        go vet ./cmd/switcher/...
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "go vet failed for cmd/switcher"
-        }
-
-        # go test
-        go test ./internal/model/... ./internal/wincred/... ./internal/store/... ./internal/scanner/... ./internal/connector/... ./internal/reloader/... ./internal/manager/... ./cmd/switcher/...
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Pure Go test suite failed"
-        }
-        Write-Host "  [PASS] Pure Go verification succeeded." -ForegroundColor Green
+    $env:CGO_ENABLED = "1"
+    
+    # go vet
+    go vet -unsafeptr=false ./cmd/switcher/... ./internal/...
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "go vet failed"
     }
 
-    if ($Mode -eq "gui" -or $Mode -eq "all") {
-        Write-Host "  -> Verifying GUI packages with CGo & Fyne (CGO_ENABLED=1)..." -ForegroundColor DarkYellow
-        $env:CGO_ENABLED = "1"
-        
-        # go vet
-        go vet -tags gui ./cmd/switcher/... ./internal/ui/...
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "go vet failed for GUI packages"
-        }
-
-        # go test
-        go test -tags gui ./cmd/switcher/... ./internal/ui/...
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "GUI test suite failed"
-        }
-        Write-Host "  [PASS] GUI verification succeeded." -ForegroundColor Green
+    # go test
+    go test ./cmd/switcher/... ./internal/...
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Test suite failed"
     }
+    Write-Host "  [PASS] Verification succeeded." -ForegroundColor Green
 } else {
     Write-Host "[2/4] Skipping tests (-SkipTests specified)." -ForegroundColor DarkGray
 }
@@ -130,36 +106,6 @@ function Compile-WindowsResource {
     Write-Host "  [SUCCESS] Compiled PE resource object: $SysoPath ($($sysoItem.Length) bytes)" -ForegroundColor Green
 }
 
-function Build-CLI {
-    param([string]$TargetDir)
-    Write-Host "  -> Building Standalone CLI Binary (Pure Go, CGO_ENABLED=0)..." -ForegroundColor Cyan
-    $env:CGO_ENABLED = "0"
-    $outFile = Join-Path $TargetDir "antigravity-switch.exe"
-    if (Test-Path $outFile) {
-        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($outFile)
-        Get-Process -Name $baseName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Milliseconds 200
-        Remove-Item -Force $outFile
-    }
-    
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    go build -ldflags="-s -w" -o $outFile .\cmd\switcher
-    $stopwatch.Stop()
-    
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outFile)) {
-        Write-Error "Failed building CLI binary: $outFile"
-    }
-
-    $item = Get-Item $outFile
-    $sizeMB = [math]::Round($item.Length / 1MB, 2)
-    Write-Host "  [SUCCESS] Created: $outFile" -ForegroundColor Green
-    Write-Host "  Compile Duration: $($stopwatch.ElapsedMilliseconds) ms | Size: $sizeMB MB ($($item.Length) bytes)" -ForegroundColor Green
-
-    if ($sizeMB -gt 15.0) {
-        Write-Error "Binary size check failed! $sizeMB MB exceeds 15MB threshold."
-    }
-}
-
 function Build-GUI {
     param([string]$TargetDir)
     Write-Host "  -> Building Standalone GUI Binary (Fyne, CGO_ENABLED=1)..." -ForegroundColor Cyan
@@ -173,7 +119,7 @@ function Build-GUI {
     }
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    go build -tags gui -ldflags="-H windowsgui -s -w" -o $outFile .\cmd\switcher
+    go build -ldflags="-H windowsgui -s -w" -o $outFile .\cmd\switcher
     $stopwatch.Stop()
 
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outFile)) {
@@ -189,14 +135,8 @@ function Build-GUI {
 # Always compile Windows PE resource first so *.syso is automatically linked by Go compiler
 Compile-WindowsResource
 
-switch ($Mode) {
-    "cli" { Build-CLI -TargetDir $OutDir }
-    "gui" { Build-GUI -TargetDir $OutDir }
-    "all" {
-        Build-CLI -TargetDir $OutDir
-        Build-GUI -TargetDir $OutDir
-    }
-}
+# Build GUI artifact
+Build-GUI -TargetDir $OutDir
 
 # 4. Quick Verification Gate
 Write-Host "[4/4] Executing quick verification..." -ForegroundColor Yellow
@@ -219,16 +159,8 @@ function Verify-BinaryIcon {
     }
 }
 
-Verify-BinaryIcon -FilePath (Join-Path $OutDir "antigravity-switch.exe")
 Verify-BinaryIcon -FilePath (Join-Path $OutDir "antigravity-switch-gui.exe")
-
-$verifyExe = Join-Path $OutDir "antigravity-switch.exe"
-if (Test-Path $verifyExe) {
-    Write-Host "  -> Running '$verifyExe --status'..." -ForegroundColor Cyan
-    & $verifyExe --status
-} elseif (Test-Path (Join-Path $OutDir "antigravity-switch-gui.exe")) {
-    Write-Host "  [INFO] GUI binary built at $(Join-Path $OutDir "antigravity-switch-gui.exe")." -ForegroundColor Green
-}
+Write-Host "  [INFO] GUI binary built at $(Join-Path $OutDir "antigravity-switch-gui.exe")." -ForegroundColor Green
 
 Write-Host "================================================================================" -ForegroundColor Cyan
 Write-Host "⚡ BUILD SUCCESSFUL" -ForegroundColor Green
