@@ -101,7 +101,8 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	if mgr != nil && mgr.Store() != nil && mgr.Store().GetStoreDir() != "" {
 		logsDir = filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "logs")
 	}
-	cachePath := filepath.Join(logsDir, "quota_log.json")
+	quotaDir := filepath.Join(logsDir, "quota_log")
+	cachePath := telemetry.GetTodayQuotaLogPath(quotaDir)
 	a.preferencesPath = filepath.Join(logsDir, "ui_preferences.json")
 
 	// 1. Initialize Quota Cache

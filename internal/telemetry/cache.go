@@ -6,15 +6,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	// DefaultQuotaCachePath is the canonical disk cache file for quota telemetry.
+	// DefaultQuotaCachePath is the canonical disk cache file for quota telemetry (Phase 3).
 	DefaultQuotaCachePath = "logs/quota_log.json"
+	// DefaultQuotaLogDir is the canonical directory for daily quota logs (Phase 4).
+	DefaultQuotaLogDir = "logs/quota_log"
 )
+
+// GetTodayQuotaLogPath returns the canonical path for today's quota log file.
+func GetTodayQuotaLogPath(baseDir ...string) string {
+	dir := DefaultQuotaLogDir
+	if len(baseDir) > 0 && strings.TrimSpace(baseDir[0]) != "" {
+		dir = baseDir[0]
+	}
+	today := time.Now().Format("2006-01-02")
+	return filepath.Join(dir, fmt.Sprintf("%s_quota_log.json", today))
+}
 
 var (
 	// ErrNilQuotaData is returned when attempting to cache nil quota data.
@@ -125,10 +138,27 @@ func (c *QuotaCache) UpdateBatch(items []*AccountQuotaData) {
 
 // SaveToDisk atomically writes the current in-memory quota matrix to disk.
 // If customPath is provided, it writes to that path instead of c.filePath.
+// When targeting daily quota sharding or default paths, it automatically directs
+// writes to today's canonical daily log file.
 func (c *QuotaCache) SaveToDisk(customPath ...string) error {
 	targetPath := c.filePath
 	if len(customPath) > 0 && strings.TrimSpace(customPath[0]) != "" {
 		targetPath = customPath[0]
+	}
+
+	// Resolve daily sharding paths
+	if targetPath == DefaultQuotaCachePath || targetPath == DefaultQuotaLogDir {
+		targetPath = GetTodayQuotaLogPath()
+	} else if fi, err := os.Stat(targetPath); err == nil && fi.IsDir() {
+		targetPath = GetTodayQuotaLogPath(targetPath)
+	} else if strings.HasSuffix(filepath.Base(targetPath), "_quota_log.json") {
+		targetPath = GetTodayQuotaLogPath(filepath.Dir(targetPath))
+	}
+
+	if len(customPath) == 0 {
+		c.mu.Lock()
+		c.filePath = targetPath
+		c.mu.Unlock()
 	}
 
 	// Capture memory snapshot under read lock
@@ -193,19 +223,87 @@ func (c *QuotaCache) SaveToDisk(customPath ...string) error {
 }
 
 // LoadFromDisk reads the quota matrix snapshot from disk into memory.
-// If the file does not exist, it returns nil without error (cold start).
+// If the target path represents a daily quota sharding location, it checks today's log file first.
+// If today's file does not exist, it scans for the most recent previous daily log file in the directory.
+// If no cache file exists, it returns nil without error (cold start).
 func (c *QuotaCache) LoadFromDisk(customPath ...string) error {
 	targetPath := c.filePath
 	if len(customPath) > 0 && strings.TrimSpace(customPath[0]) != "" {
 		targetPath = customPath[0]
 	}
 
-	dataBytes, err := os.ReadFile(targetPath)
+	// 1. Check if targetPath exists on disk as a regular file
+	fi, statErr := os.Stat(targetPath)
+	if statErr == nil && !fi.IsDir() {
+		return c.loadFile(targetPath)
+	}
+
+	// 2. If targetPath is an existing directory, load from that directory
+	if statErr == nil && fi.IsDir() {
+		return c.loadFromDir(targetPath)
+	}
+
+	// 3. If targetPath is DefaultQuotaCachePath or DefaultQuotaLogDir
+	if targetPath == DefaultQuotaCachePath {
+		if fiLegacy, err := os.Stat(DefaultQuotaCachePath); err == nil && !fiLegacy.IsDir() {
+			return c.loadFile(DefaultQuotaCachePath)
+		}
+		return c.loadFromDir(DefaultQuotaLogDir)
+	}
+	if targetPath == DefaultQuotaLogDir {
+		return c.loadFromDir(DefaultQuotaLogDir)
+	}
+
+	// 4. If targetPath ends with _quota_log.json (e.g. today's path where today's file does not exist yet)
+	if strings.HasSuffix(filepath.Base(targetPath), "_quota_log.json") {
+		searchDir := filepath.Dir(targetPath)
+		return c.loadFromDir(searchDir)
+	}
+
+	// 5. Normal missing file: cold start
+	return nil
+}
+
+func (c *QuotaCache) loadFromDir(dir string) error {
+	todayPath := GetTodayQuotaLogPath(dir)
+	if fi, err := os.Stat(todayPath); err == nil && !fi.IsDir() {
+		return c.loadFile(todayPath)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to read quota directory %s: %w", dir, err)
+	}
+
+	var candidates []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), "_quota_log.json") {
+			candidates = append(candidates, entry.Name())
+		}
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i] > candidates[j]
+	})
+
+	latestPath := filepath.Join(dir, candidates[0])
+	return c.loadFile(latestPath)
+}
+
+func (c *QuotaCache) loadFile(filePath string) error {
+	dataBytes, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil // Missing cache is not fatal
 		}
-		return fmt.Errorf("failed to read quota cache from %s: %w", targetPath, err)
+		return fmt.Errorf("failed to read quota cache from %s: %w", filePath, err)
 	}
 
 	if len(strings.TrimSpace(string(dataBytes))) == 0 {
