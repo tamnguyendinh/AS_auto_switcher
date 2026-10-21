@@ -4,10 +4,10 @@
 
 - **Ngày lập:** 2026-10-21.
 - **Múi giờ:** Asia/Bangkok.
-- **Phiên bản:** 2.0 (ACTIONABLE RECIPE — Đã bổ sung lộ trình phân chia Phase và đối chiếu codebase chi tiết).
+- **Phiên bản:** 2.1 (UI-FIRST ACTIONABLE RECIPE — Chuẩn hóa lộ trình: Tầng Giao diện Thẻ code đầu tiên theo chỉ đạo Owner).
 - **Mã văn kiện:** `SPEC-ARCH-20261021-ACCOUNT-STATUS-ON-OFF-AUTO-STOP`.
 - **Thẩm quyền:** Phê chuẩn trực tiếp từ Human Owner.
-- **Cơ sở đối chiếu source:** commit `b2ee12d`.
+- **Cơ sở đối chiếu source:** commit `c11c479`.
 - **Trạng thái:** DRAFT (Trình duyệt Owner) — Sẵn sàng cho Coder triển khai tuần tự theo từng Phase không cần suy đoán.
 - **Đối tượng áp dụng:** Coder, Planner, QA, Supervisor, Human Owner.
 
@@ -15,8 +15,8 @@
 
 ## I. MỤC TIÊU VÀ NGUYÊN TẮC CỐT LÕI (OBJECTIVES & INVARIANTS)
 
-Bản đặc tả này chuẩn hóa 2 tính năng gắn kết mật thiết trong hệ thống:
-1. Cơ chế Bật/Tắt (Enable/Disable hay `[ON]` / `[OFF]`) độc lập cho từng tài khoản lưu trực tiếp tại kho credential `accounts_store/<email>.json`.
+Bản đặc tả này chuẩn hóa 2 tính năng gắn kết mật thiết trong hệ thống theo phương pháp tiếp cận **Giao diện làm trung tâm (UI-First)**:
+1. Cơ chế Bật/Tắt (Enable/Disable hay `[ON]` / `[OFF]`) trực quan trên từng thẻ tài khoản, lưu bền vững tại kho credential `accounts_store/<email>.json`.
 2. Cơ chế Dừng an toàn (Fail-Safe Auto-Stop) tự động ngắt chế độ Tự động (`auto_switch = false`) và thông báo chuẩn mực khi hệ thống không còn bất kỳ tài khoản nào đủ điều kiện để chuyển đổi.
 
 ### 7 Bất biến hệ thống bắt buộc (Mandatory Invariants):
@@ -87,45 +87,37 @@ Khi cơ chế Dừng an toàn kích hoạt:
 
 ---
 
-## III. BẢNG PHÂN RÃ THỰC THI CHO CODER (CHÍNH XÁC CÁI GÌ CODE TRƯỚC, CÁI GÌ CODE SAU)
+## III. BẢNG PHÂN RÃ THỰC THI (LỘ TRÌNH UI-FIRST: CÁI GÌ CODE TRƯỚC, CÁI GÌ CODE SAU)
 
-Để đảm bảo Coder triển khai mượt mà, không gặp lỗi biên dịch phụ thuộc vòng (circular dependency) hoặc mất dữ liệu, lộ trình lập trình bắt buộc chia làm **5 Phase tuần tự** như sau:
+Theo chỉ đạo trực tiếp của Human Owner, hệ thống áp dụng phương pháp **UI-First (Tầng Giao diện Thẻ code đầu tiên)** nhằm đảm bảo hợp đồng tương tác người dùng, diện mạo trực quan của thẻ và các nút bấm được chốt chuẩn xác ngay từ bước đầu:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│ PHASE 1: Tầng Lưu trữ & Thực thể Dữ liệu (Store & Manager)             │
-│ [internal/store/account_store.go, internal/manager/account_manager.go] │
-│ • Mở rộng StoredAccountEnvelope với Status ("on" / "off")              │
-│ • Bổ sung SetAccountStatus & GetAccountStatus                          │
-│ • Bảo tồn Status khi SaveAccount ghi đè token                          │
-│ • Map Status sang AccountDisplayItem                                   │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│ PHASE 2: Tầng Đánh giá Ứng viên & Telemetry Engine                     │
-│ [internal/automation/sorter.go, controller.go, telemetry/pool.go]      │
-│ • Mở rộng CandidateAccount có trường Status                            │
-│ • Bổ sung Criterion loại trừ tài khoản status == "off"                 │
-│ • Bổ sung logic Dừng tự động khi len(eligible) == 0 (ErrNoCandidates)  │
-│ • Bỏ qua polling telemetry đối với tài khoản status == "off"           │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│ PHASE 3: Tầng Thành phần Giao diện Thẻ (UI Widgets)                    │
+│ PHASE 1 (CODE ĐẦU TIÊN): Tầng Giao diện Thẻ (UI Widgets)               │
 │ [internal/ui/widgets.go]                                               │
-│ • Tạo statusTextButton hiển thị [ON] (xanh lá) / [OFF] (xám)           │
-│ • Thêm statusTextButton vào bên phải nút [🔄] trong actionCluster       │
+│ • Tạo widget statusTextButton hiển thị [ON] (xanh lá) / [OFF] (xám)     │
+│ • Bố trí nút [ON/OFF] nằm bên phải nút [🔄] trong actionCluster        │
 │ • Xử lý làm mờ nút [Chuyển] và khóa nút [🔄] khi Status == "off"        │
-│ • Ẩn nút [ON/OFF] đối với thẻ [Cần OAuth]                              │
+│ • Ẩn hoàn toàn nút [ON/OFF] đối với thẻ [Cần OAuth]                    │
+│ • Mở rộng AccountCardWidget và UpdateState để cập nhật tại chỗ         │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ PHASE 4: Tầng Điều phối Giao diện & Xử lý Sự kiện (UI App)             │
+│ PHASE 2 (CODE THỨ HAI): Tầng Lưu trữ & Thực thể Dữ liệu                │
+│ [internal/store/account_store.go, internal/manager/account_manager.go] │
+│ • Mở rộng StoredAccountEnvelope với trường Status ("on" / "off")       │
+│ • Bổ sung SetAccountStatus & GetAccountStatus (mặc định cũ là "on")    │
+│ • Bảo tồn Status khi SaveAccount ghi đè / capture token                │
+│ • Bổ sung Status vào AccountDisplayItem và map trong GetAccountStates  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ PHASE 3 (CODE THỨ BA): Tầng Điều phối Giao diện & Xử lý Sự kiện       │
 │ [internal/ui/app.go]                                                   │
 │ • Bổ sung hàm callback ToggleAccountStatus(email string)               │
+│ • Nối sự kiện click nút [ON/OFF] vào AccountManager.SetAccountStatus   │
 │ • Xử lý logic tắt tài khoản active: kích hoạt chuyển ngay              │
 │ • Bắt sự kiện StatusNoCandidate: gạt tắt Toggle, lưu ui_preferences    │
 │ • Hiển thị thông báo chuẩn: ⚠️ Không có tài khoản để chuyển.          │
@@ -133,12 +125,22 @@ Khi cơ chế Dừng an toàn kích hoạt:
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│ PHASE 5: Kiểm thử Tự động & Nghiệm thu (Testing & Regression)          │
-│ [internal/store/*_test.go, automation/*_test.go, ui/*_test.go]         │
-│ • Unit test Store lưu trữ, backward compatibility, state preservation  │
-│ • Unit test FilterEligibleCandidates loại trừ tài khoản OFF            │
-│ • Unit test Controller dừng tự động khi hết ứng viên                   │
-│ • UI test thẻ hiển thị đúng, click toggle và cập nhật in-place         │
+│ PHASE 4 (CODE THỨ TƯ): Tầng Tự động Chuyển đổi & Telemetry Engine      │
+│ [internal/automation/sorter.go, controller.go, telemetry/pool.go]      │
+│ • Mở rộng CandidateAccount có trường Status                            │
+│ • Bổ sung Criterion loại trừ tài khoản status == "off"                 │
+│ • Kích hoạt Dừng tự động (enabled = false) khi len(eligible) == 0      │
+│ • Bỏ qua polling telemetry đối với tài khoản status == "off"           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ PHASE 5 (CODE THỨ NĂM): Kiểm thử Tự động & Nghiệm thu                  │
+│ [internal/ui/*_test.go, store/*_test.go, automation/*_test.go]         │
+│ • UI test thẻ hiển thị [ON]/[OFF], click toggle, làm mờ nút Chuyển     │
+│ • Store unit test lưu trữ, backward compatibility, state preservation  │
+│ • Automation unit test loại trừ tài khoản OFF, dừng khi hết ứng viên   │
+│ • E2E test chu trình tắt tài khoản active và tự động dừng an toàn      │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -148,38 +150,168 @@ Khi cơ chế Dừng an toàn kích hoạt:
 
 ---
 
-### PHASE 1: TẦNG LƯU TRỮ & THỰC THỂ DỮ LIỆU (STORE & MANAGER)
-*(Thực hiện trước tiên vì là nền tảng schema dữ liệu cho toàn bộ các tầng trên)*
+### PHASE 1 (CODE ĐẦU TIÊN): TẦNG GIAO DIỆN THẺ (UI WIDGETS)
+*(Bắt đầu tại đây theo chỉ đạo của Owner: Hoàn thiện diện mạo thẻ, bố cục nút và hiệu ứng làm mờ)*
 
-#### 1.1. Cập nhật `internal/store/account_store.go`
+#### 1.1. Cập nhật `internal/ui/widgets.go`
+1. **Xây dựng widget nút Text trạng thái `statusTextButton`:**
+   Tạo widget phẳng tương tự như `switchTextButton` để đảm bảo phong cách hiển thị đồng bộ với giao diện hiện có:
+   ```go
+   type statusTextButton struct {
+       widget.BaseWidget
+       Status   string // "on" hoặc "off"
+       OnTapped func()
+       hovered  bool
+       palette  ThemePalette
+       bg       *canvas.Rectangle
+       text     *canvas.Text
+   }
+   ```
+   - **Quy tắc hiển thị văn bản:**
+     - Khi `Status == "on"`: Nhãn hiển thị `"[ON]"`, màu chữ `palette.Success` (xanh lá), in đậm (`Bold: true`), cỡ chữ 10, căn giữa.
+     - Khi `Status == "off"`: Nhãn hiển thị `"[OFF]"`, màu chữ `palette.TextMuted` (xám mờ), in đậm (`Bold: true`), cỡ chữ 10, căn giữa.
+   - **Hiệu ứng chuột (Hover & Cursor):**
+     - Con trỏ chuột: `desktop.PointerCursor` (bàn tay chỉ tay).
+     - Khi rê chuột vào: Nền `bg` sáng nhẹ 14% theo màu tương ứng, nhãn sáng nhẹ tương tự nút `[Chuyển]`.
+   - **Xử lý sự kiện click:**
+     - Hàm `Tapped(*fyne.PointEvent)` gọi `OnTapped()` nếu khác nil.
+
+2. **Mở rộng `AccountCardWidget`:**
+   - Thêm trường `Status string` (mặc định khởi tạo là `"on"`).
+   - Thêm trường tham chiếu: `statusButton *statusTextButton`.
+   - Thêm trường tham chiếu callback: `onToggleStatus func(email string)`.
+
+3. **Bố cục Hàng trên (Top Row) trong `NewAccountCardWidgetWithQuota`:**
+   - Nhận thêm callback `onToggleStatus func(email string)` vào hàm khởi tạo thẻ.
+   - Khởi tạo `statusButton`:
+     ```go
+     statusBtn := newStatusTextButton(item.Status, func() {
+         if w.onToggleStatus != nil {
+             w.onToggleStatus(w.Email)
+         }
+     }, palette)
+     ```
+   - **Vị trí nút:** Đặt `statusBtn` nằm ở **bên phải nút `refreshBtn`**:
+     ```go
+     // Thứ tự: [actionSlot (Chuyển/Dùng/OAuth)] -> [Nút 🔄 Làm mới] -> [Nút ON/OFF]
+     actionCluster := container.NewHBox(actionSlot, compactButton(refreshBtn), compactButton(statusBtn))
+     ```
+
+4. **Cập nhật phương thức phản ứng tại chỗ `UpdateState(item, palette)`:**
+   - Cập nhật trường nội bộ: `w.Status = item.Status`.
+   - **Quy tắc đối với thẻ `[Cần OAuth]` (`!item.HasToken && !item.IsActive`):**
+     - Gọi `w.statusButton.Hide()` $\rightarrow$ Tuyệt đối không hiển thị nút `[ON/OFF]` trên thẻ chưa có credential.
+   - **Quy tắc đối với thẻ đã có credential hoặc đang Active:**
+     - Gọi `w.statusButton.Show()`.
+     - Cập nhật trạng thái và màu sắc của `statusButton` theo `item.Status` (`[ON]` xanh lá hoặc `[OFF]` xám).
+   - **Xử lý làm mờ nút `[Chuyển]` khi `w.Status == "off"`:**
+     - Khi tài khoản không active và có token (`!w.IsActive && w.HasToken`):
+       - Nếu `w.Status == "off"`:
+         - Khởi tạo nút chuyển ở trạng thái bị vô hiệu hóa: Màu chữ `palette.TextMuted`, không có hover effect, con trỏ chuột là `desktop.DefaultCursor`, click không thực hiện hành động nào (no-op).
+       - Nếu `w.Status == "on"`:
+         - Nút `[Chuyển]` khởi tạo bình thường: Màu chữ `palette.Primary`, con trỏ `PointerCursor`, click gọi `w.onSwitch(w.Email)`.
+   - **Xử lý nút làm mới `[🔄]` khi `w.Status == "off"`:**
+     - Nếu `w.Status == "off"`: Gọi `w.refreshButton.Disable()`.
+     - Nếu `w.Status == "on"` và (`w.IsActive || w.HasToken`): Gọi `w.refreshButton.Enable()`.
+
+---
+
+### PHASE 2 (CODE THỨ HAI): TẦNG LƯU TRỮ & THỰC THỂ DỮ LIỆU (STORE & MANAGER)
+*(Thực hiện thứ hai để cung cấp khả năng nạp/lưu trạng thái bền vững phục vụ giao diện)*
+
+#### 2.1. Cập nhật `internal/store/account_store.go`
 1. Mở rộng struct `StoredAccountEnvelope`:
    ```go
    type StoredAccountEnvelope struct {
        Email     string           `json:"email"`
-       Status    string           `json:"status,omitempty"` // "on" or "off", defaults to "on" if empty
+       Status    string           `json:"status,omitempty"` // "on" hoặc "off", mặc định là "on" nếu rỗng
        SavedAt   float64          `json:"saved_at"`
        TokenData *model.TokenData `json:"token_data"`
    }
    ```
 2. Cập nhật hàm `SaveAccount(email string, token *model.TokenData) error`:
-   - Trước khi tạo temp file để ghi `envelope`, kiểm tra xem file đích `targetPath` đã tồn tại chưa.
-   - Nếu đã tồn tại: Đọc nội dung hiện có, unmarshal để lấy `existingStatus`. Nếu `existingStatus == "off"`, gán `envelope.Status = "off"`. Ngược lại gán `envelope.Status = "on"`.
-   - Nếu chưa tồn tại: Gán `envelope.Status = "on"`.
-   - **Mục đích:** Bảo vệ `Invariant-Token-Update-Preservation` — không làm mất trạng thái `"off"` khi token được làm mới hoặc capture lại.
-3. Bổ sung hàm `SetAccountStatus(email string, status string) error`:
+   - Trước khi ghi đè tệp tài khoản, kiểm tra xem tệp `targetPath` đã có sẵn trên đĩa hay chưa.
+   - Nếu tệp đã tồn tại: Đọc tệp và trích xuất `existingStatus`. Nếu `existingStatus == "off"`, giữ nguyên `envelope.Status = "off"`. Ngược lại gán `"on"`.
+   - Nếu tệp chưa tồn tại: Gán `envelope.Status = "on"`.
+   - **Mục đích:** Bảo vệ `Invariant-Token-Update-Preservation` — không làm mất trạng thái `"off"` khi token được capture hoặc refresh lại.
+3. Bổ sung hàm cập nhật trạng thái `SetAccountStatus`:
    ```go
    // SetAccountStatus atomically updates only the status field ("on" or "off") of an existing account file.
-   func (s *AccountStore) SetAccountStatus(email string, status string) error
-   ```
-   - Chuẩn hóa: `normStatus := strings.ToLower(strings.TrimSpace(status))`. Nếu khác `"off"`, quy về `"on"`.
-   - Đọc file hiện hữu: Nếu không tìm thấy file, trả về `ErrAccountNotFound`.
-   - Cập nhật trường `envelope.Status = normStatus`.
-   - Ghi đè tệp an toàn bằng cơ chế atomic temp file + `os.Rename` hiện có của store.
-4. Bổ sung hàm `GetAccountStatus(email string) (string, error)`:
-   - Đọc tệp và trả về trường `Status`. Nếu chuỗi rỗng hoặc file chưa có trường này, trả về `"on"`.
+   func (s *AccountStore) SetAccountStatus(email string, status string) error {
+       if strings.TrimSpace(email) == "" {
+           return ErrInvalidEmail
+       }
+       normStatus := strings.ToLower(strings.TrimSpace(status))
+       if normStatus != "off" {
+           normStatus = "on"
+       }
+       targetPath, err := SafeAccountPath(s.storeDir, email)
+       if err != nil {
+           return err
+       }
 
-#### 1.2. Cập nhật `internal/manager/account_manager.go`
-1. Mở rộng `AccountDisplayItem`:
+       s.mu.Lock()
+       defer s.mu.Unlock()
+
+       data, err := os.ReadFile(targetPath)
+       if err != nil {
+           if os.IsNotExist(err) {
+               return ErrAccountNotFound
+           }
+           return fmt.Errorf("failed to read account file: %w", err)
+       }
+
+       var env StoredAccountEnvelope
+       if err := json.Unmarshal(data, &env); err != nil {
+           return ErrCorruptedStoreFile
+       }
+
+       env.Status = normStatus
+
+       // Ghi tệp an toàn bằng atomic temp file + os.Rename
+       tmpFile, err := os.CreateTemp(s.storeDir, "acc_tmp_*.json")
+       if err != nil {
+           return err
+       }
+       tmpPath := tmpFile.Name()
+       defer func() { _ = tmpFile.Close(); _ = os.Remove(tmpPath) }()
+
+       encoder := json.NewEncoder(tmpFile)
+       encoder.SetIndent("", "  ")
+       if err := encoder.Encode(env); err != nil {
+           return err
+       }
+       _ = tmpFile.Sync()
+       _ = tmpFile.Close()
+
+       _ = os.Remove(targetPath)
+       return os.Rename(tmpPath, targetPath)
+   }
+   ```
+4. Bổ sung hàm đọc trạng thái `GetAccountStatus`:
+   ```go
+   func (s *AccountStore) GetAccountStatus(email string) (string, error) {
+       targetPath, err := SafeAccountPath(s.storeDir, email)
+       if err != nil {
+           return "on", err
+       }
+       s.mu.RLock()
+       defer s.mu.RUnlock()
+
+       data, err := os.ReadFile(targetPath)
+       if err != nil {
+           return "on", err
+       }
+       var env StoredAccountEnvelope
+       if err := json.Unmarshal(data, &env); err != nil || env.Status == "" {
+           return "on", nil
+       }
+       return strings.ToLower(env.Status), nil
+   }
+   ```
+
+#### 2.2. Cập nhật `internal/manager/account_manager.go`
+1. Mở rộng struct `AccountDisplayItem`:
    ```go
    type AccountDisplayItem struct {
        Email        string             `json:"email"`
@@ -187,14 +319,14 @@ Khi cơ chế Dừng an toàn kích hoạt:
        AvatarURL    string             `json:"avatar_url,omitempty"`
        ProfileDir   string             `json:"profile_dir,omitempty"`
        State        model.AccountState `json:"state"`
-       Status       string             `json:"status"` // "on" or "off"
+       Status       string             `json:"status"` // "on" hoặc "off"
        IsActive     bool               `json:"is_active"`
        HasToken     bool               `json:"has_token"`
        DisplayBadge string             `json:"display_badge"`
    }
    ```
-2. Trong hàm `GetAccountStates(ctx context.Context)`:
-   - Tại vòng lặp duyệt qua `itemsMap` (khoảng dòng 335–347):
+2. Trong hàm `GetAccountStates`:
+   - Đọc trạng thái `status` từ store cho từng tài khoản có credential (khoảng dòng 335–347):
      ```go
      for _, item := range itemsMap {
          item.HasToken = storedSet[item.Email]
@@ -207,7 +339,7 @@ Khi cơ chế Dừng an toàn kích hoạt:
          }
          ...
      ```
-3. Bổ sung hàm ủy nhiệm trên `AccountManager`:
+3. Bổ sung hàm ủy quyền trên `AccountManager`:
    ```go
    func (m *AccountManager) SetAccountStatus(email string, status string) error {
        if m.accountStore == nil {
@@ -215,9 +347,7 @@ Khi cơ chế Dừng an toàn kích hoạt:
        }
        return m.accountStore.SetAccountStatus(email, status)
    }
-   ```
-4. Bổ sung getter cho `accountStore` (nếu chưa có) để các tầng ngoài truy cập:
-   ```go
+
    func (m *AccountManager) AccountStore() *store.AccountStore {
        return m.accountStore
    }
@@ -225,16 +355,129 @@ Khi cơ chế Dừng an toàn kích hoạt:
 
 ---
 
-### PHASE 2: TẦNG ĐÁNH GIÁ ỨNG VIÊN & DỪNG AN TOÀN (AUTOMATION & TELEMETRY)
-*(Thực hiện thứ hai để đảm bảo backend tự động nhận thức được trạng thái Bật/Tắt và cơ chế dừng)*
+### PHASE 3 (CODE THỨ BA): TẦNG ĐIỀU PHỐI GIAO DIỆN & XỬ LÝ SỰ KIỆN (UI APP)
+*(Thực hiện thứ ba để kết nối sự kiện click từ widget của Phase 1 với store của Phase 2)*
 
-#### 2.1. Cập nhật `internal/automation/sorter.go`
-1. Mở rộng struct `CandidateAccount`:
+#### 3.1. Cập nhật `internal/ui/app.go`
+1. **Bổ sung phương thức `ToggleAccountStatus(email string)`:**
+   ```go
+   func (a *App) ToggleAccountStatus(email string) {
+       a.mu.Lock()
+       if a.isBusy {
+           a.mu.Unlock()
+           return
+       }
+       mgr := a.mgr
+       overview := a.overview
+       currentTheme := a.currentTheme
+       activeEmail := ""
+       if overview != nil {
+           activeEmail = overview.ActiveEmail
+       }
+       a.mu.Unlock()
+
+       if mgr == nil || overview == nil {
+           return
+       }
+
+       // 1. Xác định trạng thái hiện tại và đảo trạng thái
+       targetIdx := -1
+       currentStatus := "on"
+       for idx, acc := range overview.Accounts {
+           if acc.Email == email {
+               targetIdx = idx
+               if acc.Status != "" {
+                   currentStatus = acc.Status
+               }
+               break
+           }
+       }
+
+       newStatus := "off"
+       if currentStatus == "off" {
+           newStatus = "on"
+       }
+
+       // 2. Ghi bền vững vào kho accounts_store/<email>.json
+       if err := mgr.SetAccountStatus(email, newStatus); err != nil {
+           a.showStatusBar(fmt.Sprintf("❌ Lỗi cập nhật trạng thái: %v", err))
+           return
+       }
+
+       // 3. Cập nhật overview và widget thẻ tại chỗ
+       a.mu.Lock()
+       if targetIdx >= 0 && targetIdx < len(overview.Accounts) {
+           overview.Accounts[targetIdx].Status = newStatus
+       }
+       a.mu.Unlock()
+
+       palette := GetThemePalette(currentTheme)
+       fyne.Do(func() {
+           if targetIdx >= 0 && targetIdx < len(a.accountCards) && a.accountCards[targetIdx] != nil {
+               a.accountCards[targetIdx].UpdateState(overview.Accounts[targetIdx], palette)
+           }
+       })
+
+       // 4. Xử lý đặc biệt: Nếu người dùng TẮT chính tài khoản đang Active
+       if email == activeEmail && newStatus == "off" {
+           a.mu.RLock()
+           isAuto := a.autoSwitchEnabled
+           ctrl := a.controller
+           a.mu.RUnlock()
+
+           if isAuto && ctrl != nil {
+               go func() {
+                   _, _ = ctrl.TriggerSwitch(context.Background(), "tài khoản active bị tắt")
+               }()
+           }
+       }
+   }
+   ```
+
+2. **Cập nhật bộ lắng nghe `OnStatusChange` của Automation:**
+   Tại nhánh xử lý `case automation.StatusNoCandidate:` (khoảng dòng 451–454):
+   ```go
+   case automation.StatusNoCandidate:
+       // 1. Tắt giao diện công tắc Tự động
+       a.mu.Lock()
+       a.autoSwitchEnabled = false
+       if a.autoSwitchCheck != nil {
+           a.autoSwitchCheck.SetChecked(false)
+       }
+       prefPath := a.preferencesPath
+       a.mu.Unlock()
+
+       // 2. Ghi bền vững auto_switch: false vào logs/ui_preferences.json
+       go func() {
+           pref, err := LoadUIPreferences(prefPath)
+           if err != nil || pref == nil {
+               defaultTop := true
+               pref = &UIPreferences{Theme: ThemeDark, AutoSwitch: false, AlwaysOnTop: &defaultTop}
+           } else {
+               pref.AutoSwitch = false
+           }
+           _ = SaveUIPreferences(prefPath, pref)
+       }()
+
+       // 3. Hiển thị thông báo chuẩn hóa theo chỉ đạo của Owner
+       a.showStatusBar("⚠️ Không có tài khoản để chuyển.")
+       a.autoHideStatusBar(4 * time.Second)
+   ```
+
+3. Truyền callback `a.ToggleAccountStatus` vào tất cả các điểm tạo `AccountCardWidget` trong `app.go`.
+
+---
+
+### PHASE 4 (CODE THỨ TƯ): TẦNG TỰ ĐỘNG CHUYỂN ĐỔI & TELEMETRY ENGINE
+*(Thực hiện thứ tư để bổ sung quy tắc loại trừ và kích hoạt dừng an toàn khi đánh giá ứng viên)*
+
+#### 4.1. Cập nhật `internal/automation/sorter.go`
+1. Mở rộng `CandidateAccount`:
    ```go
    type CandidateAccount struct {
        Email        string                      `json:"email"`
        Index        int                         `json:"index"`
-       Status       string                      `json:"status"` // "on" or "off"
+       Status       string                      `json:"status"` // "on" hoặc "off"
        TokenValid   bool                        `json:"token_valid"`
        RefreshToken string                      `json:"-"`
        HasFreshPoll bool                        `json:"has_fresh_poll"`
@@ -243,225 +486,78 @@ Khi cơ chế Dừng an toàn kích hoạt:
    }
    ```
 2. Cập nhật hàm `FilterEligibleCandidates`:
-   - Bổ sung kiểm tra trạng thái vô hiệu hóa:
-     ```go
-     // Criterion: Must not be disabled (status == "off")
-     if strings.EqualFold(cand.Status, "off") {
-         exclusions = append(exclusions, CandidateExclusion{
-             Email:     cand.Email,
-             Criterion: 6,
-             Reason:    "tài khoản đang ở chế độ vô hiệu hóa (OFF)",
-         })
-         continue
-     }
-     ```
-
-#### 2.2. Cập nhật `internal/automation/controller.go`
-1. Khi thu thập ứng viên trong `triggerSwitch` (khoảng dòng 490–515):
-   - Đọc trạng thái `status` từ store:
-     ```go
-     status := "on"
-     if c.mgr != nil && c.mgr.AccountStore() != nil {
-         if st, err := c.mgr.AccountStore().GetAccountStatus(email); err == nil && st != "" {
-             status = st
-         }
-     }
-     cand := BuildCandidateAccount(...)
-     cand.Status = status
-     candidates = append(candidates, cand)
-     ```
-2. Cập nhật khối xử lý khi cạn kiệt ứng viên (`len(eligible) == 0` - khoảng dòng 516–521):
-   - **Thực thi Dừng an toàn (Safety Stop):**
-     ```go
-     eligible, exclusions := FilterEligibleCandidates(candidates, activeEmail, failedMap)
-     if len(eligible) == 0 {
-         // 1. Tắt cờ tự động trong controller
-         c.enabled.Store(false)
-         c.syncMonitoring()
-
-         // 2. Bắn sự kiện với câu thông báo chuẩn mực của Owner
-         c.EmitStatus(StatusNoCandidate, "Không có tài khoản để chuyển.", exclusions)
-         return fmt.Errorf("%w: %+v", ErrNoCandidates, exclusions)
-     }
-     ```
-   - Tương tự tại nhánh preflight tất cả ứng viên đều thất bại (khoảng dòng 568–572):
-     ```go
-     c.enabled.Store(false)
-     c.syncMonitoring()
-     c.EmitStatus(StatusNoCandidate, "Không có tài khoản để chuyển.", nil)
-     return ErrNoCandidates
-     ```
-
-#### 2.3. Cập nhật `internal/telemetry/pool.go`
-1. Trong phương thức `PollAllAccounts` (hoặc các luồng định kỳ quét danh sách):
-   - Bỏ qua các tài khoản mang trạng thái `status == "off"` để tránh lãng phí request và bảo vệ `Invariant-Disabled-Telemetry-Silence`.
-
----
-
-### PHASE 3: TẦNG THÀNH PHẦN GIAO DIỆN THẺ (UI WIDGETS)
-*(Thực hiện thứ ba để hoàn thiện widget thẻ có khả năng hiển thị `[ON]` / `[OFF]` và phản ứng làm mờ)*
-
-#### 3.1. Cập nhật `internal/ui/widgets.go`
-1. Tạo widget nút Text trạng thái `statusTextButton` (tương tự như `switchTextButton`):
    ```go
-   type statusTextButton struct {
-       widget.BaseWidget
-       Status   string // "on" or "off"
-       OnTapped func()
-       hovered  bool
-       palette  ThemePalette
-       bg       *canvas.Rectangle
-       text     *canvas.Text
+   // Criterion: Bỏ qua tài khoản đang ở chế độ OFF
+   if strings.EqualFold(cand.Status, "off") {
+       exclusions = append(exclusions, CandidateExclusion{
+           Email:     cand.Email,
+           Criterion: 6,
+           Reason:    "tài khoản đang ở chế độ vô hiệu hóa (OFF)",
+       })
+       continue
    }
    ```
-   - Khởi tạo:
-     - Chữ hiển thị: Nếu `Status == "off"` thì hiện `"[OFF]"`, màu chữ `palette.TextMuted`. Nếu `Status == "on"` thì hiện `"[ON]"`, màu chữ `palette.Success`. Cỡ chữ 10, in đậm (`Bold: true`), căn giữa.
-     - Hiệu ứng rê chuột: Nền hơi sáng nhẹ khi hover. Con trỏ chuột: `desktop.PointerCursor`.
-     - Sự kiện `Tapped`: Gọi `OnTapped()` nếu khác nil.
-2. Mở rộng `AccountCardWidget`:
-   - Thêm trường `Status string`.
-   - Thêm trường `statusButton *statusTextButton`.
-   - Thêm callback `onToggleStatus func(email string)`.
-   - Thêm trường `switchBtn *switchTextButton` để dễ dàng điều khiển trạng thái enable/disable của nút chuyển mà không phải tạo lại object.
-3. Cập nhật hàm `NewAccountCardWidgetWithQuota`:
-   - Nhận thêm callback `onToggleStatus func(email string)` (hoặc truyền qua setter).
-   - Khởi tạo `statusBtn`:
-     ```go
-     statusBtn := newStatusTextButton(item.Status, func() {
-         if w.onToggleStatus != nil {
-             w.onToggleStatus(w.Email)
-         }
-     }, palette)
-     ```
-   - Cập nhật `actionCluster`: Bố trí nút `statusBtn` nằm ở **bên phải nút `refreshBtn`**:
-     ```go
-     actionCluster := container.NewHBox(actionSlot, compactButton(refreshBtn), compactButton(statusBtn))
-     ```
-4. Cập nhật phương thức `UpdateState(item manager.AccountDisplayItem, palette ThemePalette)`:
-   - Cập nhật `w.Status = item.Status`.
-   - **Xử lý tài khoản `[Cần OAuth]`:**
-     - Nếu `!item.HasToken && !item.IsActive`:
-       - Gọi `w.statusButton.Hide()` (Ẩn hoàn toàn nút `[ON/OFF]`).
-     - Ngược lại:
-       - Gọi `w.statusButton.Show()` và cập nhật nhãn `[ON]` hoặc `[OFF]`.
-   - **Xử lý nút `[Chuyển]` khi `w.Status == "off"`:**
-     - Nếu tài khoản không active và có token (`!w.IsActive && w.HasToken`):
-       - Nếu `w.Status == "off"`:
-         - Nút `[Chuyển]` được vẽ với màu chữ xám mờ `palette.TextMuted`.
-         - Con trỏ chuột là `desktop.DefaultCursor`.
-         - Handler click là no-op (không gọi `onSwitch`).
-       - Nếu `w.Status == "on"`:
-         - Nút `[Chuyển]` vẽ bình thường với màu xanh `palette.Primary`, con trỏ `PointerCursor`, click gọi `onSwitch(w.Email)`.
-   - **Xử lý nút `[🔄]`:**
-     - Nếu `w.Status == "off"`: Gọi `w.refreshButton.Disable()`.
-     - Nếu `w.Status == "on"` và (`w.IsActive || w.HasToken`): Gọi `w.refreshButton.Enable()`.
 
----
-
-### PHASE 4: TẦNG ĐIỀU PHỐI GIAO DIỆN & XỬ LÝ SỰ KIỆN (UI APP)
-*(Thực hiện thứ tư để liên kết sự kiện click với backend và xử lý đồng bộ giao diện)*
-
-#### 4.1. Cập nhật `internal/ui/app.go`
-1. Bổ sung hàm xử lý sự kiện Bật/Tắt tài khoản trên `App`:
+#### 4.2. Cập nhật `internal/automation/controller.go`
+1. Trong `triggerSwitch`, khi nạp candidates từ store:
+   - Gán `cand.Status = status` (lấy qua `GetAccountStatus`).
+2. Tại khối `len(eligible) == 0` (hết ứng viên):
    ```go
-   func (a *App) ToggleAccountStatus(email string)
+   eligible, exclusions := FilterEligibleCandidates(candidates, activeEmail, failedMap)
+   if len(eligible) == 0 {
+       // Kích hoạt dừng an toàn
+       c.enabled.Store(false)
+       c.syncMonitoring()
+       c.EmitStatus(StatusNoCandidate, "Không có tài khoản để chuyển.", exclusions)
+       return fmt.Errorf("%w: %+v", ErrNoCandidates, exclusions)
+   }
    ```
-   - Lấy trạng thái hiện tại của email từ danh sách overview hoặc store.
-   - Trạng thái mới: Nếu đang `"off"` thì đổi thành `"on"`, nếu đang `"on"` thì đổi thành `"off"`.
-   - Gọi `a.mgr.SetAccountStatus(email, newStatus)`.
-   - Cập nhật trạng thái item tương ứng trong `a.overview.Accounts`.
-   - Cập nhật thẻ tương ứng tại chỗ thông qua `a.accountCards[targetIdx].UpdateState(...)`.
-   - **Đặc biệt — Xử lý khi TẮT (`"off"`) chính tài khoản đang Active (`email == activeEmail`):**
-     ```go
-     if email == activeEmail && newStatus == "off" {
-         a.mu.RLock()
-         isAuto := a.autoSwitchEnabled
-         ctrl := a.controller
-         a.mu.RUnlock()
+   Tương tự tại điểm tất cả ứng viên đều thất bại preflight:
+   ```go
+   c.enabled.Store(false)
+   c.syncMonitoring()
+   c.EmitStatus(StatusNoCandidate, "Không có tài khoản để chuyển.", nil)
+   return ErrNoCandidates
+   ```
 
-         if isAuto && ctrl != nil {
-             go func() {
-                 _, err := ctrl.TriggerSwitch(context.Background(), "tài khoản active bị tắt")
-                 if errors.Is(err, automation.ErrNoCandidates) {
-                     // Đã có OnStatusChange xử lý tắt toggle và hiển thị thông báo
-                 }
-             }()
-         }
-     }
-     ```
-2. Cập nhật bộ lắng nghe trạng thái Automation `OnStatusChange` trong `internal/ui/app.go`:
-   - Tại nhánh xử lý `case automation.StatusNoCandidate:` (khoảng dòng 451–454):
-     ```go
-     case automation.StatusNoCandidate:
-         // 1. Tắt giao diện công tắc Tự động
-         a.mu.Lock()
-         a.autoSwitchEnabled = false
-         if a.autoSwitchCheck != nil {
-             a.autoSwitchCheck.SetChecked(false)
-         }
-         prefPath := a.preferencesPath
-         a.mu.Unlock()
-
-         // 2. Ghi bền vững trạng thái auto_switch: false vào logs/ui_preferences.json
-         go func() {
-             pref, err := LoadUIPreferences(prefPath)
-             if err != nil || pref == nil {
-                 defaultTop := true
-                 pref = &UIPreferences{Theme: ThemeDark, AutoSwitch: false, AlwaysOnTop: &defaultTop}
-             } else {
-                 pref.AutoSwitch = false
-             }
-             _ = SaveUIPreferences(prefPath, pref)
-         }()
-
-         // 3. Hiển thị thông báo chuẩn hóa theo chỉ đạo của Owner
-         a.showStatusBar("⚠️ Không có tài khoản để chuyển.")
-         a.autoHideStatusBar(4 * time.Second)
-     ```
-3. Truyền hàm callback `a.ToggleAccountStatus` vào các điểm khởi tạo và tái tạo thẻ tài khoản (`NewAccountCardWidgetWithQuota`).
+#### 4.3. Cập nhật `internal/telemetry/pool.go`
+1. Trong các vòng lặp polling quét quota tự động:
+   - Bỏ qua các tài khoản có `status == "off"`.
 
 ---
 
-### PHASE 5: KIỂM THỬ TỰ ĐỘNG & NGHIỆM THU (TESTING SUITE)
-*(Thực hiện cuối cùng để xác nhận không gây hồi quy và đáp ứng 100% tiêu chí nghiệm thu)*
+### PHASE 5 (CODE THỨ NĂM): KIỂM THỬ TỰ ĐỘNG & NGHIỆM THU
+*(Thực hiện cuối cùng để bảo đảm mọi bất biến hoạt động ổn định và không hồi quy)*
 
-#### 5.1. Kiểm thử Unit Test Store (`internal/store/account_store_test.go`)
-- `TestAccountStore_StatusPersistence`: Lưu trạng thái `"off"`, mở lại kiểm tra đúng `"off"`.
-- `TestAccountStore_BackwardCompatibility_DefaultOn`: Tạo mock file không có trường `status`, đọc lên kiểm tra trả về `"on"`.
-- `TestAccountStore_SaveAccount_PreservesStatus`: Tạo file với `status: "off"`, gọi `SaveAccount` với token mới, kiểm tra `status` vẫn là `"off"`.
-
-#### 5.2. Kiểm thử Automation (`internal/automation/controller_test.go` & `sorter_test.go`)
-- `TestFilterEligibleCandidates_ExcludesDisabledAccount`: Đưa 3 ứng viên, trong đó 1 ứng viên có `Status = "off"`. Kiểm tra ứng viên này bị loại và nằm trong danh sách `exclusions`.
-- `TestController_SafetyStop_WhenAllDisabled`: Giả lập tất cả ứng viên dự phòng đều có `Status = "off"`. Kích hoạt `TriggerSwitch`:
-  - Kiểm tra hàm trả về `ErrNoCandidates`.
-  - Kiểm tra `controller.IsEnabled()` chuyển thành `false`.
-  - Kiểm tra status phát ra là `StatusNoCandidate` với thông báo `"Không có tài khoản để chuyển."`.
-
-#### 5.3. Kiểm thử Giao diện (`internal/ui/ui_test.go`)
-- `TestAccountCardWidget_StatusToggle`: Tạo thẻ với `Status = "on"`, kiểm tra nhãn hiển thị `[ON]`. Bấm nút chuyển sang `[OFF]`, kiểm tra nút `[Chuyển]` bị mờ và không kích hoạt switch callback.
-- `TestAccountCardWidget_UnauthHidesStatusButton`: Tạo thẻ cho tài khoản `[Cần OAuth]`, kiểm tra nút status bị ẩn (`statusBtn.Visible() == false`).
-- `TestApp_StatusNoCandidate_DisablesAutoSwitchAndSavesPref`: Phát sự kiện `StatusNoCandidate`, kiểm tra `autoSwitchEnabled == false`, `autoSwitchCheck.Checked == false`, và file `ui_preferences.json` được cập nhật `"auto_switch": false`.
+1. **Kiểm thử Widget Thẻ Giao diện (`internal/ui/ui_test.go`):**
+   - `TestAccountCardWidget_StatusButton_RendersCorrectly`: Khởi tạo thẻ với status `"on"`, kiểm tra nhãn `[ON]`, nút `[Chuyển]` hoạt động. Đổi sang `"off"`, kiểm tra nhãn `[OFF]`, nút `[Chuyển]` mờ đi và click không kích hoạt chuyển.
+   - `TestAccountCardWidget_UnauthAccount_HidesStatusButton`: Thẻ `[Cần OAuth]` kiểm tra `statusBtn.Visible() == false`.
+2. **Kiểm thử Store (`internal/store/account_store_test.go`):**
+   - `TestAccountStore_Status_Persistence_And_Preservation`: Kiểm tra nạp file cũ mặc định là `"on"`, cập nhật `"off"` ghi đúng đĩa, và gọi `SaveAccount` ghi đè token không làm mất cờ `"off"`.
+3. **Kiểm thử Controller & Safety Stop (`internal/automation/controller_test.go`):**
+   - `TestController_SafetyStop_WhenNoEligibleCandidates`: Giả lập tất cả tài khoản phụ đều mang `Status = "off"`. Kích hoạt chuyển đổi, kiểm tra controller tự động gạt `enabled = false`, phát sự kiện `StatusNoCandidate` với thông báo `"Không có tài khoản để chuyển."`.
+4. **Kiểm thử Đồng bộ Tùy chọn (`internal/ui/ui_test.go`):**
+   - `TestApp_StatusNoCandidate_TurnsOffAutoSwitch`: Kiểm tra phát sự kiện `StatusNoCandidate` làm tắt toggle UI và lưu bền vững `"auto_switch": false` vào `ui_preferences.json`.
 
 ---
 
 ## V. ĐỐI CHIẾU DANH MỤC TỆP TIN THAY ĐỔI
 
-| STT | Tệp tin | Thư mục | Bản chất thay đổi | Phase |
+| Thứ tự | Tệp tin | Thư mục | Trách nhiệm | Phase |
 |:---:|---|---|---|:---:|
-| 1 | `account_store.go` | `internal/store/` | Bổ sung `Status`, `SetAccountStatus`, `GetAccountStatus`, logic bảo tồn status trong `SaveAccount`. | Phase 1 |
-| 2 | `account_manager.go` | `internal/manager/` | Bổ sung `Status` vào `AccountDisplayItem`, map status trong `GetAccountStates`, thêm `SetAccountStatus`. | Phase 1 |
-| 3 | `sorter.go` | `internal/automation/` | Bổ sung `Status` vào `CandidateAccount`, thêm Criterion loại trừ tài khoản `"off"`. | Phase 2 |
-| 4 | `controller.go` | `internal/automation/` | Đọc `Status` khi build candidate, kích hoạt Dừng tự động (`enabled = false`) khi cạn ứng viên. | Phase 2 |
-| 5 | `pool.go` | `internal/telemetry/` | Bỏ qua quét quota ngầm cho tài khoản `"off"`. | Phase 2 |
-| 6 | `widgets.go` | `internal/ui/` | Tạo `statusTextButton`, đặt bên phải `[🔄]`, làm mờ nút `[Chuyển]`, ẩn nút với `[Cần OAuth]`. | Phase 3 |
-| 7 | `app.go` | `internal/ui/` | Thêm `ToggleAccountStatus`, xử lý tắt active, bắt `StatusNoCandidate` gạt tắt Toggle và lưu JSON. | Phase 4 |
-| 8 | Các tệp `*_test.go` | `internal/*/` | Bộ test tự động bảo đảm bất biến và tiêu chí nghiệm thu. | Phase 5 |
+| **1** | `widgets.go` | `internal/ui/` | Tạo `statusTextButton`, đặt bên phải `[🔄]`, làm mờ nút `[Chuyển]`, ẩn nút với `[Cần OAuth]`. | **Phase 1 (Code đầu tiên)** |
+| **2** | `account_store.go` | `internal/store/` | Thêm `Status`, `SetAccountStatus`, `GetAccountStatus`, bảo tồn status khi `SaveAccount`. | **Phase 2 (Code thứ hai)** |
+| **3** | `account_manager.go` | `internal/manager/` | Thêm `Status` vào `AccountDisplayItem`, map status trong `GetAccountStates`, thêm `SetAccountStatus`. | **Phase 2 (Code thứ hai)** |
+| **4** | `app.go` | `internal/ui/` | Thêm `ToggleAccountStatus`, xử lý tắt active, bắt `StatusNoCandidate` gạt tắt Toggle và lưu JSON. | **Phase 3 (Code thứ ba)** |
+| **5** | `sorter.go` | `internal/automation/` | Thêm `Status` vào `CandidateAccount`, thêm Criterion loại trừ tài khoản `"off"`. | **Phase 4 (Code thứ tư)** |
+| **6** | `controller.go` | `internal/automation/` | Đọc `Status` khi build candidate, kích hoạt Dừng tự động (`enabled = false`) khi cạn ứng viên. | **Phase 4 (Code thứ tư)** |
+| **7** | `pool.go` | `internal/telemetry/` | Bỏ qua quét quota ngầm cho tài khoản `"off"`. | **Phase 4 (Code thứ tư)** |
+| **8** | Các tệp `*_test.go` | `internal/*/` | Bộ test tự động bảo đảm 7 bất biến và tiêu chí nghiệm thu. | **Phase 5 (Code cuối cùng)** |
 
 ---
 
 ## VI. BÀN GIAO VÀ CHỈ DẪN CHO LANE TIẾP THEO
 
-Bản văn kiện này là chỉ dẫn kỹ thuật đầy đủ và trực tiếp nhất cho các Lane kế tiếp:
-- **Planner Lane:** Có thể trích xuất trực tiếp danh mục Phase tại **Mục III** và **Mục IV** để lập tiến độ phân rã Jobs mà không cần tái cấu trúc.
-- **Coder Lane:** Triển khai tuần tự từ Phase 1 đến Phase 4 theo đúng mã lệnh và phương thức đã chỉ định chi tiết; không cần phải phỏng đoán thứ tự trước sau hay ranh giới dữ liệu.
-- **QA & Supervisor:** Sử dụng ma trận tiêu chí tại **Mục V** của phần I và danh mục test tại **Phase 5** làm căn cứ nghiệm thu tính năng.
+- **Planner Lane:** Trích xuất trực tiếp bảng lộ trình UI-First tại **Mục III** và các Phase chi tiết tại **Mục IV** để lập danh sách Jobs cho Coder.
+- **Coder Lane:** Bắt đầu code ngay từ **Phase 1: `internal/ui/widgets.go`**, sau đó đi tiếp tuần tự sang Phase 2, Phase 3, Phase 4 và Phase 5.
+- **QA & Supervisor Lane:** Sử dụng 7 Bất biến hệ thống tại **Mục I** và danh mục kiểm thử tại **Phase 5** làm tiêu chuẩn nghiệm thu chặt chẽ.
