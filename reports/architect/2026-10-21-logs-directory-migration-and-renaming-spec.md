@@ -1,134 +1,271 @@
-# Đặc Tả Kiến Trúc: Chuẩn Hóa Thư Mục Logs, Phân Mảnh Quota Theo Ngày & Tự Động Dọn Dẹp 7 Ngày
-(Logs Directory Standardization, Daily Quota Sharding & 7-Day Rolling Retention Specification)
+# Đặc Tả Kiến Trúc & Chỉ Dẫn Kỹ Thuật Chi Tiết Cho Coder: Chuẩn Hóa Thư Mục Logs, Phân Mảnh Quota Theo Ngày & Tự Động Dọn Dẹp 7 Ngày
+(Logs Directory Standardization, Daily Quota Sharding & 7-Day Rolling Retention — Complete Implementation Recipe)
 
 - **Ngày lập:** 2026-10-21
 - **Vai trò:** System Architect (Kiến trúc sư Hệ thống)
 - **Thẩm quyền:** Phê chuẩn trực tiếp từ Human Owner
 - **Mã văn kiện:** `SPEC-ARCH-20261021-LOGS-AND-DAILY-QUOTA-SPEC`
-- **Trạng thái:** DRAFT (Trình Human Owner phê duyệt)
+- **Trạng thái:** BẢN CHÍNH THỨC BAN HÀNH (OFFICIAL RELEASE)
 - **Đối tượng đọc:** Coder, Supervisor, QA
 
 ---
 
-## I. TỔNG QUAN VÀ MỤC TIÊU CỐT LÕI (OBJECTIVES)
+## I. TỔNG QUAN VÀ NGUYÊN TẮC CỐT LÕI (OBJECTIVES & INVARIANTS)
 
-Văn kiện này đặc tả toàn diện lộ trình chuyển đổi và chuẩn hóa cấu trúc lưu trữ runtime của dự án `antigravity_auto_switch` thành 5 giai đoạn tuần tự, dứt khoát:
-1. **Cô lập Unit Test (Test Isolation):** Bắt buộc test sinh file vào `.tmp/`, xóa sổ rác rò rỉ vào cây mã nguồn.
-2. **Quy tụ vào `logs/`:** Gom toàn bộ dữ liệu phụ trợ và telemetry từ `accounts_store/` về thư mục tập trung `logs/` và bảo vệ trên Git qua `.gitignore`.
-3. **Đổi tên chuẩn hóa (Explicit Naming):** Xóa bỏ dấu chấm ẩn, định danh rõ ràng `ui_preferences.json` và `quota_log.json`. Không viết code chuyển tiếp dữ liệu cũ để tránh phức tạp hóa codebase.
-4. **Phân mảnh Quota theo ngày (Daily Sharding):** Chuyển đổi `quota_log.json` thành thư mục `logs/quota_log/YYYY-MM-DD_quota_log.json` (mỗi ngày lưu một file độc lập).
-5. **Dọn dẹp nhật ký 7 ngày (Rolling 7-Day Pruning):** Tự động quét và xóa các file log cũ khi ứng dụng khởi động xong, chỉ giữ lại đúng 7 file gần nhất tương ứng với 7 ngày gần nhất.
+Bản đặc tả này cung cấp **công thức triển khai chính xác đến từng dòng mã (step-by-step recipe)**, đảm bảo Coder đọc vào có thể code được ngay mà không cần suy nghĩ hay phán đoán thêm.
 
----
-
-## II. ĐIỀU KHOẢN KỶ LUẬT SẮT (MANDATORY INVARIANTS)
-
-1. **QUY TRÌNH 5 GIAI ĐOẠN TUẦN TỰ (STRICT 5-PHASE GATE):**
-   - Coder phải triển khai theo đúng thứ tự từ Giai đoạn 1 đến Giai đoạn 5. Giai đoạn sau kế thừa kết quả của giai đoạn trước.
-2. **KHO TÀI KHOẢN THUẦN KHIẾT (PURE ACCOUNT STORE INVARIANT):**
-   - Sau khi hoàn thành Giai đoạn 2, thư mục `accounts_store/` CHỈ ĐƯỢC CHỨA các file credential tài khoản (`<email>.json`) và thư mục snapshot phiên (`active_threads_history/`). Tuyệt đối không chứa bất kỳ file log, cache hay preference nào.
-3. **ĐỊNH DẠNG TÊN NHẬT KÝ THEO NGÀY (DAILY SHARDING INVARIANT):**
-   - Tên file log quota hàng ngày phải tuân thủ chuẩn ISO: `YYYY-MM-DD_quota_log.json` (ví dụ: `2026-10-21_quota_log.json`).
-   - Sắp xếp tên file giảm dần luôn đồng nghĩa với thứ tự thời gian giảm dần (mới nhất $\rightarrow$ cũ nhất).
-4. **GIỮ ĐÚNG 7 FILE GẦN NHẤT (MAX-7 ROLLING RETENTION INVARIANT):**
-   - Cơ chế dọn dẹp tại `logs/quota_log/` chỉ giữ lại tối đa **7 file mới nhất** (tương ứng 7 ngày gần nhất). Toàn bộ file cũ từ file thứ 8 trở đi phải bị xóa bỏ.
-5. **KHỞI ĐỘNG NON-BLOCKING & FAIL-SAFE (STARTUP RESILIENCE):**
-   - Lệnh dọn dẹp 7 ngày chạy sau khi app khởi động xong. Nếu gặp lỗi I/O (file bị khóa), hệ thống bỏ qua an toàn, tuyệt đối không làm treo hay gián đoạn trải nghiệm giao diện người dùng.
-6. **NGUYÊN TẮC TINH GỌN (ZERO LEGACY MIGRATION BLOAT):**
-   - Tuyệt đối không viết thêm các hàm/logic chuyển tiếp dữ liệu cũ (legacy migration) giữa các giai đoạn để tránh gây phình to và phức tạp hóa codebase. Mã nguồn chỉ trỏ trực tiếp vào cấu trúc đích.
+### Các điều khoản kỷ luật sắt (Mandatory Invariants):
+1. **QUY TRÌNH 5 GIAI ĐOẠN ĐỘC LẬP (STRICT 5-PHASE GATE):** Coder triển khai lần lượt từ Phase 1 đến Phase 5. Không được nhảy cóc hoặc làm xáo trộn thứ tự.
+2. **KHO TÀI KHOẢN THUẦN KHIẾT (PURE ACCOUNT STORE):** Sau khi hoàn thành Phase 2, `accounts_store/` CHỈ CHỨA các file credential tài khoản (`<email>.json`) và thư mục snapshot lịch sử (`active_threads_history/`). Tuyệt đối không còn file log, cache hay preference nào.
+3. **CẤU TRÚC PHÂN MẢNH THEO NGÀY (DAILY SHARDING):** Nhật ký quota được lưu tại `logs/quota_log/YYYY-MM-DD_quota_log.json`. Mỗi ngày lưu đúng một file theo định dạng chuẩn ISO.
+4. **GIỮ TỐI ĐA 7 FILE GẦN NHẤT (7-DAY ROLLING RETENTION):** Tự động dọn dẹp các file cũ hơn 7 ngày tại `logs/quota_log/`, chỉ giữ lại đúng 7 file mới nhất tương ứng với 7 ngày gần nhất.
+5. **KHỞI ĐỘNG NON-BLOCKING & FAIL-SAFE:** Cơ chế dọn dẹp chạy ngầm sau khi khởi động app xong, nếu gặp lỗi I/O (file locked) thì bỏ qua an toàn, không bao giờ làm gián đoạn UI.
+6. **KHÔNG VIẾT CODE CHUYỂN TIẾP RƯỜM RÀ (ZERO LEGACY MIGRATION BLOAT):** Tuyệt đối không viết thêm logic copy/convert dữ liệu cũ qua lại giữa các phase để tránh làm phình to codebase.
 
 ---
 
-## III. CHI TIẾT 5 GIAI ĐOẠN TRIỂN KHAI (5-PHASE ROADMAP)
-
-### GIAI ĐOẠN 1: SỬA UNIT TEST & XÓA RÁC CÂY MÃ NGUỒN
-- **Vị trí file:** `internal/telemetry/telemetry_test.go`
-- **Thao tác:**
-  1. Xóa bỏ hoàn toàn thư mục rác `internal/telemetry/accounts_store/`.
-  2. Sửa toàn bộ các lệnh khởi tạo cache trong `telemetry_test.go` (đặc biệt dòng 945, 950):
-     - Không truyền chuỗi rỗng `""`.
-     - Truyền đường dẫn file nằm trong thư mục `.tmp/` (hoặc `t.TempDir()`).
-- **Nghiệm thu:** Chạy `go test ./internal/telemetry/...` vượt qua 100%, không tái sinh thư mục `internal/telemetry/accounts_store/`.
+## II. CHỈ DẪN TRIỂN KHAI CHI TIẾT TỪNG BƯỚC CHO CODER (EXHAUSTIVE STEP-BY-STEP RECIPE)
 
 ---
 
-### GIAI ĐOẠN 2: THIẾT LẬP THƯ MỤC `logs/` & DI DỜI 3 FILE
-- **Thao tác:**
-  1. **Cập nhật `.gitignore`:** Thêm dòng `logs/` vào file `.gitignore`.
-  2. **Tạo thư mục:** Tạo thư mục `logs/` ở thư mục gốc của dự án.
-  3. **Di dời tệp từ `accounts_store/` sang `logs/`:**
-     - `accounts_store\.quota_cache.json` $\rightarrow$ `logs\.quota_cache.json`
-     - `accounts_store\.ui_preferences.json` $\rightarrow$ `logs\.ui_preferences.json`
-     - `accounts_store\switch_timeline.log` $\rightarrow$ `logs\switch_timeline.log`
-  4. **Cập nhật mã nguồn trỏ sang `logs/`:**
-     - Trong `internal/telemetry/cache.go`: Đổi `DefaultQuotaCachePath = "logs/.quota_cache.json"`.
-     - Trong `internal/ui/app.go`: Đổi đường dẫn cache quota và UI preferences trỏ vào thư mục `logs/`.
-- **Nghiệm thu:** `accounts_store/` không còn 3 file trên. Ứng dụng chạy đọc đúng dữ liệu từ `logs/`.
+### GIAI ĐOẠN 1 (PHASE 1): SỬA UNIT TEST & XÓA RÁC CÂY MÃ NGUỒN
 
----
+#### 1. Xóa thư mục rác
+Chạy lệnh xóa thư mục rác đã bị rò rỉ:
+```powershell
+Remove-Item -Recurse -Force "internal\telemetry\accounts_store"
+```
 
-### GIAI ĐOẠN 3: ĐỔI TÊN CHUẨN HÓA (EXPLICIT RENAMING)
-- **Thao tác:**
-  1. **Đổi tên tệp trên đĩa:**
-     - `logs\.ui_preferences.json` $\rightarrow$ `logs\ui_preferences.json`
-     - `logs\.quota_cache.json` $\rightarrow$ `logs\quota_log.json`
-  2. **Cập nhật mã nguồn:**
-     - `internal/ui/app.go`: Trỏ đường dẫn preferences vào `logs/ui_preferences.json`.
-     - `internal/telemetry/cache.go`: Trỏ `DefaultQuotaCachePath` vào `logs/quota_log.json`.
-     - Trỏ trực tiếp vào tên file mới, không viết code chuyển tiếp dữ liệu cũ làm phức tạp codebase.
-- **Nghiệm thu:** Tên file hiển thị minh bạch không có dấu chấm ẩn, giao diện nạp đúng cấu hình và quota.
-
----
-
-### GIAI ĐOẠN 4: PHÂN MẢNH QUOTA THEO NGÀY (`logs/quota_log/YYYY-MM-DD_quota_log.json`)
-- **Khái niệm:** `quota_log.json` không còn là 1 file đơn lẻ, mà chuyển thành một thư mục con `logs/quota_log/`.
-- **Cấu trúc lưu trữ:**
-  ```text
-  logs/
-  ├── quota_log/
-  │   ├── 2026-10-21_quota_log.json
-  │   ├── 2026-10-20_quota_log.json
-  │   └── ...
-  ├── ui_preferences.json
-  └── switch_timeline.log
+#### 2. Sửa mã nguồn test tại `internal/telemetry/telemetry_test.go`
+Tìm đến hàm `TestTelemetryPool_AdditionalCoverage` (khoảng dòng 943–956):
+- **Code hiện tại (gây rò rỉ):**
+  ```go
+  // Dòng 945:
+  cache := NewQuotaCache("")
+  // Dòng 950:
+  cacheLoad := NewQuotaCache("")
   ```
-- **Quy tắc đọc và ghi nhật ký (Thuần khiết, không migration):**
-  1. **Quy tắc xác định file ngày hôm nay:**
-     - Tên file hôm nay: `fmt.Sprintf("%s_quota_log.json", time.Now().Format("2006-01-02"))`.
-     - Đường dẫn: `filepath.Join("logs", "quota_log", filename)`.
-  2. **Quy tắc ghi (Save):**
-     - Mọi thao tác lưu quota trong ngày đều ghi trực tiếp vào file của ngày hôm đó (`logs/quota_log/YYYY-MM-DD_quota_log.json`).
-     - Tự động tạo thư mục `logs/quota_log/` nếu chưa có (`os.MkdirAll`).
-  3. **Quy tắc nạp khi khởi động (Load on Startup):**
-     - Ưu tiên nạp file của ngày hôm nay nếu đã tồn tại.
-     - Nếu file hôm nay chưa tồn tại (lần đầu mở app trong ngày mới): Tự động nạp file của ngày gần nhất trước đó trong `logs/quota_log/` để UI hiển thị thông số quota tức thì.
-     - **Không thực hiện copy hay chuyển tiếp từ bất kỳ file cũ nào** bên ngoài thư mục `logs/quota_log/`.
+- **Sửa thành (cô lập an toàn vào `tempDir`):**
+  ```go
+  testCachePath := filepath.Join(tempDir, "test_quota_cache.json")
+  cache := NewQuotaCache(testCachePath)
+  ...
+  cacheLoad := NewQuotaCache(testCachePath)
+  ```
+- **Kiểm chứng:** Chạy `go test -v ./internal/telemetry/...` $\rightarrow$ Test PASS 100% và thư mục `internal/telemetry/accounts_store/` không bao giờ xuất hiện lại.
 
 ---
 
-### GIAI ĐOẠN 5: TỰ ĐỘNG DỌN DẸP 7 NGÀY GẦN NHẤT (ROLLING 7-DAY PRUNING)
-- **Thời điểm kích hoạt:** Chạy tự động **mỗi khi ứng dụng khởi động xong (After App Startup)**.
-- **Phạm vi xử lý:** Thư mục `logs/quota_log/`.
-- **Thuật toán dọn dẹp:**
-  1. Quét danh sách các file trong `logs/quota_log/` có đuôi `_quota_log.json`.
-  2. Sắp xếp danh sách file theo thứ tự tên giảm dần (alphabetical descending) $\rightarrow$ Tương đương thứ tự từ ngày mới nhất đến ngày cũ nhất.
-  3. **Quy tắc cắt tỉa:**
-     - Nếu tổng số file $\le 7$: Dừng lại, giữ nguyên toàn bộ.
-     - Nếu tổng số file $> 7$:
-       + Giữ nguyên **7 file đầu tiên** (tương ứng với 7 ngày gần nhất).
-       + Duyệt từ file thứ 8 trở đi và gọi `os.Remove` để xóa bỏ hoàn toàn.
-  4. **Tính bền vững (Resilience):**
-     - Chạy trong goroutine nền nhẹ nhàng sau khi khởi động giao diện xong để đảm bảo 0% độ trễ cho người dùng.
-     - Bỏ qua các lỗi xóa file cục bộ nếu file đang bị lock, không làm phát sinh cảnh báo lỗi cho người dùng.
+### GIAI ĐOẠN 2 (PHASE 2): THIẾT LẬP THƯ MỤC `logs/` & DI DỜI 3 FILE
+
+#### 1. Cập nhật `.gitignore`
+Mở file `.gitignore`, bổ sung dòng `logs/` ngay bên dưới `accounts_store/`:
+```gitignore
+accounts_store/
+logs/
+discovered_accounts/
+```
+
+#### 2. Tạo thư mục `logs/` và di dời 3 file hiện hữu
+Thực hiện di chuyển 3 file runtime ra khỏi `accounts_store/` vào `logs/`:
+```powershell
+New-Item -ItemType Directory -Force -Path "logs"
+Move-Item -Path "accounts_store\.quota_cache.json" -Destination "logs\.quota_cache.json"
+Move-Item -Path "accounts_store\.ui_preferences.json" -Destination "logs\.ui_preferences.json"
+Move-Item -Path "accounts_store\switch_timeline.log" -Destination "logs\switch_timeline.log"
+```
+
+#### 3. Cập nhật mã nguồn hệ thống
+1. **Trong `internal/telemetry/cache.go`:**
+   Sửa hằng số:
+   ```go
+   const (
+       DefaultQuotaCachePath = "logs/.quota_cache.json"
+   )
+   ```
+2. **Trong `internal/ui/app.go`:**
+   - Sửa hằng số:
+     ```go
+     const (
+         DefaultUIPreferencesPath = "logs/.ui_preferences.json"
+     )
+     ```
+   - Trong hàm `NewAppWithFyne`:
+     ```go
+     cachePath := filepath.Join("logs", ".quota_cache.json")
+     a.preferencesPath = filepath.Join("logs", ".ui_preferences.json")
+     ```
+     *(Bỏ logic `filepath.Join(mgr.Store().GetStoreDir(), ...)` cũ để không còn gắn vào `accounts_store`)*.
 
 ---
 
-## IV. MA TRẬN KIỂM THỬ VÀ NGHIỆM THU (TEST MATRIX)
+### GIAI ĐOẠN 3 (PHASE 3): ĐỔI TÊN CHUẨN HÓA (BỎ DẤU CHẤM ẨN)
 
-| Giai đoạn | Thao tác kiểm thử | Tiêu chuẩn ĐẠT (PASS) |
-|---|---|---|
-| **Phase 1** | Chạy `go test ./internal/telemetry/...` | PASS 100%, không sinh thư mục `internal/telemetry/accounts_store/`. |
-| **Phase 2** | Kiểm tra thư mục `logs/` và `accounts_store/` | 3 file phụ chuyển sang `logs/`. `accounts_store/` sạch sẽ. Git ignore `logs/`. |
-| **Phase 3** | Khởi động app và đọc cấu hình | `logs/ui_preferences.json` và `logs/quota_log.json` hiển thị đúng, không lỗi. |
-| **Phase 4** | Poll quota telemetry và kiểm tra đĩa | File `logs/quota_log/YYYY-MM-DD_quota_log.json` được tạo và cập nhật đúng định dạng. |
-| **Phase 5** | Tạo giả lập 10 file log từ các ngày trước trong test, khởi động dọn dẹp | Chỉ còn đúng 7 file của 7 ngày mới nhất, 3 file cũ bị xóa sạch sẽ. |
+#### 1. Đổi tên tệp trên đĩa
+```powershell
+Rename-Item -Path "logs\.ui_preferences.json" -NewName "ui_preferences.json"
+Rename-Item -Path "logs\.quota_cache.json" -NewName "quota_log.json"
+```
+
+#### 2. Cập nhật mã nguồn hệ thống
+1. **Trong `internal/telemetry/cache.go`:**
+   ```go
+   const (
+       DefaultQuotaCachePath = "logs/quota_log.json"
+   )
+   ```
+2. **Trong `internal/ui/app.go`:**
+   ```go
+   const (
+       DefaultUIPreferencesPath = "logs/ui_preferences.json"
+   )
+   ```
+   Và trong `NewAppWithFyne`:
+   ```go
+   cachePath := filepath.Join("logs", "quota_log.json")
+   a.preferencesPath = filepath.Join("logs", "ui_preferences.json")
+   ```
+   *(Trỏ trực tiếp vào tên mới, không viết code fallback chuyển tiếp rườm rà).*
+
+---
+
+### GIAI ĐOẠN 4 (PHASE 4): PHÂN MẢNH QUOTA THEO NGÀY (`logs/quota_log/YYYY-MM-DD_quota_log.json`)
+
+#### 1. Cấu trúc lưu trữ
+`logs/quota_log.json` được chuyển đổi thành thư mục:
+```text
+logs/
+├── quota_log/
+│   ├── 2026-10-21_quota_log.json
+│   └── 2026-10-22_quota_log.json
+├── ui_preferences.json
+└── switch_timeline.log
+```
+
+#### 2. Cập nhật `internal/telemetry/cache.go`
+1. Bổ sung các hằng số và hàm sinh đường dẫn ngày:
+   ```go
+   const (
+       DefaultQuotaLogDir = "logs/quota_log"
+   )
+
+   // GetTodayQuotaLogPath returns the canonical path for today's quota log file.
+   func GetTodayQuotaLogPath(baseDir ...string) string {
+       dir := DefaultQuotaLogDir
+       if len(baseDir) > 0 && strings.TrimSpace(baseDir[0]) != "" {
+           dir = baseDir[0]
+       }
+       today := time.Now().Format("2006-01-02")
+       return filepath.Join(dir, fmt.Sprintf("%s_quota_log.json", today))
+   }
+   ```
+2. Cập nhật hàm `LoadFromDisk`:
+   - Nếu `c.filePath` trỏ đến thư mục hoặc đường dẫn mặc định:
+     1. Kiểm tra file ngày hôm nay (`GetTodayQuotaLogPath()`). Nếu tồn tại, nạp file này.
+     2. Nếu file ngày hôm nay chưa tồn tại: Quét thư mục `DefaultQuotaLogDir`, lọc các file có đuôi `_quota_log.json`, sắp xếp giảm dần theo tên file, nạp file của ngày gần nhất trước đó.
+     3. Nếu thư mục rỗng, bắt đầu với ma trận rỗng (chờ auto-poll nạp dữ liệu).
+3. Cập nhật hàm `SaveToDisk`:
+   - Ghi dữ liệu trực tiếp vào file ngày hôm nay: `GetTodayQuotaLogPath()`.
+   - Đảm bảo tự động tạo thư mục `os.MkdirAll(filepath.Dir(targetPath), 0755)`.
+
+#### 3. Cập nhật `internal/ui/app.go`
+Trong `NewAppWithFyne`:
+```go
+cachePath := telemetry.GetTodayQuotaLogPath()
+a.quotaCache = telemetry.NewQuotaCache(cachePath)
+_ = a.quotaCache.LoadFromDisk()
+```
+
+---
+
+### GIAI ĐOẠN 5 (PHASE 5): TỰ ĐỘNG DỌN DẸP 7 NGÀY GẦN NHẤT (ROLLING 7-DAY PRUNING)
+
+#### 1. Bổ sung hàm cắt tỉa tại `internal/telemetry/cache.go`
+```go
+const DefaultQuotaLogRetentionDays = 7
+
+// PruneDailyQuotaLogs keeps only the most recent keepCount daily quota log files in quotaLogDir.
+func PruneDailyQuotaLogs(quotaLogDir string, keepCount int) (int, error) {
+    if keepCount <= 0 {
+        keepCount = DefaultQuotaLogRetentionDays
+    }
+    dir := quotaLogDir
+    if strings.TrimSpace(dir) == "" {
+        dir = DefaultQuotaLogDir
+    }
+
+    entries, err := os.ReadDir(dir)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return 0, nil
+        }
+        return 0, err
+    }
+
+    var logFiles []os.DirEntry
+    for _, entry := range entries {
+        if !entry.IsDir() && strings.HasSuffix(entry.Name(), "_quota_log.json") {
+            logFiles = append(logFiles, entry)
+        }
+    }
+
+    // Sắp xếp giảm dần theo tên: file mới nhất (ngày lớn nhất) đứng đầu
+    sort.Slice(logFiles, func(i, j int) bool {
+        return logFiles[i].Name() > logFiles[j].Name()
+    })
+
+    if len(logFiles) <= keepCount {
+        return 0, nil
+    }
+
+    deleted := 0
+    for i := keepCount; i < len(logFiles); i++ {
+        targetFile := filepath.Join(dir, logFiles[i].Name())
+        if err := os.Remove(targetFile); err == nil {
+            deleted++
+        }
+    }
+
+    return deleted, nil
+}
+```
+
+#### 2. Kích hoạt tự động khi App khởi động xong tại `internal/ui/app.go`
+Trong hàm `NewAppWithFyne` (ngay cuối hàm trước khi `return a`):
+```go
+// Tự động dọn dẹp các log quota cũ hơn 7 ngày trong goroutine nền nhẹ
+go func() {
+    _, _ = telemetry.PruneDailyQuotaLogs(telemetry.DefaultQuotaLogDir, telemetry.DefaultQuotaLogRetentionDays)
+}()
+```
+
+---
+
+## III. MA TRẬN KIỂM THỬ TỰ ĐỘNG BẮT BUỘC CHO CODER (TEST MATRIX)
+
+### 1. Unit Tests tại `internal/telemetry/cache_test.go`
+1. **`TestPruneDailyQuotaLogs_UnderLimit`:**
+   - Tạo thư mục tạm với 3 file log: `2026-10-19_quota_log.json`, `2026-10-20_quota_log.json`, `2026-10-21_quota_log.json`.
+   - Gọi `PruneDailyQuotaLogs(dir, 7)`.
+   - Kết quả: `deletedCount == 0`, cả 3 file vẫn còn nguyên.
+2. **`TestPruneDailyQuotaLogs_OverLimit`:**
+   - Tạo thư mục tạm với 10 file log từ `2026-10-01_...` đến `2026-10-10_...`.
+   - Gọi `PruneDailyQuotaLogs(dir, 7)`.
+   - Kết quả:
+     - `deletedCount == 3`.
+     - 7 file mới nhất (`2026-10-04` đến `2026-10-10`) tồn tại.
+     - 3 file cũ nhất (`2026-10-01`, `2026-10-02`, `2026-10-03`) bị xóa.
+3. **`TestDailyQuotaLog_LoadTodayOrFallback`:**
+   - Tạo file hôm qua `2026-10-20_quota_log.json` có dữ liệu mock.
+   - Gọi `LoadFromDisk` khi chưa có file hôm nay `2026-10-21`.
+   - Kết quả: Nạp thành công dữ liệu từ file hôm qua.
+   - Gọi `SaveToDisk` $\rightarrow$ Kết quả: Sinh ra file đúng ngày hôm nay `2026-10-21_quota_log.json`.
+
+---
+
+## IV. TIÊU CHÍ NGHIỆM THU CUỐI CÙNG (FINAL ACCEPTANCE CRITERIA)
+
+1. `go test ./...` chạy PASS 100% không có lỗi.
+2. Thư mục `accounts_store/` tuyệt đối không còn file `.quota_cache.json`, `.ui_preferences.json` hay `switch_timeline.log`.
+3. Thư mục `logs/` tồn tại, được ignore trên Git, bên trong có thư mục `logs/quota_log/` chứa log ngày và các file `ui_preferences.json`, `switch_timeline.log`.
+4. App khởi động mượt mà, hiển thị đầy đủ thông số quota và theme của người dùng.
