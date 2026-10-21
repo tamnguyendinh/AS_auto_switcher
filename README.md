@@ -1,8 +1,8 @@
-# ⚡ Antigravity Multi-Account Switcher
+# ⚡ Antigravity Multi-Account Switcher - **Version 1.0.1.8**
 
-**Version 1.0.1.8**
+### **Khi tài khoản được chuyển tự động, tất cả công việc đang làm vẫn tiếp tục bình thường, tuyệt đối không bị gián đoạn, không cần can thiệp thủ công.**
 
-An toàn tuyệt đối vì tuân thủ theo cơ chế chuyển đổi tài khoản được Google cho phép.
+### **An toàn tuyệt đối vì tuân thủ theo cơ chế chuyển đổi tài khoản được Google cho phép.**
 
 Ứng dụng Windows viết bằng **Go**, giúp quản lý nhiều tài khoản Google, theo dõi quota và chuyển đổi tài khoản đang dùng trong Antigravity IDE một cách linh hoạt, an toàn. Ứng dụng cung cấp giao diện desktop **Fyne** đồ họa trực quan, hiện đại, mang lại trải nghiệm Zero-Console mượt mà với duy nhất một file thực thi `antigravity-switch.exe`.
 
@@ -10,7 +10,7 @@ Từ phiên bản **Version 1.0.1.8**, ứng dụng tích hợp toàn diện h�
 
 ## Tính năng hiện có
 
-- **Chuyển đổi tài khoản tự động (Autonomous Failover Daemon):** Tự động phát hiện cạn kiệt quota hoặc lỗi giới hạn tài nguyên để hoán đổi tài khoản dự phòng tối ưu nhất mà không cần can thiệp thủ công.
+- **Chuyển đổi tài khoản tự động (Autonomous Failover Daemon):** Tự động phát hiện cạn kiệt quota hoặc lỗi giới hạn tài nguyên để hoán đổi tài khoản dự phòng tối ưu nhất mà không cần can thiệp thủ công. 
 - **Van kích hoạt kép (Dual-Trigger Engine):** Kết hợp kích hoạt chủ động (chu kỳ telemetry 60 giây khi quota 5h <= 2% hoặc tuần <= 1%) và kích hoạt bị động tức thì (lắng nghe stream Connect-RPC khi gặp lỗi 429 / `RESOURCE_EXHAUSTED`).
 - **Phục hồi Native In-Memory 3-Retry:** Tự động thử lại tối đa 3 lần qua Connect-RPC `SendUserCascadeMessage` với danh sách nội dung rỗng (`empty content list`) để xác thực trạng thái tài nguyên thực tế trước khi quyết định chuyển đổi.
 - **Thuật toán thông minh Burn-down Sorter:** Lọc qua 5 tiêu chí sơ loại nghiêm ngặt và sắp xếp ứng viên theo 4 tầng ưu tiên nhằm tối đa hóa việc tận dụng hạn mức trước chu kỳ gia hạn.
