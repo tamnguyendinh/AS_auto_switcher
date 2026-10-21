@@ -32,6 +32,7 @@ type UIPreferences struct {
 	Theme        string `json:"theme"`
 	MaskAccounts bool   `json:"mask_accounts"`
 	AutoSwitch   bool   `json:"auto_switch"`
+	AlwaysOnTop  *bool  `json:"always_on_top,omitempty"`
 }
 
 // ThemePalette defines semantic color tokens for custom Canvas rendering across themes.
@@ -267,22 +268,30 @@ func LoadUIPreferences(path string) (*UIPreferences, error) {
 	dataBytes, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &UIPreferences{Theme: ThemeDark}, nil
+			defaultTop := true
+			return &UIPreferences{Theme: ThemeDark, AlwaysOnTop: &defaultTop}, nil
 		}
 		return nil, fmt.Errorf("failed reading ui preferences: %w", err)
 	}
 
 	if len(strings.TrimSpace(string(dataBytes))) == 0 {
-		return &UIPreferences{Theme: ThemeDark}, nil
+		defaultTop := true
+		return &UIPreferences{Theme: ThemeDark, AlwaysOnTop: &defaultTop}, nil
 	}
 
 	var pref UIPreferences
 	if err := json.Unmarshal(dataBytes, &pref); err != nil {
-		return &UIPreferences{Theme: ThemeDark}, nil
+		defaultTop := true
+		return &UIPreferences{Theme: ThemeDark, AlwaysOnTop: &defaultTop}, nil
 	}
 
 	if pref.Theme != ThemeLight && pref.Theme != ThemeWarm && pref.Theme != ThemeDark {
 		pref.Theme = ThemeDark
+	}
+
+	if pref.AlwaysOnTop == nil {
+		defaultTop := true
+		pref.AlwaysOnTop = &defaultTop
 	}
 
 	return &pref, nil
@@ -291,7 +300,8 @@ func LoadUIPreferences(path string) (*UIPreferences, error) {
 // SaveUIPreferences atomically writes UI preferences to disk.
 func SaveUIPreferences(path string, pref *UIPreferences) error {
 	if pref == nil {
-		pref = &UIPreferences{Theme: ThemeDark}
+		defaultTop := true
+		pref = &UIPreferences{Theme: ThemeDark, AlwaysOnTop: &defaultTop}
 	}
 	if strings.TrimSpace(path) == "" {
 		path = DefaultUIPreferencesPath

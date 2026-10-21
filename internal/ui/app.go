@@ -38,6 +38,7 @@ type App struct {
 	autoLoop          *telemetry.AutoTelemetryLoop
 	currentTheme      string
 	preferencesPath   string
+	prefSaveMu        sync.Mutex
 	lastQuotaRefresh  time.Time
 	isQuotaRefreshing atomic.Bool
 	accountRefreshing sync.Map
@@ -109,13 +110,16 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	a.quotaCache = telemetry.NewQuotaCache(cachePath)
 	_ = a.quotaCache.LoadFromDisk()
 
-	// 2. Load UI Preferences (Theme, Masking & Auto-Switch)
+	// 2. Load UI Preferences (Theme, Masking, Auto-Switch & Always-on-Top)
 	if prefs, err := LoadUIPreferences(a.preferencesPath); err == nil && prefs != nil {
 		if prefs.Theme != "" {
 			a.currentTheme = prefs.Theme
 		}
 		a.maskAccounts = prefs.MaskAccounts
 		a.autoSwitchEnabled = prefs.AutoSwitch
+		if prefs.AlwaysOnTop != nil {
+			a.alwaysOnTop = *prefs.AlwaysOnTop
+		}
 	}
 
 	// 3. Initialize Telemetry Pool & Auto-Loop if manager and store exist
@@ -243,14 +247,25 @@ func (a *App) SetTheme(themeName string) {
 	path := a.preferencesPath
 	mask := a.maskAccounts
 	autoSwitch := a.autoSwitchEnabled
+	alwaysOnTop := a.alwaysOnTop
 	a.mu.Unlock()
 
+	a.prefSaveMu.Lock()
 	prefs, err := LoadUIPreferences(path)
 	if err != nil || prefs == nil {
-		prefs = &UIPreferences{Theme: themeName, MaskAccounts: mask, AutoSwitch: autoSwitch}
+		prefs = &UIPreferences{
+			Theme:        themeName,
+			MaskAccounts: mask,
+			AutoSwitch:   autoSwitch,
+			AlwaysOnTop:  &alwaysOnTop,
+		}
 	}
 	prefs.Theme = themeName
+	prefs.MaskAccounts = mask
+	prefs.AutoSwitch = autoSwitch
+	prefs.AlwaysOnTop = &alwaysOnTop
 	_ = SaveUIPreferences(path, prefs)
+	a.prefSaveMu.Unlock()
 
 	if a.app != nil {
 		a.app.Settings().SetTheme(NewThemeInstance(themeName))
@@ -305,9 +320,7 @@ func (a *App) Init() {
 	a.setupLayout()
 	a.setupTray()
 
-	if a.alwaysOnTop {
-		setWindowAlwaysOnTop(windowTitle, true)
-	}
+	setWindowAlwaysOnTop(windowTitle, a.alwaysOnTop)
 
 	// Start automation controller and status event listener (Slice P1-C)
 	a.mu.RLock()
@@ -472,9 +485,7 @@ func (a *App) ShowAndRun() {
 	// handle for the custom drag and minimize controls; never rewrite its style.
 	bindMainWindowHandle(a.win)
 
-	if a.alwaysOnTop {
-		setWindowAlwaysOnTop(windowTitle, true)
-	}
+	setWindowAlwaysOnTop(windowTitle, a.alwaysOnTop)
 
 	// Chạy vòng lặp nhận sự kiện của Fyne
 	a.app.Run()
@@ -790,15 +801,39 @@ func (a *App) SwitchAccount(targetEmail string) {
 	}()
 }
 
-// ToggleAlwaysOnTop switches the state of the Always-on-Top flag.
+// ToggleAlwaysOnTop switches the state of the Always-on-Top flag and persists the preference.
 func (a *App) ToggleAlwaysOnTop() {
 	a.mu.Lock()
 	a.alwaysOnTop = !a.alwaysOnTop
 	enabled := a.alwaysOnTop
+	path := a.preferencesPath
+	theme := a.currentTheme
+	mask := a.maskAccounts
+	autoSwitch := a.autoSwitchEnabled
 	a.mu.Unlock()
 
 	setWindowAlwaysOnTop(windowTitle, enabled)
 	a.syncAlwaysOnTopBtn(enabled)
+
+	// Non-blocking disk persistence
+	go func() {
+		a.prefSaveMu.Lock()
+		defer a.prefSaveMu.Unlock()
+
+		pref, err := LoadUIPreferences(path)
+		if err != nil || pref == nil {
+			pref = &UIPreferences{
+				Theme:        theme,
+				MaskAccounts: mask,
+				AutoSwitch:   autoSwitch,
+			}
+		}
+		pref.Theme = theme
+		pref.MaskAccounts = mask
+		pref.AutoSwitch = autoSwitch
+		pref.AlwaysOnTop = &enabled
+		_ = SaveUIPreferences(path, pref)
+	}()
 }
 
 // syncAlwaysOnTopBtn updates the pin button text and importance to match the given state.
@@ -815,14 +850,44 @@ func (a *App) syncAlwaysOnTopBtn(enabled bool) {
 	a.alwaysOnTopBtn.Refresh()
 }
 
-// SetAlwaysOnTop explicitly sets the Always-on-Top state.
+// SetAlwaysOnTop explicitly sets the Always-on-Top state and persists the preference.
 func (a *App) SetAlwaysOnTop(enabled bool) {
 	a.mu.Lock()
+	if a.alwaysOnTop == enabled {
+		a.mu.Unlock()
+		setWindowAlwaysOnTop(windowTitle, enabled)
+		a.syncAlwaysOnTopBtn(enabled)
+		return
+	}
 	a.alwaysOnTop = enabled
+	path := a.preferencesPath
+	theme := a.currentTheme
+	mask := a.maskAccounts
+	autoSwitch := a.autoSwitchEnabled
 	a.mu.Unlock()
 
 	setWindowAlwaysOnTop(windowTitle, enabled)
 	a.syncAlwaysOnTopBtn(enabled)
+
+	// Non-blocking disk persistence
+	go func() {
+		a.prefSaveMu.Lock()
+		defer a.prefSaveMu.Unlock()
+
+		pref, err := LoadUIPreferences(path)
+		if err != nil || pref == nil {
+			pref = &UIPreferences{
+				Theme:        theme,
+				MaskAccounts: mask,
+				AutoSwitch:   autoSwitch,
+			}
+		}
+		pref.Theme = theme
+		pref.MaskAccounts = mask
+		pref.AutoSwitch = autoSwitch
+		pref.AlwaysOnTop = &enabled
+		_ = SaveUIPreferences(path, pref)
+	}()
 }
 
 // IsAlwaysOnTop returns whether Always-on-Top is currently enabled.
@@ -860,6 +925,7 @@ func (a *App) SetAutoSwitchEnabled(enabled bool) {
 	path := a.preferencesPath
 	theme := a.currentTheme
 	mask := a.maskAccounts
+	alwaysOnTop := a.alwaysOnTop
 	a.mu.Unlock()
 
 	if toggle != nil && toggle.IsOn() != enabled {
@@ -871,11 +937,21 @@ func (a *App) SetAutoSwitchEnabled(enabled bool) {
 
 	// Non-blocking disk persistence
 	go func() {
+		a.prefSaveMu.Lock()
+		defer a.prefSaveMu.Unlock()
+
 		pref, err := LoadUIPreferences(path)
 		if err != nil || pref == nil {
-			pref = &UIPreferences{Theme: theme, MaskAccounts: mask}
+			pref = &UIPreferences{
+				Theme:        theme,
+				MaskAccounts: mask,
+				AlwaysOnTop:  &alwaysOnTop,
+			}
 		}
+		pref.Theme = theme
+		pref.MaskAccounts = mask
 		pref.AutoSwitch = enabled
+		pref.AlwaysOnTop = &alwaysOnTop
 		_ = SaveUIPreferences(path, pref)
 	}()
 }
@@ -903,6 +979,7 @@ func (a *App) SetMaskAccounts(mask bool) {
 	path := a.preferencesPath
 	theme := a.currentTheme
 	autoSwitch := a.autoSwitchEnabled
+	alwaysOnTop := a.alwaysOnTop
 	a.mu.Unlock()
 
 	if toggle != nil && toggle.IsOn() != mask {
@@ -921,11 +998,21 @@ func (a *App) SetMaskAccounts(mask bool) {
 
 	// Non-blocking disk persistence
 	go func() {
+		a.prefSaveMu.Lock()
+		defer a.prefSaveMu.Unlock()
+
 		pref, err := LoadUIPreferences(path)
 		if err != nil || pref == nil {
-			pref = &UIPreferences{Theme: theme, AutoSwitch: autoSwitch}
+			pref = &UIPreferences{
+				Theme:       theme,
+				AutoSwitch:  autoSwitch,
+				AlwaysOnTop: &alwaysOnTop,
+			}
 		}
+		pref.Theme = theme
 		pref.MaskAccounts = mask
+		pref.AutoSwitch = autoSwitch
+		pref.AlwaysOnTop = &alwaysOnTop
 		_ = SaveUIPreferences(path, pref)
 	}()
 
