@@ -165,7 +165,7 @@ Trong repo, kho mặc định là `accounts_store/` ở gốc, nằm ngoài `bin
 
 ### Công cụ cần có
 
-- **Go 1.26.3 trở lên**, theo `go.mod`.
+- **Go 1.26.3 trở lên**.
 - **CGO** và trình biên dịch C tương thích: GCC trong **MSYS2 UCRT64 / MinGW-w64**, có trong `PATH`.
 - Trình biên dịch tài nguyên Windows: **`windres.exe`** để nhúng icon từ `logo/app.ico`. Script tự tìm trong `PATH` hoặc tại `C:\msys64\ucrt64\bin\windres.exe`.
 
@@ -199,19 +199,3 @@ go run ./cmd/switcher
 ```
 
 *(Lưu ý: Yêu cầu môi trường GCC/MinGW-w64 trong PATH và CGO_ENABLED=1. Không cần cờ `-tags gui` do mã nguồn đã được hợp nhất hoàn toàn).*
-
-## Kiểm thử
-
-Kiểm thử toàn bộ hệ thống và giao diện Fyne:
-
-```powershell
-$env:CGO_ENABLED = "1"
-go test ./...
-```
-
-Kiểm thử chuyên sâu hệ thống Tự Động Chuyển Đổi với Race Detector và ma trận 14 tình huống biên (Hermetic E2E Test Harness):
-
-```powershell
-$env:CGO_ENABLED = "1"
-go test -v -race -count=1 ./internal/automation/...
-```
