@@ -67,8 +67,9 @@ func TestTwoStoreCaptureMergeRepeatAndRemember(t *testing.T) {
 	if err != nil || len(view.Accounts) != 3 {
 		t.Fatalf("remembered identity lost: %+v %v", view, err)
 	}
-	if m.reloader.OutputDir != filepath.Join(m.Store().GetStoreDir(), "active_threads_history") {
-		t.Fatal("history escaped selected store")
+	expectedHistory := filepath.Join(filepath.Dir(m.Store().GetStoreDir()), "logs", "active_threads_history")
+	if m.reloader.OutputDir != expectedHistory {
+		t.Fatalf("history escaped selected logs directory: got %s, want %s", m.reloader.OutputDir, expectedHistory)
 	}
 }
 

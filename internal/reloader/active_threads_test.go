@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -409,5 +410,16 @@ func TestSessionReloader_PruneActiveThreadsHistory(t *testing.T) {
 	entries, _ := os.ReadDir(tmpDir)
 	if len(entries) != 2 {
 		t.Errorf("Expected 2 files remaining in tmpDir, got %d", len(entries))
+	}
+}
+
+func TestDefaultThreadsHistoryDir_LogsPath(t *testing.T) {
+	historyDir := GetDefaultThreadsHistoryDir()
+	expectedSubpath := filepath.Join("logs", "active_threads_history")
+	if !strings.HasSuffix(historyDir, expectedSubpath) {
+		t.Fatalf("expected GetDefaultThreadsHistoryDir to end with %q, got %q", expectedSubpath, historyDir)
+	}
+	if fi, err := os.Stat(historyDir); err != nil || !fi.IsDir() {
+		t.Fatalf("expected historyDir to exist as directory: %v", err)
 	}
 }

@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"antigravity-switch/internal/store"
-
 	_ "modernc.org/sqlite"
 )
 
@@ -38,10 +36,9 @@ var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 const DefaultHistoryKeepCount = 2
 
 
-// GetDefaultThreadsHistoryDir returns the canonical accounts_store/active_threads_history directory.
+// GetDefaultThreadsHistoryDir returns the canonical logs/active_threads_history directory.
 func GetDefaultThreadsHistoryDir() string {
-	storeDir := store.GetDefaultStoreDir()
-	historyDir := filepath.Join(storeDir, "active_threads_history")
+	historyDir := filepath.Join("logs", "active_threads_history")
 	_ = os.MkdirAll(historyDir, 0755)
 	return historyDir
 }

@@ -598,3 +598,124 @@ func TestSwitchAccount_PrunesHistoryToMax2(t *testing.T) {
 		t.Errorf("Expected exactly 2 snapshots retained after pruning, found %d: %v", len(remainingSnapshots), remainingSnapshots)
 	}
 }
+
+// TestSwitchAccount_UsesLogsActiveThreads verifies that SwitchAccount uses logs/active_threads_history
+// and leaves accounts_store 100% pure containing only credential files (SPEC-ARCH-20261021-LOGS-AND-DAILY-QUOTA-SPEC Phase 6).
+func TestSwitchAccount_UsesLogsActiveThreads(t *testing.T) {
+	root := t.TempDir()
+	storeDir := filepath.Join(root, "accounts_store")
+	accStore, err := store.NewAccountStore(storeDir)
+	if err != nil {
+		t.Fatalf("Failed creating account store: %v", err)
+	}
+
+	targetEmail := "switch-logs-test@example.com"
+	currentEmail := "current-logs-test@example.com"
+	mockActiveEmail := currentEmail
+
+	_ = accStore.SaveAccount(targetEmail, &model.TokenData{
+		AccessToken: "target-tok",
+		IDToken:     makeTestJWT(targetEmail),
+		Expiry:      time.Now().Add(1 * time.Hour),
+	})
+
+	rel := reloader.NewSessionReloader()
+	// Do NOT set rel.OutputDir, let NewAccountManager set it to logs/active_threads_history
+	rel.ConversationsDir = root
+	rel.WindowFinder = func() ([]windows.HWND, error) { return []windows.HWND{windows.HWND(101)}, nil }
+	rel.ProcessKiller = func(ctx context.Context) error { return nil }
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error { return nil }
+	rel.SnapshotCapturer = func(storagePath, brainDir, outputDir string) (string, []reloader.ActiveThread, error) {
+		_ = os.MkdirAll(outputDir, 0755)
+		snapPath := filepath.Join(outputDir, "2026-10-21-12-00-00_active_threads.json")
+		_ = os.WriteFile(snapPath, []byte(`{"active_threads":[]}`), 0644)
+		return snapPath, []reloader.ActiveThread{}, nil
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "GetUserStatus") || strings.Contains(r.URL.Path, "user_status") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"email":"` + mockActiveEmail + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	parts := strings.Split(server.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+	client := connector.NewClientWithHTTP(&connector.ServerInfo{
+		PID:       8888,
+		Port:      port,
+		CSRFToken: "test-csrf-token",
+	}, server.Client())
+
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{PID: 8888, Port: port, CSRFToken: "test-csrf-token"}, nil
+	}
+
+	mgr, err := NewAccountManager(accStore, rel)
+	if err != nil {
+		t.Fatalf("Failed creating AccountManager: %v", err)
+	}
+
+	expectedLogsHistoryDir := filepath.Join(root, "logs", "active_threads_history")
+	if mgr.reloader.OutputDir != expectedLogsHistoryDir {
+		t.Fatalf("Expected reloader.OutputDir to be %s, got %s", expectedLogsHistoryDir, mgr.reloader.OutputDir)
+	}
+
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "current-tok",
+				IDToken:     makeTestJWT(mockActiveEmail),
+			}, nil
+		},
+		func(token *model.TokenData) error {
+			if email := ExtractEmailFromToken(token); email != "" {
+				mockActiveEmail = email
+			}
+			return nil
+		},
+	)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return client, nil
+	})
+
+	result, err := mgr.SwitchAccount(context.Background(), targetEmail, false)
+	if err != nil {
+		t.Fatalf("SwitchAccount failed: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Expected SwitchAccount to succeed, got: %s", result.Message)
+	}
+
+	// 1. Verify that logs/active_threads_history contains the snapshot
+	logsHistoryEntries, err := os.ReadDir(expectedLogsHistoryDir)
+	if err != nil {
+		t.Fatalf("Failed reading expectedLogsHistoryDir: %v", err)
+	}
+	if len(logsHistoryEntries) == 0 {
+		t.Fatalf("Expected at least 1 snapshot in %s, got 0", expectedLogsHistoryDir)
+	}
+
+	// 2. Verify that accounts_store does NOT have active_threads_history
+	badStoreHistory := filepath.Join(storeDir, "active_threads_history")
+	if _, err := os.Stat(badStoreHistory); !os.IsNotExist(err) {
+		t.Fatalf("Forbidden: %s exists in accounts_store; accounts_store must be 100%% pure!", badStoreHistory)
+	}
+
+	// 3. Verify accounts_store contains only .json credential files
+	storeEntries, err := os.ReadDir(storeDir)
+	if err != nil {
+		t.Fatalf("Failed reading storeDir: %v", err)
+	}
+	for _, entry := range storeEntries {
+		if entry.IsDir() {
+			t.Fatalf("accounts_store contains unexpected directory: %s", entry.Name())
+		}
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			t.Fatalf("accounts_store contains non-json file: %s", entry.Name())
+		}
+	}
+}

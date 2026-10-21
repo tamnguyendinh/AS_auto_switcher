@@ -93,7 +93,8 @@ func NewAccountManager(accStore *store.AccountStore, sessionReloader *reloader.S
 		return nil, fmt.Errorf("failed resolving discovered store: %w", err)
 	}
 	if sessionReloader.OutputDir == "" {
-		sessionReloader.OutputDir = filepath.Join(accStore.GetStoreDir(), "active_threads_history")
+		rootDir := filepath.Dir(accStore.GetStoreDir())
+		sessionReloader.OutputDir = filepath.Join(rootDir, "logs", "active_threads_history")
 	}
 
 	mgr := &AccountManager{
@@ -607,7 +608,8 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	if rel != nil && rel.OutputDir != "" {
 		historyDir = rel.OutputDir
 	} else if m.store != nil {
-		historyDir = filepath.Join(m.store.GetStoreDir(), "active_threads_history")
+		rootDir := filepath.Dir(m.store.GetStoreDir())
+		historyDir = filepath.Join(rootDir, "logs", "active_threads_history")
 	} else {
 		historyDir = reloader.GetDefaultThreadsHistoryDir()
 	}
