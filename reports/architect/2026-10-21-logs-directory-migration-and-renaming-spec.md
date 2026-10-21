@@ -15,7 +15,7 @@
 Văn kiện này đặc tả toàn diện lộ trình chuyển đổi và chuẩn hóa cấu trúc lưu trữ runtime của dự án `antigravity_auto_switch` thành 5 giai đoạn tuần tự, dứt khoát:
 1. **Cô lập Unit Test (Test Isolation):** Bắt buộc test sinh file vào `.tmp/`, xóa sổ rác rò rỉ vào cây mã nguồn.
 2. **Quy tụ vào `logs/`:** Gom toàn bộ dữ liệu phụ trợ và telemetry từ `accounts_store/` về thư mục tập trung `logs/` và bảo vệ trên Git qua `.gitignore`.
-3. **Đổi tên chuẩn hóa (Explicit Naming):** Xóa bỏ dấu chấm ẩn, định danh rõ ràng `ui_preferences.json` và `quota_log.json`.
+3. **Đổi tên chuẩn hóa (Explicit Naming):** Xóa bỏ dấu chấm ẩn, định danh rõ ràng `ui_preferences.json` và `quota_log.json`. Không viết code chuyển tiếp dữ liệu cũ để tránh phức tạp hóa codebase.
 4. **Phân mảnh Quota theo ngày (Daily Sharding):** Chuyển đổi `quota_log.json` thành thư mục `logs/quota_log/YYYY-MM-DD_quota_log.json` (mỗi ngày lưu một file độc lập).
 5. **Dọn dẹp nhật ký 7 ngày (Rolling 7-Day Pruning):** Tự động quét và xóa các file log cũ khi ứng dụng khởi động xong, chỉ giữ lại đúng 7 file gần nhất tương ứng với 7 ngày gần nhất.
 
@@ -34,6 +34,8 @@ Văn kiện này đặc tả toàn diện lộ trình chuyển đổi và chuẩ
    - Cơ chế dọn dẹp tại `logs/quota_log/` chỉ giữ lại tối đa **7 file mới nhất** (tương ứng 7 ngày gần nhất). Toàn bộ file cũ từ file thứ 8 trở đi phải bị xóa bỏ.
 5. **KHỞI ĐỘNG NON-BLOCKING & FAIL-SAFE (STARTUP RESILIENCE):**
    - Lệnh dọn dẹp 7 ngày chạy sau khi app khởi động xong. Nếu gặp lỗi I/O (file bị khóa), hệ thống bỏ qua an toàn, tuyệt đối không làm treo hay gián đoạn trải nghiệm giao diện người dùng.
+6. **NGUYÊN TẮC TINH GỌN (ZERO LEGACY MIGRATION BLOAT):**
+   - Tuyệt đối không viết thêm các hàm/logic chuyển tiếp dữ liệu cũ (legacy migration) giữa các giai đoạn để tránh gây phình to và phức tạp hóa codebase. Mã nguồn chỉ trỏ trực tiếp vào cấu trúc đích.
 
 ---
 
@@ -67,13 +69,13 @@ Văn kiện này đặc tả toàn diện lộ trình chuyển đổi và chuẩ
 
 ### GIAI ĐOẠN 3: ĐỔI TÊN CHUẨN HÓA (EXPLICIT RENAMING)
 - **Thao tác:**
-  1. **Đổi tên tệp:**
+  1. **Đổi tên tệp trên đĩa:**
      - `logs\.ui_preferences.json` $\rightarrow$ `logs\ui_preferences.json`
      - `logs\.quota_cache.json` $\rightarrow$ `logs\quota_log.json`
   2. **Cập nhật mã nguồn:**
      - `internal/ui/app.go`: Trỏ đường dẫn preferences vào `logs/ui_preferences.json`.
      - `internal/telemetry/cache.go`: Trỏ `DefaultQuotaCachePath` vào `logs/quota_log.json`.
-     - Bổ sung migration fallback: Nếu file mới chưa có, tự động đọc từ file có dấu chấm cũ và ghi sang file mới.
+     - Trỏ trực tiếp vào tên file mới, không viết code chuyển tiếp dữ liệu cũ làm phức tạp codebase.
 - **Nghiệm thu:** Tên file hiển thị minh bạch không có dấu chấm ẩn, giao diện nạp đúng cấu hình và quota.
 
 ---
@@ -90,17 +92,17 @@ Văn kiện này đặc tả toàn diện lộ trình chuyển đổi và chuẩ
   ├── ui_preferences.json
   └── switch_timeline.log
   ```
-- **Quy tắc đọc và ghi nhật ký:**
+- **Quy tắc đọc và ghi nhật ký (Thuần khiết, không migration):**
   1. **Quy tắc xác định file ngày hôm nay:**
      - Tên file hôm nay: `fmt.Sprintf("%s_quota_log.json", time.Now().Format("2006-01-02"))`.
      - Đường dẫn: `filepath.Join("logs", "quota_log", filename)`.
   2. **Quy tắc ghi (Save):**
-     - Mọi thao tác lưu quota trong ngày đều ghi vào file của ngày hôm đó (`logs/quota_log/YYYY-MM-DD_quota_log.json`).
+     - Mọi thao tác lưu quota trong ngày đều ghi trực tiếp vào file của ngày hôm đó (`logs/quota_log/YYYY-MM-DD_quota_log.json`).
      - Tự động tạo thư mục `logs/quota_log/` nếu chưa có (`os.MkdirAll`).
   3. **Quy tắc nạp khi khởi động (Load on Startup):**
      - Ưu tiên nạp file của ngày hôm nay nếu đã tồn tại.
-     - Nếu file hôm nay chưa tồn tại (ví dụ lần đầu mở app trong ngày mới): Tự động quét thư mục `logs/quota_log/` và đọc file của ngày gần nhất trước đó để UI có ngay dữ liệu quota hiển thị tức thì.
-     - Chuyển tiếp dữ liệu cũ: Nếu thư mục `logs/quota_log/` rỗng nhưng có file `logs/quota_log.json` (từ Giai đoạn 3), tự động copy dữ liệu này thành file ngày hôm nay.
+     - Nếu file hôm nay chưa tồn tại (lần đầu mở app trong ngày mới): Tự động nạp file của ngày gần nhất trước đó trong `logs/quota_log/` để UI hiển thị thông số quota tức thì.
+     - **Không thực hiện copy hay chuyển tiếp từ bất kỳ file cũ nào** bên ngoài thư mục `logs/quota_log/`.
 
 ---
 
