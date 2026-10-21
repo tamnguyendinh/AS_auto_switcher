@@ -295,3 +295,110 @@ func TestDailyQuotaLog_DirectoryPathTarget(t *testing.T) {
 		t.Fatalf("expected today's file created at %q", todayPath)
 	}
 }
+
+func TestPruneDailyQuotaLogs_UnderLimit(t *testing.T) {
+	tempDir := t.TempDir()
+
+	files := []string{
+		"2026-10-19_quota_log.json",
+		"2026-10-20_quota_log.json",
+		"2026-10-21_quota_log.json",
+	}
+	for _, f := range files {
+		_ = os.WriteFile(filepath.Join(tempDir, f), []byte("{}"), 0644)
+	}
+
+	deleted, err := PruneDailyQuotaLogs(tempDir, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted, got %d", deleted)
+	}
+
+	for _, f := range files {
+		if _, err := os.Stat(filepath.Join(tempDir, f)); os.IsNotExist(err) {
+			t.Errorf("file %q should still exist", f)
+		}
+	}
+}
+
+func TestPruneDailyQuotaLogs_OverLimit(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create 10 files from 2026-10-01 to 2026-10-10
+	var allFiles []string
+	for i := 1; i <= 10; i++ {
+		filename := fmt.Sprintf("2026-10-%02d_quota_log.json", i)
+		allFiles = append(allFiles, filename)
+		_ = os.WriteFile(filepath.Join(tempDir, filename), []byte("{}"), 0644)
+	}
+
+	deleted, err := PruneDailyQuotaLogs(tempDir, 7)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleted != 3 {
+		t.Errorf("expected 3 deleted files, got %d", deleted)
+	}
+
+	// 3 oldest files (2026-10-01, 2026-10-02, 2026-10-03) must be deleted
+	for i := 1; i <= 3; i++ {
+		filename := fmt.Sprintf("2026-10-%02d_quota_log.json", i)
+		if _, err := os.Stat(filepath.Join(tempDir, filename)); !os.IsNotExist(err) {
+			t.Errorf("expected old file %q to be deleted", filename)
+		}
+	}
+
+	// 7 newest files (2026-10-04 to 2026-10-10) must remain
+	for i := 4; i <= 10; i++ {
+		filename := fmt.Sprintf("2026-10-%02d_quota_log.json", i)
+		if _, err := os.Stat(filepath.Join(tempDir, filename)); os.IsNotExist(err) {
+			t.Errorf("expected retained file %q to still exist", filename)
+		}
+	}
+}
+
+func TestPruneDailyQuotaLogs_DefaultRetentionAndUnrelatedFiles(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create 9 daily quota logs
+	for i := 1; i <= 9; i++ {
+		filename := fmt.Sprintf("2026-10-%02d_quota_log.json", i)
+		_ = os.WriteFile(filepath.Join(tempDir, filename), []byte("{}"), 0644)
+	}
+
+	// Create unrelated files and subdirectories
+	unrelatedFile := filepath.Join(tempDir, "unrelated_quota_log.txt")
+	_ = os.WriteFile(unrelatedFile, []byte("ignore"), 0644)
+	subDir := filepath.Join(tempDir, "2026-10-99_quota_log.json")
+	_ = os.MkdirAll(subDir, 0755)
+
+	// keepCount <= 0 should default to DefaultQuotaLogRetentionDays (7)
+	deleted, err := PruneDailyQuotaLogs(tempDir, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleted != 2 {
+		t.Errorf("expected 2 deleted files (9 - 7), got %d", deleted)
+	}
+
+	// Unrelated file and directory must remain intact
+	if _, err := os.Stat(unrelatedFile); os.IsNotExist(err) {
+		t.Errorf("unrelated file should not have been pruned")
+	}
+	if _, err := os.Stat(subDir); os.IsNotExist(err) {
+		t.Errorf("subdirectory should not have been pruned")
+	}
+}
+
+func TestPruneDailyQuotaLogs_NonExistentDir(t *testing.T) {
+	nonExistentDir := filepath.Join(t.TempDir(), "does_not_exist")
+	deleted, err := PruneDailyQuotaLogs(nonExistentDir, 7)
+	if err != nil {
+		t.Fatalf("expected nil error on non-existent dir, got: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted, got %d", deleted)
+	}
+}

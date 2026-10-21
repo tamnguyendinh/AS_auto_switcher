@@ -136,6 +136,12 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 		a.controller = automation.NewAutomationController(mgr, a.telemetryPool, a.quotaCache, nil)
 	}
 
+	// Tự động dọn dẹp các log quota cũ hơn 7 ngày trong goroutine nền nhẹ
+	go func() {
+		quotaDir := filepath.Join(logsDir, "quota_log")
+		_, _ = telemetry.PruneDailyQuotaLogs(quotaDir, telemetry.DefaultQuotaLogRetentionDays)
+	}()
+
 	return a
 }
 

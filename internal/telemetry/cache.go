@@ -17,6 +17,8 @@ const (
 	DefaultQuotaCachePath = "logs/quota_log.json"
 	// DefaultQuotaLogDir is the canonical directory for daily quota logs (Phase 4).
 	DefaultQuotaLogDir = "logs/quota_log"
+	// DefaultQuotaLogRetentionDays is the rolling retention window for daily quota logs (Phase 5).
+	DefaultQuotaLogRetentionDays = 7
 )
 
 // GetTodayQuotaLogPath returns the canonical path for today's quota log file.
@@ -27,6 +29,51 @@ func GetTodayQuotaLogPath(baseDir ...string) string {
 	}
 	today := time.Now().Format("2006-01-02")
 	return filepath.Join(dir, fmt.Sprintf("%s_quota_log.json", today))
+}
+
+// PruneDailyQuotaLogs keeps only the most recent keepCount daily quota log files in quotaLogDir.
+func PruneDailyQuotaLogs(quotaLogDir string, keepCount int) (int, error) {
+	if keepCount <= 0 {
+		keepCount = DefaultQuotaLogRetentionDays
+	}
+	dir := quotaLogDir
+	if strings.TrimSpace(dir) == "" {
+		dir = DefaultQuotaLogDir
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	var logFiles []os.DirEntry
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), "_quota_log.json") {
+			logFiles = append(logFiles, entry)
+		}
+	}
+
+	// Sắp xếp giảm dần theo tên: file mới nhất (ngày lớn nhất) đứng đầu
+	sort.Slice(logFiles, func(i, j int) bool {
+		return logFiles[i].Name() > logFiles[j].Name()
+	})
+
+	if len(logFiles) <= keepCount {
+		return 0, nil
+	}
+
+	deleted := 0
+	for i := keepCount; i < len(logFiles); i++ {
+		targetFile := filepath.Join(dir, logFiles[i].Name())
+		if err := os.Remove(targetFile); err == nil {
+			deleted++
+		}
+	}
+
+	return deleted, nil
 }
 
 var (
