@@ -31,6 +31,7 @@ const (
 type UIPreferences struct {
 	Theme        string `json:"theme"`
 	MaskAccounts bool   `json:"mask_accounts"`
+	AutoSwitch   bool   `json:"auto_switch"`
 }
 
 // ThemePalette defines semantic color tokens for custom Canvas rendering across themes.

@@ -109,12 +109,13 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	a.quotaCache = telemetry.NewQuotaCache(cachePath)
 	_ = a.quotaCache.LoadFromDisk()
 
-	// 2. Load UI Preferences (Theme & Masking)
+	// 2. Load UI Preferences (Theme, Masking & Auto-Switch)
 	if prefs, err := LoadUIPreferences(a.preferencesPath); err == nil && prefs != nil {
 		if prefs.Theme != "" {
 			a.currentTheme = prefs.Theme
 		}
 		a.maskAccounts = prefs.MaskAccounts
+		a.autoSwitchEnabled = prefs.AutoSwitch
 	}
 
 	// 3. Initialize Telemetry Pool & Auto-Loop if manager and store exist
@@ -134,6 +135,9 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	// 4. Initialize Automation Controller
 	if mgr != nil {
 		a.controller = automation.NewAutomationController(mgr, a.telemetryPool, a.quotaCache, nil)
+		if a.autoSwitchEnabled {
+			a.controller.SetEnabled(true)
+		}
 	}
 
 	// Tự động dọn dẹp các log cũ hơn 7 ngày trong goroutine nền nhẹ
@@ -173,6 +177,9 @@ func (a *App) SetTelemetryPool(pool *telemetry.TelemetryPool) {
 			gate = a.controller.Gate()
 		}
 		a.controller = automation.NewAutomationController(a.mgr, a.telemetryPool, a.quotaCache, gate)
+		if a.autoSwitchEnabled {
+			a.controller.SetEnabled(true)
+		}
 	}
 }
 
@@ -187,6 +194,9 @@ func (a *App) SetQuotaCache(cache *telemetry.QuotaCache) {
 			gate = a.controller.Gate()
 		}
 		a.controller = automation.NewAutomationController(a.mgr, a.telemetryPool, a.quotaCache, gate)
+		if a.autoSwitchEnabled {
+			a.controller.SetEnabled(true)
+		}
 	}
 }
 
@@ -232,11 +242,12 @@ func (a *App) SetTheme(themeName string) {
 	a.currentTheme = themeName
 	path := a.preferencesPath
 	mask := a.maskAccounts
+	autoSwitch := a.autoSwitchEnabled
 	a.mu.Unlock()
 
 	prefs, err := LoadUIPreferences(path)
 	if err != nil || prefs == nil {
-		prefs = &UIPreferences{Theme: themeName, MaskAccounts: mask}
+		prefs = &UIPreferences{Theme: themeName, MaskAccounts: mask, AutoSwitch: autoSwitch}
 	}
 	prefs.Theme = themeName
 	_ = SaveUIPreferences(path, prefs)
@@ -828,7 +839,7 @@ func (a *App) IsAutoSwitchEnabled() bool {
 	return a.autoSwitchEnabled
 }
 
-// SetAutoSwitchEnabled explicitly sets the auto-switch state in the UI and controller.
+// SetAutoSwitchEnabled explicitly sets the auto-switch state in the UI, controller, and disk preferences.
 func (a *App) SetAutoSwitchEnabled(enabled bool) {
 	a.mu.Lock()
 	if a.autoSwitchEnabled == enabled {
@@ -846,6 +857,9 @@ func (a *App) SetAutoSwitchEnabled(enabled bool) {
 	a.autoSwitchEnabled = enabled
 	toggle := a.autoSwitchToggle
 	ctrl := a.controller
+	path := a.preferencesPath
+	theme := a.currentTheme
+	mask := a.maskAccounts
 	a.mu.Unlock()
 
 	if toggle != nil && toggle.IsOn() != enabled {
@@ -854,6 +868,16 @@ func (a *App) SetAutoSwitchEnabled(enabled bool) {
 	if ctrl != nil {
 		ctrl.SetEnabled(enabled)
 	}
+
+	// Non-blocking disk persistence
+	go func() {
+		pref, err := LoadUIPreferences(path)
+		if err != nil || pref == nil {
+			pref = &UIPreferences{Theme: theme, MaskAccounts: mask}
+		}
+		pref.AutoSwitch = enabled
+		_ = SaveUIPreferences(path, pref)
+	}()
 }
 
 // IsMaskAccounts reports whether account privacy masking is currently active.
@@ -878,6 +902,7 @@ func (a *App) SetMaskAccounts(mask bool) {
 	toggle := a.maskAccountsToggle
 	path := a.preferencesPath
 	theme := a.currentTheme
+	autoSwitch := a.autoSwitchEnabled
 	a.mu.Unlock()
 
 	if toggle != nil && toggle.IsOn() != mask {
@@ -898,7 +923,7 @@ func (a *App) SetMaskAccounts(mask bool) {
 	go func() {
 		pref, err := LoadUIPreferences(path)
 		if err != nil || pref == nil {
-			pref = &UIPreferences{Theme: theme}
+			pref = &UIPreferences{Theme: theme, AutoSwitch: autoSwitch}
 		}
 		pref.MaskAccounts = mask
 		_ = SaveUIPreferences(path, pref)

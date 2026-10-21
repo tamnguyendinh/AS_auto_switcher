@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"encoding/json"
 	"image/color"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
@@ -190,4 +193,139 @@ func TestAppSetThemeRuntime(t *testing.T) {
 		t.Errorf("expected theme %s, got %s", ThemeDark, app.CurrentTheme())
 	}
 	assertColorMatches(t, "SetTheme(Dark)", "monogramBg.FillColor", app.monogramBg.FillColor, DarkPalette.Primary)
+}
+
+func TestUIPreferences_JSONSerialization_WithAutoSwitch(t *testing.T) {
+	pref := UIPreferences{
+		Theme:        "warm",
+		MaskAccounts: true,
+		AutoSwitch:   true,
+	}
+
+	data, err := json.Marshal(pref)
+	if err != nil {
+		t.Fatalf("failed marshaling preferences: %v", err)
+	}
+
+	raw := string(data)
+	if !strings.Contains(raw, `"auto_switch":true`) && !strings.Contains(raw, `"auto_switch": true`) {
+		t.Errorf("expected JSON to contain 'auto_switch': true, got: %s", raw)
+	}
+
+	var decoded UIPreferences
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed unmarshaling preferences: %v", err)
+	}
+
+	if decoded.Theme != "warm" {
+		t.Errorf("expected Theme 'warm', got %s", decoded.Theme)
+	}
+	if !decoded.MaskAccounts {
+		t.Errorf("expected MaskAccounts true, got false")
+	}
+	if !decoded.AutoSwitch {
+		t.Errorf("expected AutoSwitch true, got false")
+	}
+}
+
+func TestApp_AutoSwitchPersistence_RoundTrip(t *testing.T) {
+	fyneApp := test.NewApp()
+	defer fyneApp.Quit()
+	app := newIsolatedApp(fyneApp, nil)
+	defer app.Close()
+	tmpDir := t.TempDir()
+	tempPrefPath := filepath.Join(tmpDir, "ui_preferences.json")
+	app.SetPreferencesPath(tempPrefPath)
+	app.Init()
+
+	waitForPref := func(check func(*UIPreferences) bool, timeout time.Duration) *UIPreferences {
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			prefs, err := LoadUIPreferences(tempPrefPath)
+			if err == nil && prefs != nil && check(prefs) {
+				return prefs
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		prefs, _ := LoadUIPreferences(tempPrefPath)
+		return prefs
+	}
+
+	// 1. Set to true
+	app.SetAutoSwitchEnabled(true)
+	prefs := waitForPref(func(p *UIPreferences) bool { return p.AutoSwitch == true }, 1*time.Second)
+	if prefs == nil || !prefs.AutoSwitch {
+		t.Errorf("expected AutoSwitch to be persisted as true, got %#v", prefs)
+	}
+
+	// 2. Set to false
+	app.SetAutoSwitchEnabled(false)
+	prefs2 := waitForPref(func(p *UIPreferences) bool { return p.AutoSwitch == false }, 1*time.Second)
+	if prefs2 == nil || prefs2.AutoSwitch {
+		t.Errorf("expected AutoSwitch to be persisted as false, got %#v", prefs2)
+	}
+
+	// 3. Cross-setting preservation: Toggle auto-switch back to true, then change Theme and Mask
+	app.SetAutoSwitchEnabled(true)
+	_ = waitForPref(func(p *UIPreferences) bool { return p.AutoSwitch == true }, 1*time.Second)
+
+	app.SetTheme(ThemeLight)
+	prefsTheme := waitForPref(func(p *UIPreferences) bool { return p.Theme == ThemeLight }, 1*time.Second)
+	if prefsTheme == nil || !prefsTheme.AutoSwitch {
+		t.Errorf("expected AutoSwitch to remain true after SetTheme, got %#v", prefsTheme)
+	}
+	if prefsTheme == nil || prefsTheme.Theme != ThemeLight {
+		t.Errorf("expected Theme to be %s, got %#v", ThemeLight, prefsTheme)
+	}
+
+	app.SetMaskAccounts(true)
+	prefsMask := waitForPref(func(p *UIPreferences) bool { return p.MaskAccounts == true }, 1*time.Second)
+	if prefsMask == nil || !prefsMask.AutoSwitch {
+		t.Errorf("expected AutoSwitch to remain true after SetMaskAccounts, got %#v", prefsMask)
+	}
+	if prefsMask == nil || !prefsMask.MaskAccounts {
+		t.Errorf("expected MaskAccounts to be true, got %#v", prefsMask)
+	}
+}
+
+func TestApp_StartupRestoresAutoSwitchState(t *testing.T) {
+	mgr := createTestManager(t)
+	tempDir := filepath.Dir(mgr.Store().GetStoreDir())
+	logsDir := filepath.Join(tempDir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		t.Fatalf("failed creating logs directory: %v", err)
+	}
+
+	prefPath := filepath.Join(logsDir, "ui_preferences.json")
+	initialJSON := []byte(`{"theme":"dark","mask_accounts":false,"auto_switch":true}`)
+	if err := os.WriteFile(prefPath, initialJSON, 0644); err != nil {
+		t.Fatalf("failed writing initial preferences: %v", err)
+	}
+
+	fyneApp := test.NewApp()
+	defer fyneApp.Quit()
+	app := newIsolatedApp(fyneApp, mgr)
+	defer app.Close()
+	app.Init()
+
+	// Assert App state restored
+	if !app.IsAutoSwitchEnabled() {
+		t.Fatalf("expected app.IsAutoSwitchEnabled() == true, got false")
+	}
+
+	// Assert Toggle Widget state restored
+	if app.autoSwitchToggle == nil {
+		t.Fatalf("expected non-nil app.autoSwitchToggle")
+	}
+	if !app.autoSwitchToggle.IsOn() {
+		t.Fatalf("expected app.autoSwitchToggle.IsOn() == true, got false")
+	}
+
+	// Assert AutomationController state restored
+	if app.Controller() == nil {
+		t.Fatalf("expected non-nil app.Controller()")
+	}
+	if !app.Controller().IsEnabled() {
+		t.Fatalf("expected app.Controller().IsEnabled() == true, got false")
+	}
 }
