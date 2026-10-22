@@ -306,6 +306,54 @@ func (a *App) SetTheme(themeName string) {
 	}
 }
 
+// SyncVisualScaleAndTextures purges initial unscaled font textures and synchronizes
+// the active theme palette, canvas scaling, and viewport on the visible window.
+// It executes identical visual sharpening to a runtime theme switch without modifying
+// or re-saving the user's stored preferences.
+func (a *App) SyncVisualScaleAndTextures() {
+	a.mu.RLock()
+	themeName := a.currentTheme
+	overview := a.overview
+	a.mu.RUnlock()
+
+	// 1. Kích hoạt Fyne GLFW driver thanh lọc toàn bộ text textures cũ và rescale context
+	if a.app != nil {
+		a.app.Settings().SetTheme(NewThemeInstance(themeName))
+	}
+
+	palette := GetThemePalette(themeName)
+
+	// 2. Làm tươi các phần tử Canvas trên Header để đồng bộ màu sắc và texture sắc nét
+	if a.monogramBg != nil {
+		a.monogramBg.FillColor = palette.Primary
+		a.monogramBg.Refresh()
+	}
+	if a.autoSwitchToggle != nil {
+		a.autoSwitchToggle.SetPalette(palette)
+	}
+	if a.autoSwitchLabel != nil {
+		a.autoSwitchLabel.Color = palette.Text
+		a.autoSwitchLabel.Refresh()
+	}
+	if a.maskAccountsToggle != nil {
+		a.maskAccountsToggle.SetPalette(palette)
+	}
+	if a.row2Divider1 != nil {
+		a.row2Divider1.FillColor = palette.BorderSubtle
+		a.row2Divider1.Refresh()
+	}
+	if a.row2Divider2 != nil {
+		a.row2Divider2.FillColor = palette.BorderSubtle
+		a.row2Divider2.Refresh()
+	}
+
+	// 3. Nếu danh sách tài khoản đã được tải xong từ trước, buộc dựng lại toàn bộ thẻ
+	// với bộ đo đạc font chữ sắc nét mới
+	if overview != nil {
+		a.forceRebuildCards(overview)
+	}
+}
+
 // Init configures the application window, active theme, widgets, and system tray.
 func (a *App) Init() {
 	a.app.Settings().SetTheme(NewThemeInstance(a.currentTheme))
@@ -561,7 +609,17 @@ func (a *App) ShowAndRun() {
 
 	setWindowAlwaysOnTop(windowTitle, a.alwaysOnTop)
 
-	// Chạy vòng lặp nhận sự kiện của Fyne
+	// 2. Kích hoạt đồng bộ phông chữ, texture cache và viewport hậu khởi động
+	// Chạy trong Goroutine nền nhẹ, chờ GLFW event loop sẵn sàng rồi dispatch vào main thread qua fyne.Do.
+	go func() {
+		// Nhịp nghỉ 50ms đảm bảo GLFW đã đăng ký xong AddListener trong driver.Run()
+		time.Sleep(50 * time.Millisecond)
+		fyne.Do(func() {
+			a.SyncVisualScaleAndTextures()
+		})
+	}()
+
+	// 3. Chạy vòng lặp nhận sự kiện của Fyne
 	a.app.Run()
 }
 

@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"antigravity-switch/internal/manager"
 	"antigravity-switch/internal/telemetry"
 )
 
@@ -633,4 +634,156 @@ func TestApp_UIPreferences_4WayCrossPreservation(t *testing.T) {
 
 func TestApp_CrossSettingPreservation_4Way(t *testing.T) {
 	TestApp_UIPreferences_4WayCrossPreservation(t)
+}
+
+func waitForAppIdle(a *App) {
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		a.mu.RLock()
+		busy := a.isBusy
+		a.mu.RUnlock()
+		if !busy {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestSyncVisualScaleAndTextures_PreservesPreferences(t *testing.T) {
+	mgr := createTestManager(t)
+	tempDir := filepath.Dir(mgr.Store().GetStoreDir())
+	logsDir := filepath.Join(tempDir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		t.Fatalf("failed creating logs directory: %v", err)
+	}
+
+	prefPath := filepath.Join(logsDir, "ui_preferences.json")
+	topTrue := true
+	initialPref := &UIPreferences{
+		Theme:        ThemeDark,
+		MaskAccounts: true,
+		AutoSwitch:   false,
+		AlwaysOnTop:  &topTrue,
+	}
+	if err := SaveUIPreferences(prefPath, initialPref); err != nil {
+		t.Fatalf("failed saving initial preferences: %v", err)
+	}
+
+	fyneApp := test.NewApp()
+	defer fyneApp.Quit()
+	app := newIsolatedApp(fyneApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForAppIdle(app)
+
+	// Ensure any async initialization write settles before testing sync
+	app.prefSaveMu.Lock()
+	app.prefSaveMu.Unlock()
+
+	infoBefore, err := os.Stat(prefPath)
+	if err != nil {
+		t.Fatalf("failed stating preferences file before sync: %v", err)
+	}
+
+	app.SyncVisualScaleAndTextures()
+	waitForAppIdle(app)
+
+	infoAfter, err := os.Stat(prefPath)
+	if err != nil {
+		t.Fatalf("failed stating preferences file after sync: %v", err)
+	}
+
+	if infoAfter.ModTime() != infoBefore.ModTime() {
+		t.Errorf("preferences file was modified during sync: before %v, after %v", infoBefore.ModTime(), infoAfter.ModTime())
+	}
+
+	loaded, err := LoadUIPreferences(prefPath)
+	if err != nil {
+		t.Fatalf("failed loading preferences after sync: %v", err)
+	}
+
+	if loaded.Theme != ThemeDark {
+		t.Errorf("expected Theme %s, got %s", ThemeDark, loaded.Theme)
+	}
+	if loaded.MaskAccounts != true {
+		t.Errorf("expected MaskAccounts true, got false")
+	}
+	if loaded.AutoSwitch != false {
+		t.Errorf("expected AutoSwitch false, got true")
+	}
+	if loaded.AlwaysOnTop == nil || *loaded.AlwaysOnTop != true {
+		t.Errorf("expected AlwaysOnTop true, got %v", loaded.AlwaysOnTop)
+	}
+}
+
+func TestSyncVisualScaleAndTextures_RebuildsCardsWhenOverviewPresent(t *testing.T) {
+	fyneApp := test.NewApp()
+	defer fyneApp.Quit()
+	app := newIsolatedApp(fyneApp, nil)
+	defer app.Close()
+
+	app.Init()
+	waitForAppIdle(app)
+
+	overview := &manager.AccountOverview{
+		Accounts: []manager.AccountDisplayItem{
+			{Email: "user1@example.com", Name: "User 1"},
+			{Email: "user2@example.com", Name: "User 2"},
+		},
+	}
+
+	app.updateUI(overview)
+
+	if len(app.accountCards) != 2 {
+		t.Fatalf("expected 2 account cards before sync, got %d", len(app.accountCards))
+	}
+	firstCardBefore := app.accountCards[0]
+
+	app.SyncVisualScaleAndTextures()
+	waitForAppIdle(app)
+
+	if len(app.accountCards) != 2 {
+		t.Fatalf("expected 2 account cards after sync, got %d", len(app.accountCards))
+	}
+	firstCardAfter := app.accountCards[0]
+
+	if firstCardBefore == firstCardAfter {
+		t.Errorf("expected first account card to be rebuilt into a new instance, but pointer was unchanged (%p)", firstCardBefore)
+	}
+}
+
+func TestSyncVisualScaleAndTextures_SafeWhenOverviewNil(t *testing.T) {
+	fyneApp := test.NewApp()
+	defer fyneApp.Quit()
+	app := newIsolatedApp(fyneApp, nil)
+	defer app.Close()
+
+	app.Init()
+	waitForAppIdle(app)
+
+	// Ensure overview is nil
+	app.mu.Lock()
+	app.overview = nil
+	app.mu.Unlock()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("SyncVisualScaleAndTextures panicked with nil overview: %v", r)
+		}
+	}()
+
+	app.SyncVisualScaleAndTextures()
+	waitForAppIdle(app)
+
+	// Verify header canvas objects and toggles are intact and refreshed
+	if app.monogramBg == nil {
+		t.Errorf("expected non-nil monogramBg")
+	}
+	if app.autoSwitchToggle == nil {
+		t.Errorf("expected non-nil autoSwitchToggle")
+	}
+	if app.maskAccountsToggle == nil {
+		t.Errorf("expected non-nil maskAccountsToggle")
+	}
 }
