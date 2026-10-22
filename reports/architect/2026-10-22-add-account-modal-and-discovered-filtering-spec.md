@@ -1,176 +1,293 @@
 # SPEC-ARCH-20261022: Modal Thêm Tài Khoản và Cơ Chế Lọc Danh Bạ Chrome
 
-- **Tài liệu:** Kiến trúc Kỹ thuật (Architectural Specification)
+- **Tài liệu:** Đặc tả Kỹ thuật Kiến trúc Phần mềm (Software Architecture Specification)
 - **Tác giả:** System Architect
 - **Ngày lập:** 2026-10-22
-- **Trạng thái:** DRAFT / ĐÃ THỐNG NHẤT VỚI OWNER
-- **Mục tiêu:** Tách rời cơ chế quét Chrome khỏi cơ chế hiển thị UI tổng, cung cấp Modal `[+ Thêm]` với 3 trạng thái rõ ràng, và lưu vết bền vững các tài khoản đang chờ nạp token.
+- **Trạng thái:** APPROVED / READY FOR IMPLEMENTATION
+- **Đối tượng đọc:** Coder / Implementer (Đọc vào triển khai trực tiếp không cần suy đoán logic)
 
 ---
 
-## 1. Bối cảnh & Vấn đề Cốt lõi (Problem Statement)
+## 1. Mục Tiêu & Động Lực Kiến Trúc (Architecture Motivation)
 
-1. **Trộn lẫn Quét Chrome và Hiển thị UI:**
-   - Trong kiến trúc cũ, hàm `GetAccountStates` tự động kích hoạt `ScanChromeAccountDetails` ở mọi sự kiện: khi khởi động ứng dụng (`Init`), sau khi chuyển tài khoản thủ công, sau khi auto-switch.
-   - Bất kỳ tài khoản nào tìm thấy trong profile Chrome trên máy đều bị tự động nạp vào `discovered_accounts/` và đẩy thẳng lên UI tổng dưới dạng thẻ `[Cần OAuth]`.
-   - Điều này gây ra "ô nhiễm thị giác": người dùng có hàng chục email phụ trên Chrome không bao giờ dùng cho Antigravity cũng bị ép hiển thị kín màn hình.
-
-2. **Yêu cầu Kiến trúc Mới (Owner Directives):**
-   - **Tách rời hoàn toàn:** Quét Chrome chỉ cập nhật vào danh bạ ứng viên `discovered_accounts/`, tuyệt đối không tự ý đẩy lên UI tổng.
-   - **Lọc UI tổng:** Giao diện chính chỉ hiển thị các tài khoản đã có token (`accounts_store/`), tài khoản đang Active, và các tài khoản mà người dùng **chủ động bấm [ADD]**.
-   - **Modal `[+ Thêm]`:** Cung cấp giao diện quản lý danh bạ ứng viên từ `discovered_accounts/` với 3 trạng thái phân cấp (`[Đã OAuth]`, `[Cần OAuth]` kèm nút `[ADD]`, và `[Đã add]`).
-   - **Ghi nhớ bền vững (Phương án 1):** Khi người dùng bấm `[ADD]`, cờ `added: true` được lưu vào đĩa để khi khởi động lại ứng dụng, thẻ `[Cần OAuth]` vẫn giữ nguyên trên UI tổng nhắc người dùng tiếp tục đăng nhập.
+1. **Vấn đề cần giải quyết:**
+   - Trước đây, `GetAccountStates` tự động quét các profile Chrome trên máy (`ScanChromeAccountDetails`) ở mọi thời điểm: khởi động app, sau khi chuyển tài khoản thủ công, và sau mỗi lần auto-switch.
+   - Toàn bộ email trong Chrome đều bị tự động ghi vào `discovered_accounts/` và đẩy thẳng lên UI tổng dưới dạng thẻ `[Cần OAuth]`, gây ô nhiễm thị giác và nghẽn I/O.
+2. **Mục tiêu kiến trúc mới:**
+   - **Tách rời 100%:** Quét Chrome là thao tác On-Demand (chỉ chạy khi bấm nút trong Modal), không bao giờ tự ý chạy ngầm.
+   - **Lọc hiển thị UI tổng:** UI tổng chỉ hiển thị tài khoản đã có token (`accounts_store/`), tài khoản Active, và tài khoản được người dùng chủ động bấm `[ + ADD ]` (`added: true`).
+   - **Modal `[+ Thêm]`:** Cung cấp giao diện trực quan với 3 trạng thái phân cấp (`[✔ Đã OAuth]`, `[Cần OAuth]` + `[ + ADD ]`, `[ Đã add ]`) và nút nhỏ `[🔄 Quét Chrome]`.
+   - **Ghi nhớ bền vững (Phương án 1):** Cờ `added: true` được lưu đĩa để khi khởi động lại app, thẻ `[Cần OAuth]` vẫn được bảo toàn.
 
 ---
 
-## 2. Các Bất Biến Kiến Trúc (Architectural Invariants)
+## 2. Kiến Trúc Sẵn Có Cần Tận Dụng 100% (Reusable Assets)
 
-### Invariant-Chrome-Scan-Decoupling (Phân tách Quét Chrome)
-- **Quy tắc:** Tuyệt đối không quét thư mục profile Chrome trong quá trình khởi động app (`Init`), sau khi chuyển tài khoản (manual switch), hoặc sau khi auto-switch.
-- **Điểm kích hoạt:** Quét Chrome là thao tác **theo yêu cầu (On-Demand)**, chỉ được kích hoạt khi người dùng nhấn nút `[🔄 Quét Chrome]` bên trong Modal Thêm tài khoản.
+Coder **bắt buộc phải tái sử dụng** các thành phần kiến trúc đã hoàn thiện trong codebase, tuyệt đối không viết lại:
 
-### Invariant-Discovered-Account-Schema (Cấu trúc Danh bạ Chrome)
-- **Quy tắc:** Schema `DiscoveredAccountEnvelope` trong `internal/store/discovered_store.go` được mở rộng trường `Added bool`:
+1. **Widget Thẻ Tài Khoản (`internal/ui/widgets.go`):**
+   - Tận dụng 100% logic hiển thị thẻ `[Cần OAuth]` sẵn có tại dòng 578-586:
+     ```go
+     text, tint := "[Cần OAuth]", palette.Warning
+     badge := canvas.NewText(text, tint)
+     // ... actionSlot = container.NewCenter(badge)
+     ```
+   - Tận dụng logic hiển thị Quota ma trận `N/A` khi thẻ chưa có token (`!w.IsActive && !w.HasToken`) tại dòng 517-524.
+   - Tận dụng cơ chế cập nhật tại chỗ `UpdateState` và `UpdateQuota` để tránh giật lag layout.
+2. **Scanner Chrome (`internal/scanner/chrome_scanner.go`):**
+   - Tái sử dụng hàm quét chuẩn `scanner.ScanChromeAccountDetails(cDir)` và hàm phân giải thư mục `scanner.GetDefaultChromeUserDataDir()`.
+3. **Cơ Chế Ghi Tệp An Toàn (Atomic Temp File + Rename Pattern):**
+   - Tái sử dụng mẫu ghi tệp nguyên tử bằng `os.CreateTemp` + `Sync()` + `os.Rename` đã chuẩn hóa tại `internal/store/account_store.go` và `internal/store/discovered_store.go`.
+4. **Hệ Thống Bảng Màu & Giao Diện (`internal/ui/themes.go`):**
+   - Tái sử dụng `ThemePalette`, `GetThemePalette(a.currentTheme)` để Modal tự động đồng bộ theo 3 theme `Dark`, `Light`, `Warm`.
+
+---
+
+## 3. Phân Tích Tác Động & Các Bất Biến Được Bảo Toàn (Impact & Invariants)
+
+### 3.1. Các Kiến Trúc Được Bảo Toàn Tuyệt Đối (Preserved Invariants)
+- **Invariant-Auto-Switch-Immunity:** Bộ điều khiển `AutomationController` và thuật toán `Burn-down Sorter` chỉ lọc ứng viên có token sống trong `accounts_store/`. Thẻ `[Cần OAuth]` có `HasToken: false` nên tự động bị loại khỏi danh sách chuyển đổi, đảm bảo an toàn tuyệt đối cho daemon tự động.
+- **Invariant-Telemetry-Loop-Safety:** Vòng lặp 60s `AutoTelemetryLoop` chỉ truy vấn quota cho các tài khoản có token trong `accounts_store/`. Thẻ `[Cần OAuth]` không bao giờ kích hoạt request Google API ngầm.
+- **Invariant-Hot-Swap-Integrity:** Toàn bộ luồng 9 bước của `SwitchAccount` (Connect-RPC probe, snapshot active threads, WinCred swap, recycle Language Server) giữ nguyên 100%.
+- **Invariant-Grid-Layout-Stability:** Lưới thẻ `accountListContainer` (280x130 symmetric scroller) giữ nguyên cấu trúc. Khi nạp thêm thẻ `[Cần OAuth]`, lưới tự động mở rộng theo dòng mà không phá vỡ khung cửa sổ.
+- **Invariant-Card-Signature-Compatibility:** Giữ nguyên 100% chữ ký hàm `NewAccountCardWidgetWithQuota` và `NewAccountCardWithQuota`, không gây ảnh hưởng đến 40+ unit test hiện có.
+
+### 3.2. Các Kiến Trúc Bị Thay Đổi (Impacted Surfaces)
+1. **`internal/store/discovered_store.go`**:
+   - `DiscoveredAccountEnvelope` bổ sung trường `Added bool`.
+   - `SaveDiscovered` phải bảo tồn giá trị `Added == true` nếu file đã tồn tại trên đĩa (tránh việc quét lại Chrome làm reset cờ).
+2. **`internal/manager/account_manager.go`**:
+   - `GetAccountStates`: Cắt bỏ lệnh gọi tự động `scanner.ScanChromeAccountDetails`. Chỉ đọc từ đĩa và chỉ lọc các bản ghi `discovered` có `Added == true`.
+   - Bổ sung các phương thức chuyên biệt: `ScanChromeAccounts`, `GetCandidateAccounts`, `AddDiscoveredAccount`.
+3. **`internal/ui/window.go`**:
+   - Bổ sung nút `[+ Thêm]` vào Toolbar Header Row 2.
+4. **`internal/ui/app.go`**:
+   - Khởi động app (`Init`) không còn độ trễ quét Chrome.
+   - Thêm phương thức điều phối Modal `ShowAddAccountModal`.
+
+---
+
+## 4. Đặc Tả Chi Tiết Từng File & Hàm Cụ Thể (File-by-File Blueprint)
+
+### 4.1. `internal/store/discovered_store.go`
+
+#### A. Cập nhật Struct `DiscoveredAccountEnvelope`:
+```go
+type DiscoveredAccountEnvelope struct {
+	Email     string  `json:"email"`
+	ScannedAt float64 `json:"scanned_at"`
+	Added     bool    `json:"added,omitempty"`
+}
+```
+*Ghi chú:* Thẻ `omitempty` đảm bảo tương thích ngược 100% với các file JSON cũ trên đĩa (mặc định unmarshal ra `false`).
+
+#### B. Cập nhật `SaveDiscovered(email string) error`:
+- Trước khi ghi đè, kiểm tra xem file `<email>.json` đã tồn tại chưa:
+  - Nếu đã tồn tại và parse được `Added == true`, bảo toàn `entry.Added = true` (không reset về `false`).
+- Thực hiện ghi nguyên tử: `os.CreateTemp` -> `json.Encode` -> `tmp.Sync()` -> `os.Rename`.
+
+#### C. Bổ sung `SetDiscoveredAdded(email string, added bool) error`:
+```go
+// SetDiscoveredAdded updates the Added flag for an existing or new discovered record.
+func (s *DiscoveredStore) SetDiscoveredAdded(email string, added bool) error
+```
+- Chuẩn hóa `email = strings.ToLower(strings.TrimSpace(email))`.
+- Đọc file hiện tại (nếu có để giữ `ScannedAt`), gán `record.Added = added`. Nếu chưa có file, gán `ScannedAt = now`.
+- Ghi đĩa nguyên tử dưới khóa `s.mu.Lock()`.
+
+#### D. Bổ sung `ListDiscoveredRecords() ([]DiscoveredAccountEnvelope, error)`:
+```go
+// ListDiscoveredRecords returns full envelopes including Added flag for all valid records.
+func (s *DiscoveredStore) ListDiscoveredRecords() ([]DiscoveredAccountEnvelope, error)
+```
+- Duyệt thư mục `s.dir`, đọc toàn bộ các file `.json`, trả về danh sách `[]DiscoveredAccountEnvelope` đã sắp xếp theo email.
+
+---
+
+### 4.2. `internal/manager/account_manager.go`
+
+#### A. Tách biệt `GetAccountStates(ctx context.Context) (*AccountOverview, error)`:
+- **XÓA BỎ HOÀN TOÀN:**
   ```go
-  type DiscoveredAccountEnvelope struct {
-      Email     string  `json:"email"`
-      ScannedAt float64 `json:"scanned_at"`
-      Added     bool    `json:"added,omitempty"`
+  // CẮT BỎ ĐOẠN NÀY KHỎI GetAccountStates:
+  chromeAccounts, scanErr := scanner.ScanChromeAccountDetails(cDir)
+  for _, ca := range chromeAccounts { ... discovered.SaveDiscovered ... }
+  ```
+- **LUỒNG MỚI CỦA `GetAccountStates`:**
+  1. `m.CaptureCurrentSession()` (bảo toàn phiên active).
+  2. `activeEmail, _ := m.GetCurrentActiveEmail(ctx)`.
+  3. Đọc danh sách có token: `storedEmails, _ := m.store.ListAccounts()`.
+  4. Đọc danh bạ Chrome: `records, _ := m.discoveredStore.ListDiscoveredRecords()`.
+  5. Lọc danh bạ đưa vào UI:
+     ```go
+     for _, rec := range records {
+         // CHỈ nạp vào itemsMap nếu tài khoản đã được người dùng bấm ADD
+         if rec.Added {
+             add(rec.Email)
+         }
+     }
+     ```
+  6. Nạp `storedEmails` và `activeEmail` vào `itemsMap`.
+  7. Phân cấp trạng thái thẻ:
+     - `item.IsActive` -> `StateActive`, `[✔ Dùng]`
+     - `item.HasToken` -> `StateReady`, `[Chuyển]`
+     - Còn lại -> `StateUnauth`, `[Cần OAuth]`
+  8. Trả về `*AccountOverview`.
+
+#### B. Bổ sung `ScanChromeAccounts() ([]string, error)`:
+```go
+// ScanChromeAccounts scans Chrome profiles on-demand and syncs new accounts into discoveredStore.
+func (m *AccountManager) ScanChromeAccounts() ([]string, error) {
+    m.mu.RLock()
+    cDir, discovered := m.chromeDir, m.discoveredStore
+    m.mu.RUnlock()
+
+    if discovered == nil {
+        return nil, errors.New("discovered store uninitialized")
+    }
+
+    details, err := scanner.ScanChromeAccountDetails(cDir)
+    if err != nil {
+        return nil, fmt.Errorf("lỗi quét chrome: %w", err)
+    }
+
+    var scannedEmails []string
+    for _, d := range details {
+        em := strings.ToLower(strings.TrimSpace(d.Email))
+        if em == "" {
+            continue
+        }
+        _ = discovered.SaveDiscovered(em) // Đã có logic bảo toàn cờ Added
+        scannedEmails = append(scannedEmails, em)
+    }
+    return scannedEmails, nil
+}
+```
+
+#### C. Bổ sung `GetCandidateAccounts() ([]CandidateAccountItem, error)`:
+```go
+type CandidateAccountItem struct {
+    Email    string
+    HasToken bool
+    Added    bool
+}
+
+// GetCandidateAccounts returns all discovered accounts enriched with token and added state.
+func (m *AccountManager) GetCandidateAccounts() ([]CandidateAccountItem, error)
+```
+- Lấy `storedSet` từ `m.store.ListAccounts()`.
+- Lấy `records` từ `m.discoveredStore.ListDiscoveredRecords()`.
+- Ghép nối dữ liệu:
+  ```go
+  item := CandidateAccountItem{
+      Email: rec.Email,
+      HasToken: storedSet[rec.Email],
+      Added: rec.Added,
   }
   ```
-- **Hành vi:**
-  - Khi quét Chrome lần đầu: `Added = false`.
-  - Khi người dùng nhấn nút `[ADD]` trong Modal: `Added` chuyển thành `true` và được ghi bền vững vào file `discovered_accounts/<email>.json`.
+- Sắp xếp: Ưu tiên `HasToken`, tiếp theo đến `Added`, cuối cùng theo `Email` A-Z.
 
-### Invariant-UI-Account-Filtering (Lọc Danh Sách Thẻ Trên UI Tổng)
-- **Quy tắc:** UI tổng chỉ hiển thị danh sách thẻ hợp nhất từ 3 nguồn:
-  1. Tất cả tài khoản có file JSON hợp lệ trong `accounts_store/` (nhãn `[Chuyển]` hoặc `[✔ Dùng]`).
-  2. Tài khoản đang Active trong Windows Credential Manager / RAM (nhãn `[✔ Dùng]`).
-  3. Các tài khoản trong `discovered_accounts/` có cờ `Added == true` mà chưa có trong `accounts_store/` (nhãn `[Cần OAuth]`).
-- **Nghiêm cấm:** Không hiển thị bất kỳ tài khoản nào từ `discovered_accounts/` nếu `Added == false`.
-
-### Invariant-Add-Account-Modal-UX (Quy chuẩn Modal Thêm Tài Khoản)
-- **Quy tắc:** Modal được mở khi nhấn nút `[+ Thêm]` trên thanh Toolbar chính.
-- **Sơ đồ giao diện Modal:**
-  ```text
-  ┌─────────────────────────────────────────────────────────────────┐
-  │  Thêm tài khoản                              [ 🔄 Quét Chrome ] │
-  ├─────────────────────────────────────────────────────────────────┤
-  │  user1@company.com                           [✔ Đã OAuth]       │
-  │                                                                 │
-  │  user2@gmail.com             [Cần OAuth]     [ + ADD ]          │
-  │                                              (Bấm -> [Cần OAuth] chuyển thành [Đã add] và nút add biến mất) │
-  │                                                                 │
-  │  user3@school.edu                            [ Đã add ]         │
-  │                                                                 │
-  ├─────────────────────────────────────────────────────────────────┤
-  │                                                         [ Đóng ]│
-  └─────────────────────────────────────────────────────────────────┘
-  ```
-- **Bố cục & Hành vi Modal:**
-  - **Header:** Tiêu đề *"Thêm tài khoản"* + Nút nhỏ `[🔄 Quét Chrome]` (icon `theme.ViewRefreshIcon()`).
-  - **Danh sách tài khoản:** Liệt kê toàn bộ email có trong `discovered_accounts/`, mỗi dòng gồm email và một trong 3 trạng thái loại trừ lẫn nhau:
-    1. **`[✔ Đã OAuth]`**: Áp dụng khi email đã tồn tại trong `accounts_store/` hoặc đang Active. Không hiển thị nút `[ + ADD ]`.
-    2. **`[Cần OAuth]` + Nút `[ + ADD ]`**: Áp dụng khi email chưa có token trong `accounts_store/` và `Added == false`.
-       - **Tương tác khi nhấn `[ + ADD ]`**:
-         + Cập nhật cờ `Added = true` và ghi bền vững vào `discovered_accounts/<email>.json`.
-         + Nhãn `[Cần OAuth]` trên dòng đó **chuyển ngay thành `[Đã add]`**.
-         + Nút `[ + ADD ]` **biến mất hoàn toàn**.
-         + Thẻ tài khoản `[Cần OAuth]` xuất hiện ngay lập tức trên UI tổng.
-    3. **`[Đã add]`**: Áp dụng khi email chưa có token nhưng đã được bấm `[ + ADD ]` trước đó (`Added == true`). Không hiển thị nút `[ + ADD ]`.
-  - **Footer:** Nút `[Đóng]` để đóng Modal.
-
-### Invariant-Pending-Account-Persistence (Bảo toàn Thẻ Đang Chờ)
-- **Quy tắc:** Trạng thái `Added == true` được lưu bền vững trên đĩa. Khi ứng dụng tắt và mở lại, các thẻ `[Cần OAuth]` đã add vẫn được hiển thị trên UI tổng.
-- **Chuyển dịch trạng thái:** Khi người dùng mở Antigravity IDE và hoàn tất đăng nhập thủ công cho email đó, token được nạp vào `accounts_store/` -> thẻ tự động chuyển từ `[Cần OAuth]` sang `[Chuyển]` / `[✔ Dùng]`.
-
----
-
-## 3. Thiết Kế Luồng Dữ Liệu & Ranh Giới Module (Data Flow & Boundaries)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Người dùng
-    participant TB as Toolbar UI
-    participant Modal as AddAccountModal
-    participant Mgr as AccountManager
-    participant DStore as DiscoveredStore
-    participant AStore as AccountStore
-    participant MainUI as Main Card Grid
-
-    Note over User,MainUI: Luồng 1: Mở Modal & Quét Chrome
-    User->>TB: Bấm nút [+ Thêm]
-    TB->>Modal: Hiển thị Modal "Thêm tài khoản"
-    Modal->>Mgr: Lấy danh sách candidate từ DiscoveredStore
-    Mgr->>DStore: ListDiscoveredWithStatus()
-    DStore-->>Modal: Trả về danh sách email & cờ Added
-    Modal-->>User: Hiển thị danh sách 3 trạng thái
-
-    opt Người dùng muốn quét tài khoản mới từ Chrome
-        User->>Modal: Bấm nút [🔄 Quét Chrome]
-        Modal->>Mgr: ScanChromeAccounts()
-        Mgr->>DStore: Cập nhật email mới (mặc định Added=false)
-        DStore-->>Modal: Cập nhật lại danh sách trên Modal
-    end
-
-    Note over User,MainUI: Luồng 2: Nhấn nút [ADD] đưa lên UI Tổng
-    User->>Modal: Nhấn nút [ADD] tại user@domain.com
-    Modal->>DStore: SetDiscoveredAdded("user@domain.com", true)
-    DStore-->>Modal: Ghi đĩa thành công
-    Modal->>Modal: Chuyển nút [ADD] thành nhãn [Đã add]
-    Modal->>Mgr: Yêu cầu cập nhật AccountOverview
-    Mgr->>MainUI: Nạp thẻ [Cần OAuth] mới lên UI tổng
-    MainUI-->>User: Thẻ xuất hiện ngay lập tức trên UI
-
-    Note over User,MainUI: Luồng 3: Đăng nhập OAuth thủ công sau đó
-    User->>Mgr: Đăng nhập thành công qua IDE (Capture session)
-    Mgr->>AStore: Lưu token vào accounts_store/user@domain.com.json
-    Mgr->>MainUI: Cập nhật thẻ thành [Chuyển] hoặc [✔ Dùng]
+#### D. Bổ sung `AddDiscoveredAccount(email string) error`:
+```go
+func (m *AccountManager) AddDiscoveredAccount(email string) error {
+    m.mu.RLock()
+    discovered := m.discoveredStore
+    m.mu.RUnlock()
+    if discovered == nil {
+        return errors.New("discovered store uninitialized")
+    }
+    return discovered.SetDiscoveredAdded(email, true)
+}
 ```
 
 ---
 
-## 4. Hợp Đồng API & Dữ Liệu Nội Bộ (Contracts)
+### 4.3. Tạo Mới `internal/ui/add_modal.go`
 
-### 4.1. Mở rộng `internal/store/discovered_store.go`
-- Bổ sung trường `Added bool` vào `DiscoveredAccountEnvelope`.
-- Bổ sung hàm:
-  - `SetDiscoveredAdded(email string, added bool) error`: Đọc envelope tương ứng, gán `Added = added`, ghi atomic file ra đĩa.
-  - `ListDiscoveredEnvelopes() ([]DiscoveredAccountEnvelope, error)`: Trả về danh sách đầy đủ struct bao gồm email và cờ `Added`.
+Module này chịu trách nhiệm hiển thị Modal "Thêm tài khoản" độc lập.
 
-### 4.2. Điều chỉnh `internal/manager/account_manager.go`
-- Tách chức năng quét Chrome ra khỏi `GetAccountStates`:
-  - `ScanChromeAccounts() ([]string, error)`: Chỉ quét Chrome profile và ghi vào `discoveredStore`. Không sửa đổi `accounts_store`.
-  - `GetAccountStates(ctx context.Context) (*AccountOverview, error)`:
-    + Đọc `accounts_store/`.
-    + Đọc phiên active từ Windows Credential Manager / Language Server.
-    + Đọc `discoveredStore`: **Chỉ gom các email có `Added == true`**.
-    + Loại bỏ lệnh gọi `scanner.ScanChromeAccountDetails` khỏi hàm này.
+#### A. Cấu trúc và Vòng đời Modal:
+```go
+type AddAccountModal struct {
+    app       *App
+    win       fyne.Window
+    dialog    dialog.Dialog
+    listVBox  *fyne.Container
+    refreshBtn *widget.Button
+}
+```
 
-### 4.3. Bổ sung Giao Diện `internal/ui/add_modal.go`
-- Struct `addAccountModal`:
-  - Quản lý cửa sổ popup / dialog của Fyne.
-  - Chứa danh sách cuộn các dòng tài khoản.
-  - Callback phản hồi khi nhấn `[ADD]` để đồng bộ ngay lập tức sang `a.updateUI(overview)`.
-  - Nút Refresh quét Chrome với feedback icon xoay / loading trạng thái.
-
-### 4.4. Cập nhật Toolbar `internal/ui/window.go`
-- Bổ sung nút `[+ Thêm]` vào `toolbarLeft` (Header Row 2):
-  ```text
-  [Hoạt động | PID ...] [ [+ Thêm] [Làm mới Quota] [📌] ] ...
+#### B. Thiết kế Layout Modal:
+- **Kích thước khuyến nghị:** Rộng `440px`, Cao `320px`.
+- **Header:**
+  ```go
+  titleLbl := widget.NewLabelWithStyle("Thêm tài khoản", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+  refreshBtn := widget.NewButtonWithIcon("Quét Chrome", theme.ViewRefreshIcon(), func() {
+      // 1. Đổi text nút thành "⏳ Đang quét..." và Disable
+      // 2. Chạy goroutine gọi m.ScanChromeAccounts()
+      // 3. fyne.Do tải lại danh sách trên Modal, khôi phục text nút
+  })
+  header := container.NewBorder(nil, nil, titleLbl, refreshBtn)
   ```
+- **Nội dung cuộn (List VBox inside VScroll):**
+  Mỗi tài khoản được biểu diễn bởi một hàng `container.NewBorder(nil, nil, emailLabel, actionCluster)`:
+  - `emailLabel`: Truncation Ellipsis, TextStyle Bold nếu `HasToken`.
+  - `actionCluster`:
+    - **Trường hợp 1 (`item.HasToken == true`):**
+      `canvas.NewText("[✔ Đã OAuth]", palette.Success)`
+    - **Trường hợp 2 (`!item.HasToken && item.Added`):**
+      `canvas.NewText("[Đã add]", palette.TextMuted)`
+    - **Trường hợp 3 (`!item.HasToken && !item.Added`):**
+      Cụm `container.NewHBox(statusBadge, addBtn)`:
+      - `statusBadge := canvas.NewText("[Cần OAuth]", palette.Warning)`
+      - `addBtn := widget.NewButtonWithIcon("ADD", theme.ContentAddIcon(), func() { ... })`
+      - **Hành vi khi bấm `addBtn`:**
+        1. Gọi `m.AddDiscoveredAccount(item.Email)`.
+        2. Chuyển đổi giao diện hàng ngay lập tức: Xóa `addBtn`, đổi `statusBadge` thành `canvas.NewText("[Đã add]", palette.TextMuted)`.
+        3. Kích hoạt cập nhật UI tổng:
+           ```go
+           overview, _ := a.mgr.GetAccountStates(context.Background())
+           a.mu.Lock()
+           a.overview = overview
+           a.mu.Unlock()
+           a.updateUI(overview)
+           ```
+- **Footer:** Nút `[Đóng]` gọi `dialog.Hide()`.
 
 ---
 
-## 5. Kế Hoạch Xác Minh & Kiểm Thử (Verification Plan)
+### 4.4. Cập nhật Toolbar `internal/ui/window.go`
 
-| ID | Kịch Bản Kiểm Thử | Tiêu Chuẩn Đạt (Acceptance Criteria) |
-|---|---|---|
-| **TC-01** | Khởi động ứng dụng sạch | UI tổng chỉ hiển thị tài khoản từ `accounts_store/` và active email. Toàn bộ tài khoản Chrome chưa add không được phép xuất hiện. |
-| **TC-02** | Mở Modal `[+ Thêm]` | Modal hiển thị chính xác các tài khoản trong `discovered_accounts/`. Tài khoản đã có token hiển thị `[Đã OAuth]`. Tài khoản chưa add hiển thị `[Cần OAuth]` kèm nút `[ADD]`. |
-| **TC-03** | Bấm nút `[ + ADD ]` trong Modal | Nhãn `[Cần OAuth]` chuyển thành `[Đã add]`, nút `[ + ADD ]` biến mất, và thẻ `[Cần OAuth]` xuất hiện ngay lập tức trên UI tổng. |
-| **TC-04** | Kiểm tra tính bền vững (Restart App) | Tắt ứng dụng và mở lại -> Thẻ `[Cần OAuth]` vừa add vẫn hiển thị nguyên vẹn trên UI tổng. |
-| **TC-05** | Bấm nút `[🔄 Quét Chrome]` | Quét các profile Chrome, nạp thêm email mới vào `discovered_accounts/`, danh sách trong Modal cập nhật lại; UI tổng không bị thêm tài khoản tự động. |
-| **TC-06** | Hoàn tất OAuth sau khi add | Sau khi có file trong `accounts_store/`, thẻ trên UI tổng chuyển thành `[Chuyển]` hoặc `[✔ Dùng]`; trong Modal chuyển thành `[Đã OAuth]`. |
-| **TC-07** | Hiệu năng khởi động & chuyển tài khoản | Không quét Chrome khi khởi động app hoặc khi chuyển tài khoản -> thời gian phản hồi tức thì (< 50ms). |
+Tại hàm `setupLayout()` ([L141-L150](file:///g:/antigravity_auto_switch/internal/ui/window.go#L141-L150)):
+- Bổ sung nút `a.addAccountBtn`:
+  ```go
+  a.addAccountBtn = widget.NewButtonWithIcon("Thêm", theme.ContentAddIcon(), func() {
+      a.ShowAddAccountModal()
+  })
+  ```
+- Sắp xếp lại `toolbarLeft`:
+  ```go
+  toolbarLeft := container.NewHBox(
+      compactButton(a.addAccountBtn),
+      compactButton(a.quotaRefreshAllBtn),
+      compactButton(a.alwaysOnTopBtn),
+  )
+  ```
+*(Nút `a.refreshBtn` "Danh sách tài khoản" cũ được thay thế hoàn toàn bởi `a.addAccountBtn`, do chức năng quét Chrome đã chuyển trọn vẹn vào trong Modal).*
+
+---
+
+## 5. Quy Chuẩn Kiểm Thử & Tiêu Chí Chấp Nhận (Acceptance Test Matrix)
+
+Coder phải đảm bảo toàn bộ 8 bài kiểm thử sau vượt qua tuyệt đối:
+
+| Mã Test | Kịch Bản Kiểm Thử | Điều Kiện Đầu Vào | Kết Quả Mong Đợi (Pass Criteria) |
+|---|---|---|---|
+| **TC-01** | Khởi động ứng dụng sạch | `discovered_accounts/` có 5 email (`Added: false`), `accounts_store/` có 2 email | UI tổng hiển thị đúng 2 thẻ từ `accounts_store/`. Tuyệt đối không xuất hiện 5 thẻ từ Chrome. |
+| **TC-02** | Mở Modal `[+ Thêm]` | 1 email có token, 1 email đã add, 3 email chưa add | Modal hiển thị đúng 3 trạng thái: 1 dòng `[✔ Đã OAuth]`, 1 dòng `[Đã add]`, 3 dòng `[Cần OAuth]` + `[ + ADD ]`. |
+| **TC-03** | Nhấn nút `[ + ADD ]` | Nhấn `[ + ADD ]` tại email `test@gmail.com` | Nhãn `[Cần OAuth]` đổi thành `[Đã add]`, nút `[ + ADD ]` biến mất. Thẻ `test@gmail.com` xuất hiện ngay ngoài UI tổng với badge `[Cần OAuth]` và Quota `N/A`. |
+| **TC-04** | Kiểm tra tính bền vững (Restart App) | Tắt app sau khi hoàn thành TC-03 rồi mở lại | Thẻ `test@gmail.com` vẫn hiển thị nguyên vẹn trên UI tổng ở trạng thái `[Cần OAuth]`. |
+| **TC-05** | Quét Chrome On-Demand | Mở Modal, bấm nút `[🔄 Quét Chrome]` | Quét các Profile Chrome, ghi nhận email mới vào `discovered_accounts/`. Danh sách Modal nạp thêm dòng mới. UI tổng không bị thêm thẻ tự động. |
+| **TC-06** | Hoàn tất OAuth sau khi add | Mở Antigravity đăng nhập email `test@gmail.com` | Token lưu vào `accounts_store/`. Thẻ UI tổng đổi thành `[Chuyển]` / `[✔ Dùng]`. Mở Modal thấy chuyển thành `[✔ Đã OAuth]`. |
+| **TC-07** | An toàn Auto-Switch & Telemetry | Chạy Auto-Switch và telemetry loop 60s khi có thẻ `[Cần OAuth]` | Burn-down Sorter tự động bỏ qua thẻ `[Cần OAuth]`. Không có panic, không có crash, không gọi API thừa. |
+| **TC-08** | Hiệu năng & Tốc độ Khởi động | Đo thời gian chạy `Init()` | Thời gian nạp UI tổng dưới 50ms, không bị nghẽn bởi I/O của Google Chrome. |
