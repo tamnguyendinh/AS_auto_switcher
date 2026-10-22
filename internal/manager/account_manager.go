@@ -292,8 +292,9 @@ func (m *AccountManager) GetCurrentActiveEmail(ctx context.Context) (string, err
 	return "", nil
 }
 
-// GetAccountStates merges live Chrome identities, remembered identities, and
-// credentials. Partial capture/catalog errors are returned as visible warnings.
+// GetAccountStates gathers stored accounts, the currently active account, and
+// discovered accounts marked as added. It does NOT scan Chrome (decoupled on-demand).
+// Partial capture/catalog errors are returned as visible warnings.
 func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview, error) {
 	var warnings []string
 	if _, err := m.CaptureCurrentSession(); err != nil && !errors.Is(err, wincred.ErrNotFound) {
@@ -302,13 +303,9 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 	activeEmail, _ := m.GetCurrentActiveEmail(ctx)
 
 	m.mu.RLock()
-	cDir, finder, discovered := m.chromeDir, m.clientFinder, m.discoveredStore
+	finder, discovered := m.clientFinder, m.discoveredStore
 	m.mu.RUnlock()
 
-	chromeAccounts, scanErr := scanner.ScanChromeAccountDetails(cDir)
-	if scanErr != nil {
-		warnings = append(warnings, fmt.Sprintf("Không quét được Chrome: %v", scanErr))
-	}
 	storedEmails, storeErr := m.store.ListAccounts()
 	if storeErr != nil {
 		warnings = append(warnings, fmt.Sprintf("Không đọc được kho tài khoản: %v", storeErr))
@@ -332,35 +329,23 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 		return item
 	}
 
-	var catalogWriteErr error
-	for _, ca := range chromeAccounts {
-		item := add(ca.Email)
-		if item == nil {
-			continue
-		}
-		item.Name, item.AvatarURL, item.ProfileDir = ca.Name, ca.AvatarURL, ca.ProfileDir
-		if discovered != nil {
-			if err := discovered.SaveDiscovered(item.Email); err != nil && catalogWriteErr == nil {
-				catalogWriteErr = err
-			}
-		}
-	}
-	if catalogWriteErr != nil {
-		warnings = append(warnings, fmt.Sprintf("Không lưu được danh bạ Chrome: %v", catalogWriteErr))
-	}
+	// ĐỌC DANH BẠ DISCOVERED VÀ CHỈ NẠP TÀI KHOẢN CÓ Added == true:
 	if discovered != nil {
-		emails, err := discovered.ListDiscovered()
-		for _, email := range emails {
-			add(email)
+		records, err := discovered.ListDiscoveredRecords()
+		for _, rec := range records {
+			if rec.Added {
+				add(rec.Email)
+			}
 		}
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("Không đọc đầy đủ danh bạ Chrome: %v", err))
 		}
 	}
+
+	// NẠP TÀI KHOẢN ĐÃ CÓ TOKEN VÀ ACTIVE:
 	for _, email := range storedEmails {
 		add(email)
 	}
-	// Live identity is still displayable when its credential cannot be saved.
 	add(activeEmail)
 
 	accounts := make([]AccountDisplayItem, 0, len(itemsMap))
@@ -399,6 +384,96 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 		}
 	}
 	return overview, nil
+}
+
+// ScanChromeAccounts scans Chrome profiles on-demand and syncs new accounts into discoveredStore.
+func (m *AccountManager) ScanChromeAccounts() ([]string, error) {
+	m.mu.RLock()
+	cDir, discovered := m.chromeDir, m.discoveredStore
+	m.mu.RUnlock()
+
+	if discovered == nil {
+		return nil, errors.New("discovered store uninitialized")
+	}
+
+	chromeAccounts, err := scanner.ScanChromeAccountDetails(cDir)
+	if err != nil {
+		return nil, fmt.Errorf("không quét được Chrome: %w", err)
+	}
+
+	var scannedEmails []string
+	for _, ca := range chromeAccounts {
+		em := strings.ToLower(strings.TrimSpace(ca.Email))
+		if em == "" {
+			continue
+		}
+		_ = discovered.SaveDiscovered(em) // Đã có logic bảo toàn cờ Added
+		scannedEmails = append(scannedEmails, em)
+	}
+	return scannedEmails, nil
+}
+
+// CandidateAccountItem represents a discovered account candidate with token and added state.
+type CandidateAccountItem struct {
+	Email    string
+	HasToken bool
+	Added    bool
+}
+
+// GetCandidateAccounts returns all discovered accounts enriched with token and added state.
+func (m *AccountManager) GetCandidateAccounts() ([]CandidateAccountItem, error) {
+	m.mu.RLock()
+	st, discovered := m.store, m.discoveredStore
+	m.mu.RUnlock()
+
+	if discovered == nil {
+		return nil, errors.New("discovered store uninitialized")
+	}
+
+	records, err := discovered.ListDiscoveredRecords()
+	if err != nil {
+		return nil, err
+	}
+
+	storedSet := make(map[string]bool)
+	if st != nil {
+		if storedEmails, err := st.ListAccounts(); err == nil {
+			for _, em := range storedEmails {
+				storedSet[strings.ToLower(strings.TrimSpace(em))] = true
+			}
+		}
+	}
+
+	items := make([]CandidateAccountItem, 0, len(records))
+	for _, r := range records {
+		items = append(items, CandidateAccountItem{
+			Email:    r.Email,
+			HasToken: storedSet[r.Email],
+			Added:    r.Added,
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].HasToken != items[j].HasToken {
+			return items[i].HasToken
+		}
+		if items[i].Added != items[j].Added {
+			return items[i].Added
+		}
+		return items[i].Email < items[j].Email
+	})
+	return items, nil
+}
+
+// AddDiscoveredAccount marks an account as added to the main UI.
+func (m *AccountManager) AddDiscoveredAccount(email string) error {
+	m.mu.RLock()
+	discovered := m.discoveredStore
+	m.mu.RUnlock()
+	if discovered == nil {
+		return errors.New("discovered store uninitialized")
+	}
+	return discovered.SetDiscoveredAdded(email, true)
 }
 
 // SwitchAccount performs a closed-loop hot-swap:
