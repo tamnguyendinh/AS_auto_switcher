@@ -51,12 +51,33 @@
 
 ### Invariant-Add-Account-Modal-UX (Quy chuẩn Modal Thêm Tài Khoản)
 - **Quy tắc:** Modal được mở khi nhấn nút `[+ Thêm]` trên thanh Toolbar chính.
-- **Bố cục Modal:**
+- **Sơ đồ giao diện Modal:**
+  ```text
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Thêm tài khoản                              [ 🔄 Quét Chrome ] │
+  ├─────────────────────────────────────────────────────────────────┤
+  │  user1@company.com                           [✔ Đã OAuth]       │
+  │                                                                 │
+  │  user2@gmail.com             [Cần OAuth]     [ + ADD ]          │
+  │                                              (Bấm -> [Cần OAuth] chuyển thành [Đã add] và nút add biến mất) │
+  │                                                                 │
+  │  user3@school.edu                            [ Đã add ]         │
+  │                                                                 │
+  ├─────────────────────────────────────────────────────────────────┤
+  │                                                         [ Đóng ]│
+  └─────────────────────────────────────────────────────────────────┘
+  ```
+- **Bố cục & Hành vi Modal:**
   - **Header:** Tiêu đề *"Thêm tài khoản"* + Nút nhỏ `[🔄 Quét Chrome]` (icon `theme.ViewRefreshIcon()`).
   - **Danh sách tài khoản:** Liệt kê toàn bộ email có trong `discovered_accounts/`, mỗi dòng gồm email và một trong 3 trạng thái loại trừ lẫn nhau:
-    1. **`[Đã OAuth]`**: Áp dụng khi email đã tồn tại trong `accounts_store/` hoặc đang Active. Không hiển thị nút `[ADD]`.
-    2. **`[Cần OAuth]` + Nút `[ADD]`**: Áp dụng khi email chưa có token trong `accounts_store/` và `Added == false`. Khi bấm `[ADD]`, cập nhật `Added = true`, thêm thẻ `[Cần OAuth]` lên UI tổng, và chuyển trạng thái dòng thành `[Đã add]`.
-    3. **`[Đã add]`**: Áp dụng khi email chưa có token nhưng đã có `Added == true`. Không cho bấm `[ADD]` thêm lần nữa.
+    1. **`[✔ Đã OAuth]`**: Áp dụng khi email đã tồn tại trong `accounts_store/` hoặc đang Active. Không hiển thị nút `[ + ADD ]`.
+    2. **`[Cần OAuth]` + Nút `[ + ADD ]`**: Áp dụng khi email chưa có token trong `accounts_store/` và `Added == false`.
+       - **Tương tác khi nhấn `[ + ADD ]`**:
+         + Cập nhật cờ `Added = true` và ghi bền vững vào `discovered_accounts/<email>.json`.
+         + Nhãn `[Cần OAuth]` trên dòng đó **chuyển ngay thành `[Đã add]`**.
+         + Nút `[ + ADD ]` **biến mất hoàn toàn**.
+         + Thẻ tài khoản `[Cần OAuth]` xuất hiện ngay lập tức trên UI tổng.
+    3. **`[Đã add]`**: Áp dụng khi email chưa có token nhưng đã được bấm `[ + ADD ]` trước đó (`Added == true`). Không hiển thị nút `[ + ADD ]`.
   - **Footer:** Nút `[Đóng]` để đóng Modal.
 
 ### Invariant-Pending-Account-Persistence (Bảo toàn Thẻ Đang Chờ)
@@ -148,7 +169,7 @@ sequenceDiagram
 |---|---|---|
 | **TC-01** | Khởi động ứng dụng sạch | UI tổng chỉ hiển thị tài khoản từ `accounts_store/` và active email. Toàn bộ tài khoản Chrome chưa add không được phép xuất hiện. |
 | **TC-02** | Mở Modal `[+ Thêm]` | Modal hiển thị chính xác các tài khoản trong `discovered_accounts/`. Tài khoản đã có token hiển thị `[Đã OAuth]`. Tài khoản chưa add hiển thị `[Cần OAuth]` kèm nút `[ADD]`. |
-| **TC-03** | Bấm nút `[ADD]` trong Modal | Thẻ `[Cần OAuth]` xuất hiện ngay lập tức trên UI tổng. Nút `[ADD]` trong Modal lập tức chuyển thành nhãn `[Đã add]`. |
+| **TC-03** | Bấm nút `[ + ADD ]` trong Modal | Nhãn `[Cần OAuth]` chuyển thành `[Đã add]`, nút `[ + ADD ]` biến mất, và thẻ `[Cần OAuth]` xuất hiện ngay lập tức trên UI tổng. |
 | **TC-04** | Kiểm tra tính bền vững (Restart App) | Tắt ứng dụng và mở lại -> Thẻ `[Cần OAuth]` vừa add vẫn hiển thị nguyên vẹn trên UI tổng. |
 | **TC-05** | Bấm nút `[🔄 Quét Chrome]` | Quét các profile Chrome, nạp thêm email mới vào `discovered_accounts/`, danh sách trong Modal cập nhật lại; UI tổng không bị thêm tài khoản tự động. |
 | **TC-06** | Hoàn tất OAuth sau khi add | Sau khi có file trong `accounts_store/`, thẻ trên UI tổng chuyển thành `[Chuyển]` hoặc `[✔ Dùng]`; trong Modal chuyển thành `[Đã OAuth]`. |
