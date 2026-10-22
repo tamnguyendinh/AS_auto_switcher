@@ -41,5 +41,6 @@
 ---
 
 ## 5. Tham Chiếu Git Commit (Commit Reference)
-- Đang chờ commit các văn kiện báo cáo thuộc quyền sở hữu của lane Kiến trúc sư (`reports/architect/*`, `reports/system-architect/*`).
+- Commit SPEC ban đầu: `e8568fc06f46b9d3484c1c1050bc29e7a5294d4c` (`docs(architect): publish startup UI scale and texture synchronization specification`).
 - Chỉ gửi báo cáo bàn giao lên CEO khi Human Owner ra lệnh bằng đúng nguyên văn `"gửi CEO"` (hoặc `"gui ceo"`).
+
