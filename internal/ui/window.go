@@ -120,6 +120,10 @@ func (a *App) setupLayout() {
 	// -------------------------------------------------------------------------
 	a.serverStatusLabel = widget.NewLabelWithStyle("Hoạt động  | Đang kết nối...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
+	a.addAccountBtn = widget.NewButtonWithIcon("Thêm", theme.ContentAddIcon(), func() {
+		a.ShowAddAccountModal()
+	})
+
 	a.refreshBtn = widget.NewButton("Danh sách tài khoản", func() {
 		a.Refresh()
 	})
@@ -139,6 +143,7 @@ func (a *App) setupLayout() {
 	a.alwaysOnTopBtn.Importance = pinImportance
 
 	toolbarLeft := container.NewHBox(
+		compactButton(a.addAccountBtn),
 		compactButton(a.refreshBtn),
 		compactButton(a.quotaRefreshAllBtn),
 		compactButton(a.alwaysOnTopBtn),

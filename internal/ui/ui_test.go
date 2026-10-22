@@ -2906,30 +2906,38 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Fatalf("AC-1 VIOLATION: expected row2LeftCluster.Objects[1] to be toolbarLeft container")
 	}
 
-	// Verify toolbarLeft contains the 3 buttons: refreshBtn, quotaRefreshAllBtn, alwaysOnTopBtn
-	if len(toolbarLeft.Objects) != 3 {
-		t.Fatalf("AC-1 VIOLATION: expected toolbarLeft to have 3 compact button containers, got %d", len(toolbarLeft.Objects))
+	// Verify toolbarLeft contains the 4 buttons: addAccountBtn, refreshBtn, quotaRefreshAllBtn, alwaysOnTopBtn
+	if len(toolbarLeft.Objects) != 4 {
+		t.Fatalf("AC-1 VIOLATION: expected toolbarLeft to have 4 compact button containers, got %d", len(toolbarLeft.Objects))
 	}
 
-	btn1Wrap, ok := toolbarLeft.Objects[0].(*fyne.Container)
+	btn0Wrap, ok := toolbarLeft.Objects[0].(*fyne.Container)
+	if !ok || len(btn0Wrap.Objects) == 0 || btn0Wrap.Objects[0] != app.addAccountBtn {
+		t.Errorf("AC-1 VIOLATION: expected first button in toolbarLeft to wrap app.addAccountBtn")
+	}
+	if app.addAccountBtn.Text != "Thêm" {
+		t.Errorf("expected addAccountBtn text 'Thêm', got '%s'", app.addAccountBtn.Text)
+	}
+
+	btn1Wrap, ok := toolbarLeft.Objects[1].(*fyne.Container)
 	if !ok || len(btn1Wrap.Objects) == 0 || btn1Wrap.Objects[0] != app.refreshBtn {
-		t.Errorf("AC-1 VIOLATION: expected first button in toolbarLeft to wrap app.refreshBtn")
+		t.Errorf("AC-1 VIOLATION: expected second button in toolbarLeft to wrap app.refreshBtn")
 	}
 	if app.refreshBtn.Text != "Danh sách tài khoản" {
 		t.Errorf("expected refreshBtn text 'Danh sách tài khoản', got '%s'", app.refreshBtn.Text)
 	}
 
-	btn2Wrap, ok := toolbarLeft.Objects[1].(*fyne.Container)
+	btn2Wrap, ok := toolbarLeft.Objects[2].(*fyne.Container)
 	if !ok || len(btn2Wrap.Objects) == 0 || btn2Wrap.Objects[0] != app.quotaRefreshAllBtn {
-		t.Errorf("AC-1 VIOLATION: expected second button in toolbarLeft to wrap app.quotaRefreshAllBtn")
+		t.Errorf("AC-1 VIOLATION: expected third button in toolbarLeft to wrap app.quotaRefreshAllBtn")
 	}
 	if app.quotaRefreshAllBtn.Text != "Làm mới Quota" {
 		t.Errorf("expected quotaRefreshAllBtn text 'Làm mới Quota', got '%s'", app.quotaRefreshAllBtn.Text)
 	}
 
-	btn3Wrap, ok := toolbarLeft.Objects[2].(*fyne.Container)
+	btn3Wrap, ok := toolbarLeft.Objects[3].(*fyne.Container)
 	if !ok || len(btn3Wrap.Objects) == 0 || btn3Wrap.Objects[0] != app.alwaysOnTopBtn {
-		t.Errorf("AC-1 VIOLATION: expected third button in toolbarLeft to wrap app.alwaysOnTopBtn")
+		t.Errorf("AC-1 VIOLATION: expected fourth button in toolbarLeft to wrap app.alwaysOnTopBtn")
 	}
 	if app.alwaysOnTopBtn.Text != "📌" {
 		t.Errorf("expected alwaysOnTopBtn text '📌', got '%s'", app.alwaysOnTopBtn.Text)
@@ -2969,6 +2977,52 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Errorf("expected currentTheme ThemeDark, got %s", app.currentTheme)
 	}
 }
+
+// TestApp_HeaderRow2_RightCluster_SeparationAndPalettePersistence verifies header row 2 toolbar structure and palette persistence.
+func TestApp_HeaderRow2_RightCluster_SeparationAndPalettePersistence(t *testing.T) {
+	TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t)
+}
+
+// TestApp_AddAccountButton_ToolbarInteractionOpensModalSafely verifies tapping addAccountBtn opens the modal safely.
+func TestApp_AddAccountButton_ToolbarInteractionOpensModalSafely(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	if app.addAccountBtn == nil {
+		t.Fatal("expected addAccountBtn to be initialized after Init()")
+	}
+	if app.addAccountBtn.Text != "Thêm" {
+		t.Fatalf("expected addAccountBtn text 'Thêm', got '%s'", app.addAccountBtn.Text)
+	}
+
+	// Verify no initial modal overlay
+	if app.win.Canvas().Overlays().Top() != nil {
+		t.Fatalf("expected no overlays initially")
+	}
+
+	// Tap the addAccountBtn on toolbar
+	test.Tap(app.addAccountBtn)
+
+	// Verify dialog overlay is shown on window
+	topOverlay := app.win.Canvas().Overlays().Top()
+	if topOverlay == nil {
+		t.Fatalf("expected active dialog overlay after tapping addAccountBtn")
+	}
+
+	// Clean up overlay
+	app.win.Canvas().Overlays().Remove(topOverlay)
+	if app.win.Canvas().Overlays().Top() != nil {
+		t.Errorf("expected overlays cleared")
+	}
+}
+
 
 // -----------------------------------------------------------------------------
 // Test for SPEC-ARCH-20261019-SYMMETRIC-GRID-WRAP-MARGINS

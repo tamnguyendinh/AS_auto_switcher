@@ -46,6 +46,7 @@ type App struct {
 	// Dynamic UI Widgets
 	serverStatusLabel    *widget.Label
 	accountListContainer *fyne.Container
+	addAccountBtn        *widget.Button
 	refreshBtn           *widget.Button
 	quotaRefreshAllBtn   *widget.Button
 	alwaysOnTopBtn       *widget.Button
