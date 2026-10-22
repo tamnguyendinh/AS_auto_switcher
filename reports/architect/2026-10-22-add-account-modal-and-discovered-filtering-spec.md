@@ -15,7 +15,7 @@
 ### 1.1. Hiện trạng Codebase cũ
 Hệ thống hiện tại đang bị **trộn lẫn** giữa hai trách nhiệm hoàn toàn khác nhau: **Quét dữ liệu Google Chrome** và **Hiển thị danh sách lên Giao diện UI tổng**.
 
-Cụ thể, hàm `GetAccountStates()` trong `internal/manager/account_manager.go` đang bị kích hoạt tự động ngầm ở **4 thời điểm**:
+Cụ thể, hàm `GetAccountStates()` trong `internal/manager/account_manager.go:308` đang bị kích hoạt tự động ngầm ở **4 thời điểm**:
 1. **Khi mở ứng dụng (Startup):** Ngay khi hàm `Init()` chạy, hệ thống quét toàn bộ thư mục Chrome trên máy.
 2. **Sau khi chuyển tài khoản thủ công:** Người dùng bấm chuyển tài khoản xong, hệ thống lại quét Chrome.
 3. **Sau khi Auto-Switch chuyển tài khoản tự động:** Khi sự kiện failover diễn ra, hệ thống lại quét Chrome.
@@ -168,7 +168,7 @@ Coder **bắt buộc phải tái sử dụng** các thành phần kiến trúc �
 
 # PHẦN III: KIẾN TRÚC CŨ ĐƯỢC BẢO TOÀN TUYỆT ĐỐI 100% (PRESERVED INVARIANTS)
 
-Coder **tuyệt đối không được làm thay đổi** các bất biến kiến trúc sau:
+Coder **tuyệt đối không được làm thay đổi** các bất biến kiến trúc sau để đảm bảo ứng dụng vận hành bình thường:
 
 1. **Invariant-Auto-Switch-Immunity (Bảo vệ Daemon chuyển đổi tự động):**
    - Bộ điều khiển `AutomationController` và thuật toán `Burn-down Sorter` chỉ lọc ứng viên có token sống trong `accounts_store/`. Thẻ `[Cần OAuth]` có `HasToken: false` nên **tự động bị loại khỏi danh sách chuyển đổi**, đảm bảo an toàn tuyệt đối cho daemon tự động.
@@ -183,7 +183,9 @@ Coder **tuyệt đối không được làm thay đổi** các bất biến ki�
 
 ---
 
-# PHẦN IV: KIẾN TRÚC BỊ TÁC ĐỘNG & CHI TIẾT TỪNG FILE, STRUCT, HÀM
+# PHẦN IV: KIẾN TRÚC BỊ TÁC ĐỘNG & ĐẶC TẢ MÃ NGUỒN CHI TIẾT (CODE-LEVEL BLUEPRINT)
+
+Coder triển khai mã nguồn cụ thể theo từng file dưới đây:
 
 ### 1. `internal/store/discovered_store.go`
 
@@ -195,123 +197,343 @@ type DiscoveredAccountEnvelope struct {
 	Added     bool    `json:"added,omitempty"`
 }
 ```
-*Ghi chú:* Thẻ `omitempty` đảm bảo tương thích ngược 100% với các file JSON cũ trên đĩa (mặc định unmarshal ra `false`).
 
 #### B. Cập nhật `SaveDiscovered(email string) error`:
-- Trước khi ghi đè, kiểm tra xem file `<email>.json` đã tồn tại chưa:
-  - Nếu đã tồn tại và parse được `Added == true`, bảo toàn `entry.Added = true` (không reset về `false` khi Chrome quét lại).
-- Thực hiện ghi nguyên tử: `os.CreateTemp` -> `json.Encode` -> `tmp.Sync()` -> `os.Rename`.
+```go
+func (s *DiscoveredStore) SaveDiscovered(email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	path, err := SafeAccountPath(s.dir, email)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.MkdirAll(s.dir, 0755); err != nil {
+		return err
+	}
+
+	// BẢO TỒN CỜ Added nếu đã tồn tại trước đó:
+	added := false
+	if existingData, readErr := os.ReadFile(path); readErr == nil {
+		var existingEnv DiscoveredAccountEnvelope
+		if jsonErr := json.Unmarshal(existingData, &existingEnv); jsonErr == nil {
+			added = existingEnv.Added
+		}
+	}
+
+	tmp, err := os.CreateTemp(s.dir, ".discovered-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+
+	entry := DiscoveredAccountEnvelope{
+		Email:     email,
+		ScannedAt: float64(time.Now().UnixNano()) / 1e9,
+		Added:     added,
+	}
+	if err := json.NewEncoder(tmp).Encode(entry); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+```
 
 #### C. Bổ sung `SetDiscoveredAdded(email string, added bool) error`:
 ```go
 // SetDiscoveredAdded updates the Added flag for an existing or new discovered record.
-func (s *DiscoveredStore) SetDiscoveredAdded(email string, added bool) error
+func (s *DiscoveredStore) SetDiscoveredAdded(email string, added bool) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return ErrInvalidEmail
+	}
+	path, err := SafeAccountPath(s.dir, email)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := os.MkdirAll(s.dir, 0755); err != nil {
+		return err
+	}
+
+	scannedAt := float64(time.Now().UnixNano()) / 1e9
+	if existingData, readErr := os.ReadFile(path); readErr == nil {
+		var existingEnv DiscoveredAccountEnvelope
+		if jsonErr := json.Unmarshal(existingData, &existingEnv); jsonErr == nil {
+			if existingEnv.ScannedAt > 0 {
+				scannedAt = existingEnv.ScannedAt
+			}
+		}
+	}
+
+	tmp, err := os.CreateTemp(s.dir, ".discovered-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+
+	entry := DiscoveredAccountEnvelope{
+		Email:     email,
+		ScannedAt: scannedAt,
+		Added:     added,
+	}
+	if err := json.NewEncoder(tmp).Encode(entry); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
 ```
-- Chuẩn hóa `email = strings.ToLower(strings.TrimSpace(email))`.
-- Đọc file hiện tại (nếu có để giữ `ScannedAt`), gán `record.Added = added`. Nếu chưa có file, gán `ScannedAt = now`.
-- Ghi đĩa nguyên tử dưới khóa `s.mu.Lock()`.
 
 #### D. Bổ sung `ListDiscoveredRecords() ([]DiscoveredAccountEnvelope, error)`:
 ```go
 // ListDiscoveredRecords returns full envelopes including Added flag for all valid records.
-func (s *DiscoveredStore) ListDiscoveredRecords() ([]DiscoveredAccountEnvelope, error)
+func (s *DiscoveredStore) ListDiscoveredRecords() ([]DiscoveredAccountEnvelope, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var records []DiscoveredAccountEnvelope
+	seen := make(map[string]bool)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var record DiscoveredAccountEnvelope
+		if err := json.Unmarshal(data, &record); err != nil {
+			continue
+		}
+		email := strings.ToLower(strings.TrimSpace(record.Email))
+		if email == "" || seen[email] {
+			continue
+		}
+		seen[email] = true
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Email < records[j].Email
+	})
+	return records, nil
+}
 ```
-- Duyệt thư mục `s.dir`, đọc toàn bộ các file `.json`, trả về danh sách `[]DiscoveredAccountEnvelope` đã sắp xếp theo email.
 
 ---
 
 ### 2. `internal/manager/account_manager.go`
 
-#### A. Tái cấu trúc `GetAccountStates(ctx context.Context) (*AccountOverview, error)`:
-- **CẮT BỎ HOÀN TOÀN** đoạn code sau khỏi `GetAccountStates`:
-  ```go
-  chromeAccounts, scanErr := scanner.ScanChromeAccountDetails(cDir)
-  for _, ca := range chromeAccounts { ... discovered.SaveDiscovered ... }
-  ```
-- **LUỒNG MỚI CỦA `GetAccountStates`:**
-  1. `m.CaptureCurrentSession()` (bảo toàn phiên active).
-  2. `activeEmail, _ := m.GetCurrentActiveEmail(ctx)`.
-  3. Đọc danh sách có token: `storedEmails, _ := m.store.ListAccounts()`.
-  4. Đọc danh bạ Chrome: `records, _ := m.discoveredStore.ListDiscoveredRecords()`.
-  5. Lọc danh bạ đưa vào UI:
-     ```go
-     for _, rec := range records {
-         // CHỈ nạp vào itemsMap nếu tài khoản đã được người dùng bấm ADD
-         if rec.Added {
-             add(rec.Email)
-         }
-     }
-     ```
-  6. Nạp `storedEmails` và `activeEmail` vào `itemsMap`.
-  7. Phân cấp trạng thái thẻ:
-     - `item.IsActive` -> `StateActive`, `[✔ Dùng]`
-     - `item.HasToken` -> `StateReady`, `[Chuyển]`
-     - Còn lại -> `StateUnauth`, `[Cần OAuth]`
-  8. Trả về `*AccountOverview`.
+#### A. Cắt bỏ Quét Chrome và Lọc `rec.Added == true` trong `GetAccountStates`:
+```go
+func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview, error) {
+	var warnings []string
+	if _, err := m.CaptureCurrentSession(); err != nil && !errors.Is(err, wincred.ErrNotFound) {
+		warnings = append(warnings, fmt.Sprintf("Không lưu được phiên hiện tại: %v", err))
+	}
+	activeEmail, _ := m.GetCurrentActiveEmail(ctx)
+
+	m.mu.RLock()
+	finder, discovered := m.clientFinder, m.discoveredStore
+	m.mu.RUnlock()
+
+	storedEmails, storeErr := m.store.ListAccounts()
+	if storeErr != nil {
+		warnings = append(warnings, fmt.Sprintf("Không đọc được kho tài khoản: %v", storeErr))
+	}
+	storedSet := make(map[string]bool)
+	for _, email := range storedEmails {
+		storedSet[strings.ToLower(strings.TrimSpace(email))] = true
+	}
+
+	itemsMap := make(map[string]*AccountDisplayItem)
+	add := func(email string) *AccountDisplayItem {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email == "" {
+			return nil
+		}
+		if item := itemsMap[email]; item != nil {
+			return item
+		}
+		item := &AccountDisplayItem{Email: email}
+		itemsMap[email] = item
+		return item
+	}
+
+	// ĐỌC DANH BẠ DISCOVERED VÀ CHỈ NẠP TÀI KHOẢN CÓ Added == true:
+	if discovered != nil {
+		records, err := discovered.ListDiscoveredRecords()
+		for _, rec := range records {
+			if rec.Added {
+				add(rec.Email)
+			}
+		}
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("Không đọc đầy đủ danh bạ Chrome: %v", err))
+		}
+	}
+
+	// NẠP TÀI KHOẢN ĐÃ CÓ TOKEN VÀ ACTIVE:
+	for _, email := range storedEmails {
+		add(email)
+	}
+	add(activeEmail)
+
+	accounts := make([]AccountDisplayItem, 0, len(itemsMap))
+	for _, item := range itemsMap {
+		item.HasToken = storedSet[item.Email]
+		item.IsActive = activeEmail != "" && item.Email == activeEmail
+		item.Status = "on"
+		if item.HasToken {
+			item.Status = m.GetAccountStatus(item.Email)
+		}
+		switch {
+		case item.IsActive:
+			item.State, item.DisplayBadge = model.StateActive, "[✔ Dùng]"
+		case item.HasToken:
+			item.State, item.DisplayBadge = model.StateReady, "[Chuyển]"
+		default:
+			item.State, item.DisplayBadge = model.StateUnauth, "[Cần OAuth]"
+		}
+		accounts = append(accounts, *item)
+	}
+	sort.Slice(accounts, func(i, j int) bool {
+		if accounts[i].IsActive != accounts[j].IsActive {
+			return accounts[i].IsActive
+		}
+		if accounts[i].HasToken != accounts[j].HasToken {
+			return accounts[i].HasToken
+		}
+		return accounts[i].Email < accounts[j].Email
+	})
+
+	overview := &AccountOverview{ActiveEmail: activeEmail, Accounts: accounts, Warnings: warnings}
+	if finder != nil {
+		if client, err := finder(ctx); err == nil && client != nil {
+			overview.LanguageServerRunning = true
+			overview.ServerInfo = client.ServerInfo()
+		}
+	}
+	return overview, nil
+}
+```
 
 #### B. Bổ sung `ScanChromeAccounts() ([]string, error)`:
 ```go
 // ScanChromeAccounts scans Chrome profiles on-demand and syncs new accounts into discoveredStore.
 func (m *AccountManager) ScanChromeAccounts() ([]string, error) {
-    m.mu.RLock()
-    cDir, discovered := m.chromeDir, m.discoveredStore
-    m.mu.RUnlock()
+	m.mu.RLock()
+	cDir, discovered := m.chromeDir, m.discoveredStore
+	m.mu.RUnlock()
 
-    if discovered == nil {
-        return nil, errors.New("discovered store uninitialized")
-    }
+	if discovered == nil {
+		return nil, errors.New("discovered store uninitialized")
+	}
 
-    details, err := scanner.ScanChromeAccountDetails(cDir)
-    if err != nil {
-        return nil, fmt.Errorf("lỗi quét chrome: %w", err)
-    }
+	chromeAccounts, err := scanner.ScanChromeAccountDetails(cDir)
+	if err != nil {
+		return nil, fmt.Errorf("không quét được Chrome: %w", err)
+	}
 
-    var scannedEmails []string
-    for _, d := range details {
-        em := strings.ToLower(strings.TrimSpace(d.Email))
-        if em == "" {
-            continue
-        }
-        _ = discovered.SaveDiscovered(em) // Đã có logic bảo toàn cờ Added
-        scannedEmails = append(scannedEmails, em)
-    }
-    return scannedEmails, nil
+	var scannedEmails []string
+	for _, ca := range chromeAccounts {
+		em := strings.ToLower(strings.TrimSpace(ca.Email))
+		if em == "" {
+			continue
+		}
+		_ = discovered.SaveDiscovered(em) // Đã có logic bảo toàn cờ Added
+		scannedEmails = append(scannedEmails, em)
+	}
+	return scannedEmails, nil
 }
 ```
 
-#### C. Bổ sung `GetCandidateAccounts() ([]CandidateAccountItem, error)`:
+#### C. Bổ sung `CandidateAccountItem` & `GetCandidateAccounts()`:
 ```go
 type CandidateAccountItem struct {
-    Email    string
-    HasToken bool
-    Added    bool
+	Email    string
+	HasToken bool
+	Added    bool
 }
 
 // GetCandidateAccounts returns all discovered accounts enriched with token and added state.
-func (m *AccountManager) GetCandidateAccounts() ([]CandidateAccountItem, error)
+func (m *AccountManager) GetCandidateAccounts() ([]CandidateAccountItem, error) {
+	m.mu.RLock()
+	st, discovered := m.store, m.discoveredStore
+	m.mu.RUnlock()
+
+	if discovered == nil {
+		return nil, errors.New("discovered store uninitialized")
+	}
+
+	records, err := discovered.ListDiscoveredRecords()
+	if err != nil {
+		return nil, err
+	}
+
+	storedSet := make(map[string]bool)
+	if st != nil {
+		if storedEmails, err := st.ListAccounts(); err == nil {
+			for _, em := range storedEmails {
+				storedSet[strings.ToLower(strings.TrimSpace(em))] = true
+			}
+		}
+	}
+
+	items := make([]CandidateAccountItem, 0, len(records))
+	for _, r := range records {
+		items = append(items, CandidateAccountItem{
+			Email:    r.Email,
+			HasToken: storedSet[r.Email],
+			Added:    r.Added,
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].HasToken != items[j].HasToken {
+			return items[i].HasToken
+		}
+		if items[i].Added != items[j].Added {
+			return items[i].Added
+		}
+		return items[i].Email < items[j].Email
+	})
+	return items, nil
+}
 ```
-- Lấy `storedSet` từ `m.store.ListAccounts()`.
-- Lấy `records` từ `m.discoveredStore.ListDiscoveredRecords()`.
-- Ghép nối dữ liệu:
-  ```go
-  item := CandidateAccountItem{
-      Email: rec.Email,
-      HasToken: storedSet[rec.Email],
-      Added: rec.Added,
-  }
-  ```
-- Sắp xếp: Ưu tiên `HasToken`, tiếp theo đến `Added`, cuối cùng theo `Email` A-Z.
 
 #### D. Bổ sung `AddDiscoveredAccount(email string) error`:
 ```go
+// AddDiscoveredAccount marks an account as added to the main UI.
 func (m *AccountManager) AddDiscoveredAccount(email string) error {
-    m.mu.RLock()
-    discovered := m.discoveredStore
-    m.mu.RUnlock()
-    if discovered == nil {
-        return errors.New("discovered store uninitialized")
-    }
-    return discovered.SetDiscoveredAdded(email, true)
+	m.mu.RLock()
+	discovered := m.discoveredStore
+	m.mu.RUnlock()
+	if discovered == nil {
+		return errors.New("discovered store uninitialized")
+	}
+	return discovered.SetDiscoveredAdded(email, true)
 }
 ```
 
@@ -319,82 +541,163 @@ func (m *AccountManager) AddDiscoveredAccount(email string) error {
 
 ### 3. Tạo Mới `internal/ui/add_modal.go`
 
-Module này chịu trách nhiệm hiển thị Modal "Thêm tài khoản" độc lập.
-
-#### A. Cấu trúc và Vòng đời Modal:
 ```go
-type AddAccountModal struct {
-    app        *App
-    win        fyne.Window
-    dialog     dialog.Dialog
-    listVBox   *fyne.Container
-    refreshBtn *widget.Button
+package ui
+
+import (
+	"context"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+)
+
+// ShowAddAccountModal displays the Add Account dialog.
+func (a *App) ShowAddAccountModal() {
+	if a == nil || a.win == nil || a.mgr == nil {
+		return
+	}
+
+	palette := GetThemePalette(a.currentTheme)
+
+	listContainer := container.NewVBox()
+	scrollContent := container.NewVScroll(container.NewPadded(listContainer))
+	scrollContent.SetMinSize(fyne.NewSize(420, 260))
+
+	var d dialog.Dialog
+
+	reloadCandidates := func() {
+		candidates, err := a.mgr.GetCandidateAccounts()
+		if err != nil {
+			return
+		}
+		listContainer.Objects = nil
+		if len(candidates) == 0 {
+			emptyLbl := widget.NewLabelWithStyle("Không có tài khoản nào trong danh bạ.", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
+			listContainer.Add(emptyLbl)
+			listContainer.Refresh()
+			return
+		}
+
+		for _, cand := range candidates {
+			candItem := cand // capture
+			emailLbl := widget.NewLabel(candItem.Email)
+			if a.IsMaskAccounts() {
+				emailLbl.SetText(MaskEmail(candItem.Email))
+			}
+			emailLbl.Truncation = fyne.TextTruncateEllipsis
+
+			var actionSlot *fyne.Container
+
+			if candItem.HasToken {
+				// Trường hợp 1: [✔ Đã OAuth]
+				statusBadge := canvas.NewText("[✔ Đã OAuth]", palette.Success)
+				statusBadge.TextSize = 11
+				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
+				actionSlot = container.NewCenter(statusBadge)
+			} else if candItem.Added {
+				// Trường hợp 3: [ Đã add ]
+				statusBadge := canvas.NewText("[Đã add]", palette.TextMuted)
+				statusBadge.TextSize = 11
+				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
+				actionSlot = container.NewCenter(statusBadge)
+			} else {
+				// Trường hợp 2: [Cần OAuth] + Nút [ + ADD ]
+				statusBadge := canvas.NewText("[Cần OAuth]", palette.Warning)
+				statusBadge.TextSize = 11
+				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
+
+				var addBtn *widget.Button
+				addBtn = widget.NewButtonWithIcon("ADD", theme.ContentAddIcon(), func() {
+					if err := a.mgr.AddDiscoveredAccount(candItem.Email); err == nil {
+						// Chuyển đổi tại chỗ: [Cần OAuth] đổi thành [Đã add] và nút ADD biến mất
+						doneBadge := canvas.NewText("[Đã add]", palette.TextMuted)
+						doneBadge.TextSize = 11
+						doneBadge.TextStyle = fyne.TextStyle{Bold: true}
+						actionSlot.Objects = []fyne.CanvasObject{doneBadge}
+						actionSlot.Refresh()
+
+						// Nạp ngay thẻ mới lên UI tổng
+						go func() {
+							overview, _ := a.mgr.GetAccountStates(context.Background())
+							a.mu.Lock()
+							a.overview = overview
+							a.mu.Unlock()
+							fyne.Do(func() {
+								a.updateUI(overview)
+							})
+						}()
+					}
+				})
+				addBtn.Importance = widget.HighImportance
+				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactButton(addBtn))
+			}
+
+			row := container.NewBorder(nil, nil, nil, actionSlot, emailLbl)
+			listContainer.Add(row)
+		}
+		listContainer.Refresh()
+	}
+
+	var scanBtn *widget.Button
+	scanBtn = widget.NewButtonWithIcon("Quét Chrome", theme.ViewRefreshIcon(), func() {
+		scanBtn.Disable()
+		scanBtn.SetText("⏳ Đang quét...")
+		go func() {
+			_, _ = a.mgr.ScanChromeAccounts()
+			fyne.Do(func() {
+				reloadCandidates()
+				scanBtn.SetText("Quét Chrome")
+				scanBtn.Enable()
+			})
+		}()
+	})
+
+	headerRow := container.NewBorder(
+		nil, nil,
+		widget.NewLabelWithStyle("Thêm tài khoản", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		compactButton(scanBtn),
+	)
+
+	contentBox := container.NewBorder(
+		container.NewVBox(headerRow, widget.NewSeparator()),
+		nil, nil, nil,
+		scrollContent,
+	)
+
+	reloadCandidates()
+
+	d = dialog.NewCustom("Thêm tài khoản", "Đóng", contentBox, a.win)
+	d.Resize(fyne.NewSize(460, 340))
+	d.Show()
 }
 ```
-
-#### B. Thiết kế Layout Modal:
-- **Kích thước khuyến nghị:** Rộng `440px`, Cao `320px`.
-- **Header:**
-  ```go
-  titleLbl := widget.NewLabelWithStyle("Thêm tài khoản", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-  refreshBtn := widget.NewButtonWithIcon("Quét Chrome", theme.ViewRefreshIcon(), func() {
-      // 1. Đổi text nút thành "⏳ Đang quét..." và Disable
-      // 2. Chạy goroutine gọi m.ScanChromeAccounts()
-      // 3. fyne.Do tải lại danh sách trên Modal, khôi phục text nút
-  })
-  header := container.NewBorder(nil, nil, titleLbl, refreshBtn)
-  ```
-- **Nội dung cuộn (List VBox inside VScroll):**
-  Mỗi tài khoản được biểu diễn bởi một hàng `container.NewBorder(nil, nil, emailLabel, actionCluster)`:
-  - `emailLabel`: Truncation Ellipsis, TextStyle Bold nếu `HasToken`.
-  - `actionCluster`:
-    - **Trường hợp 1 (`item.HasToken == true`):**
-      `canvas.NewText("[✔ Đã OAuth]", palette.Success)`
-    - **Trường hợp 2 (`!item.HasToken && item.Added`):**
-      `canvas.NewText("[Đã add]", palette.TextMuted)`
-    - **Trường hợp 3 (`!item.HasToken && !item.Added`):**
-      Cụm `container.NewHBox(statusBadge, addBtn)`:
-      - `statusBadge := canvas.NewText("[Cần OAuth]", palette.Warning)`
-      - `addBtn := widget.NewButtonWithIcon("ADD", theme.ContentAddIcon(), func() { ... })`
-      - **Hành vi khi bấm `addBtn`:**
-        1. Gọi `m.AddDiscoveredAccount(item.Email)`.
-        2. Chuyển đổi giao diện hàng ngay lập tức: Xóa `addBtn`, đổi `statusBadge` thành `canvas.NewText("[Đã add]", palette.TextMuted)`.
-        3. Kích hoạt cập nhật UI tổng:
-           ```go
-           overview, _ := a.mgr.GetAccountStates(context.Background())
-           a.mu.Lock()
-           a.overview = overview
-           a.mu.Unlock()
-           a.updateUI(overview)
-           ```
-- **Footer:** Nút `[Đóng]` gọi `dialog.Hide()`.
 
 ---
 
 ### 4. Cập nhật Toolbar `internal/ui/window.go`
 
-Tại hàm `setupLayout()` ([L141-L150](file:///g:/antigravity_auto_switch/internal/ui/window.go#L141-L150)):
-- Bổ sung nút `a.addAccountBtn`:
-  ```go
-  a.addAccountBtn = widget.NewButtonWithIcon("Thêm", theme.ContentAddIcon(), func() {
-      a.ShowAddAccountModal()
-  })
-  ```
-- Sắp xếp lại `toolbarLeft`:
-  ```go
-  toolbarLeft := container.NewHBox(
-      compactButton(a.addAccountBtn),
-      compactButton(a.quotaRefreshAllBtn),
-      compactButton(a.alwaysOnTopBtn),
-  )
-  ```
-*(Nút `a.refreshBtn` "Danh sách tài khoản" cũ được thay thế hoàn toàn bởi `a.addAccountBtn`, do chức năng quét Chrome đã chuyển trọn vẹn vào trong Modal).*
+Thay thế nút `a.refreshBtn` ("Danh sách tài khoản" cũ) bằng nút `a.addAccountBtn`:
+```go
+	a.addAccountBtn = widget.NewButtonWithIcon("Thêm", theme.ContentAddIcon(), func() {
+		a.ShowAddAccountModal()
+	})
+
+	toolbarLeft := container.NewHBox(
+		compactButton(a.addAccountBtn),
+		compactButton(a.quotaRefreshAllBtn),
+		compactButton(a.alwaysOnTopBtn),
+	)
+```
 
 ---
 
 ### 5. Cập nhật `internal/ui/app.go`
 - Tối ưu `Init()`: Khởi động app nạp UI ngay từ đĩa (dưới 50ms), không còn bị nghẽn bởi Chrome I/O.
-- Bổ sung phương thức điều phối: `func (a *App) ShowAddAccountModal()`.
+- Tích hợp hàm `func (a *App) ShowAddAccountModal()` đã tạo ở `add_modal.go`.
 
 ---
 
