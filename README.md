@@ -1,12 +1,14 @@
-# ⚡ Antigravity Multi-Account Switcher - **Version 1.0.1.8**
+# ⚡ Antigravity Multi-Account Switcher - **Version 1.0.1.9**
+
+Nếu bạn có 1 tài khoản cá nhân, 1 tài khoản công ty, 1 tài khoản để làm dự án bên ngoài; mỗi khi chuyển tài khoản để làm việc cứ phải sign in/out mất thời gian thì công cụ này chính là dành cho bạn.
 
 ### **Khi tài khoản được chuyển tự động, tất cả công việc đang làm vẫn tiếp tục bình thường, tuyệt đối không bị gián đoạn, không cần can thiệp thủ công.**
 
-### **An toàn tuyệt đối vì tuân thủ theo cơ chế chuyển đổi tài khoản được Google cho phép.**
+### **An toàn tuyệt đối vì tuân thủ theo cơ chế chuyển đổi tài khoản được Google cho phép. Không can thiệp mã nguồn Antigravity, không dùng cơ chế bọc API**
 
-Ứng dụng Windows viết bằng **Go**, giúp quản lý nhiều tài khoản Google, theo dõi quota và chuyển đổi tài khoản đang dùng trong Antigravity IDE một cách linh hoạt, an toàn. Ứng dụng cung cấp giao diện desktop **Fyne** đồ họa trực quan, hiện đại, mang lại trải nghiệm Zero-Console mượt mà với duy nhất một file thực thi `antigravity-switch.exe`.
+Ứng dụng Windows viết bằng **Go**, giúp quản lý nhiều tài khoản Google, theo dõi quota và chuyển đổi tài khoản đang dùng trong Antigravity 2.x một cách linh hoạt, an toàn. Ứng dụng cung cấp giao diện desktop **Fyne** đồ họa trực quan, hiện đại, mang lại trải nghiệm Zero-Console mượt mà với duy nhất một file thực thi `antigravity-switch.exe`.
 
-Từ phiên bản **Version 1.0.1.8**, ứng dụng tích hợp toàn diện hệ thống **Chuyển Đổi Tài Khoản Tự Động (Autonomous Multi-Account Switcher & Failover Daemon)**. Người dùng có thể linh hoạt chọn giữa chuyển tài khoản thủ công (bằng nút **Chuyển** trên GUI) và chuyển đổi tự động hoàn toàn (AutoSwitch). Khi bật chế độ Tự động, hệ thống tự động giám sát quota, phát hiện cạn kiệt tài nguyên (lỗi 429 / RESOURCE_EXHAUSTED), tự phục hồi thử lại trong bộ nhớ, và tự động chọn tài khoản dự phòng tối ưu nhất theo thuật toán **Burn-down Sorter** mà không làm gián đoạn dòng suy nghĩ công việc của lập trình viên.
+Ứng dụng tích hợp toàn diện hệ thống **Chuyển Đổi Tài Khoản Tự Động (Autonomous Multi-Account Switcher & Failover Daemon)**. Người dùng có thể linh hoạt chọn giữa chuyển tài khoản thủ công (bằng nút **Chuyển** trên GUI) và chuyển đổi tự động hoàn toàn (AutoSwitch). Khi bật chế độ Tự động, hệ thống tự động giám sát quota, phát hiện cạn kiệt tài nguyên, tự phục hồi thử lại trong bộ nhớ, và tự động chọn tài khoản dự phòng tối ưu nhất theo thuật toán **Burn-down Sorter** mà không làm gián đoạn dòng suy nghĩ công việc của lập trình viên.
 
 ## Tính năng hiện có
 
