@@ -15,11 +15,11 @@
 ### 1.1. Hiện trạng Codebase cũ
 Hệ thống hiện tại đang bị **trộn lẫn** giữa hai trách nhiệm hoàn toàn khác nhau: **Quét dữ liệu Google Chrome** và **Hiển thị danh sách lên Giao diện UI tổng**.
 
-Cụ thể, hàm `GetAccountStates()` trong `internal/manager/account_manager.go:308` đang bị kích hoạt tự động ngầm ở **4 thời điểm**:
-1. **Khi mở ứng dụng (Startup):** Ngay khi hàm `Init()` chạy, hệ thống quét toàn bộ thư mục Chrome trên máy.
-2. **Sau khi chuyển tài khoản thủ công:** Người dùng bấm chuyển tài khoản xong, hệ thống lại quét Chrome.
-3. **Sau khi Auto-Switch chuyển tài khoản tự động:** Khi sự kiện failover diễn ra, hệ thống lại quét Chrome.
-4. **Khi bấm nút "Danh sách tài khoản" trên Toolbar.**
+Cụ thể, hàm `GetAccountStates()` trong [`internal/manager/account_manager.go:308`](file:///g:/antigravity_auto_switch/internal/manager/account_manager.go#L308) đang bị kích hoạt tự động ngầm ở **4 thời điểm**:
+1. **Khi mở ứng dụng (Startup):** Ngay khi hàm `Init()` chạy ([`internal/ui/app.go:435`](file:///g:/antigravity_auto_switch/internal/ui/app.go#L435)), ứng dụng gọi `a.Refresh()` -> quét toàn bộ thư mục profile Chrome trên máy.
+2. **Sau khi chuyển tài khoản thủ công:** Người dùng bấm chuyển tài khoản xong ([`internal/ui/app.go:912`](file:///g:/antigravity_auto_switch/internal/ui/app.go#L912)), hệ thống lại quét Chrome.
+3. **Sau khi Auto-Switch chuyển tài khoản tự động:** Khi sự kiện failover diễn ra ([`internal/ui/app.go:482`](file:///g:/antigravity_auto_switch/internal/ui/app.go#L482)), hệ thống lại quét Chrome.
+4. **Khi bấm nút "Danh sách tài khoản" trên Toolbar** ([`internal/ui/app.go:825`](file:///g:/antigravity_auto_switch/internal/ui/app.go#L825)).
 
 ### 1.2. Hai hệ quả nghiêm trọng
 - **Ô nhiễm thị giác (UI Pollution):** Trình duyệt Chrome của người dùng thường có rất nhiều tài khoản (email cá nhân, mail mua sắm, mail học tập...). Hệ thống quét tự động và ép **toàn bộ** các email này hiển thị kín màn hình dưới dạng thẻ `[Cần OAuth]`, dù người dùng không có nhu cầu sử dụng chúng cho Antigravity.
@@ -61,9 +61,9 @@ flowchart TD
 ## 3. Thiết Kế Chi Tiết Giao Diện & Trải Nghiệm Người Dùng (UX Blueprint)
 
 ### 3.1. Điểm kích hoạt trên Giao diện chính (UI Tổng)
-- Trên thanh Toolbar (Header Row 2), thay thế nút "Danh sách tài khoản" cũ bằng nút: **`[+ Thêm]`** (với icon `theme.ContentAddIcon()`), đặt cạnh cụm điều khiển:
+- Trên thanh Toolbar (Header Row 2), bổ sung nút: **`[+ Thêm]`** (với icon `theme.ContentAddIcon()`), đặt ở vị trí đầu tiên của cụm `toolbarLeft`:
   ```text
-  [Hoạt động | PID 1234]    [ [+ Thêm]  [Làm mới Quota]  [📌] ] ...
+  [Hoạt động | PID 1234]    [ [+ Thêm] [Danh sách tài khoản] [Làm mới Quota] [📌] ] ...
   ```
 - Khi người dùng nhấn nút này, **Modal "Thêm tài khoản"** sẽ hiển thị chính giữa cửa sổ ứng dụng.
 
@@ -148,7 +148,7 @@ flowchart TD
 
 Coder **bắt buộc phải tái sử dụng** các thành phần kiến trúc đã hoàn thiện trong codebase, tuyệt đối không viết lại:
 
-1. **Widget Thẻ Tài Khoản (`internal/ui/widgets.go`):**
+1. **Widget Thẻ Tài Khoản ([`internal/ui/widgets.go`](file:///g:/antigravity_auto_switch/internal/ui/widgets.go)):**
    - Tận dụng 100% logic hiển thị thẻ `[Cần OAuth]` sẵn có tại dòng 578-586:
      ```go
      text, tint := "[Cần OAuth]", palette.Warning
@@ -157,12 +157,14 @@ Coder **bắt buộc phải tái sử dụng** các thành phần kiến trúc �
      ```
    - Tận dụng logic hiển thị Quota ma trận `N/A` khi thẻ chưa có token (`!w.IsActive && !w.HasToken`) tại dòng 517-524.
    - Tận dụng cơ chế cập nhật phản ứng tại chỗ `UpdateState` và `UpdateQuota` để tránh giật lag layout.
-2. **Scanner Chrome (`internal/scanner/chrome_scanner.go`):**
+2. **Scanner Chrome ([`internal/scanner/chrome_scanner.go`](file:///g:/antigravity_auto_switch/internal/scanner/chrome_scanner.go)):**
    - Tái sử dụng hàm quét chuẩn `scanner.ScanChromeAccountDetails(cDir)` và hàm phân giải thư mục `scanner.GetDefaultChromeUserDataDir()`.
 3. **Cơ Chế Ghi Tệp An Toàn (Atomic Temp File + Rename Pattern):**
    - Tái sử dụng mẫu ghi tệp nguyên tử bằng `os.CreateTemp` + `Sync()` + `os.Rename` đã chuẩn hóa tại `internal/store/account_store.go` và `internal/store/discovered_store.go`.
-4. **Hệ Thống Bảng Màu & Giao Diện (`internal/ui/themes.go`):**
+4. **Hệ Thống Bảng Màu & Giao Diện ([`internal/ui/themes.go`](file:///g:/antigravity_auto_switch/internal/ui/themes.go)):**
    - Tái sử dụng `ThemePalette`, `GetThemePalette(a.currentTheme)` để Modal tự động đồng bộ theo 3 theme `Dark`, `Light`, `Warm`.
+5. **Hàm Chuẩn Hóa Tên Tệp ([`internal/store/sanitizer.go`](file:///g:/antigravity_auto_switch/internal/store/sanitizer.go)):**
+   - Tái sử dụng `SanitizeFilename(email)` để kiểm tra tính hợp lệ của tệp tin lưu trên đĩa Windows.
 
 ---
 
@@ -187,7 +189,7 @@ Coder **tuyệt đối không được làm thay đổi** các bất biến ki�
 
 Coder triển khai mã nguồn cụ thể theo từng file dưới đây:
 
-### 1. `internal/store/discovered_store.go`
+### 1. [`internal/store/discovered_store.go`](file:///g:/antigravity_auto_switch/internal/store/discovered_store.go)
 
 #### A. Cập nhật Struct `DiscoveredAccountEnvelope`:
 ```go
@@ -310,25 +312,30 @@ func (s *DiscoveredStore) ListDiscoveredRecords() ([]DiscoveredAccountEnvelope, 
 
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return []DiscoveredAccountEnvelope{}, nil
+		}
 		return nil, err
 	}
 
 	var records []DiscoveredAccountEnvelope
 	seen := make(map[string]bool)
+	var failures []error
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
-		if err != nil {
-			continue
-		}
 		var record DiscoveredAccountEnvelope
-		if err := json.Unmarshal(data, &record); err != nil {
-			continue
+		if err == nil {
+			err = json.Unmarshal(data, &record)
 		}
 		email := strings.ToLower(strings.TrimSpace(record.Email))
-		if email == "" || seen[email] {
+		if err != nil || email == "" || SanitizeFilename(email) != entry.Name() || record.ScannedAt <= 0 {
+			failures = append(failures, fmt.Errorf("không đọc được bản ghi danh bạ %s", entry.Name()))
+			continue
+		}
+		if seen[email] {
 			continue
 		}
 		seen[email] = true
@@ -337,13 +344,13 @@ func (s *DiscoveredStore) ListDiscoveredRecords() ([]DiscoveredAccountEnvelope, 
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Email < records[j].Email
 	})
-	return records, nil
+	return records, errors.Join(failures...)
 }
 ```
 
 ---
 
-### 2. `internal/manager/account_manager.go`
+### 2. [`internal/manager/account_manager.go`](file:///g:/antigravity_auto_switch/internal/manager/account_manager.go)
 
 #### A. Cắt bỏ Quét Chrome và Lọc `rec.Added == true` trong `GetAccountStates`:
 ```go
@@ -539,7 +546,7 @@ func (m *AccountManager) AddDiscoveredAccount(email string) error {
 
 ---
 
-### 3. Tạo Mới `internal/ui/add_modal.go`
+### 3. Tạo Mới [`internal/ui/add_modal.go`](file:///g:/antigravity_auto_switch/internal/ui/add_modal.go)
 
 ```go
 package ui
@@ -678,9 +685,9 @@ func (a *App) ShowAddAccountModal() {
 
 ---
 
-### 4. Cập nhật Toolbar `internal/ui/window.go`
+### 4. Cập nhật Toolbar [`internal/ui/window.go`](file:///g:/antigravity_auto_switch/internal/ui/window.go)
 
-Thay thế nút `a.refreshBtn` ("Danh sách tài khoản" cũ) bằng nút `a.addAccountBtn`:
+Bổ sung nút `a.addAccountBtn` vào `toolbarLeft`:
 ```go
 	a.addAccountBtn = widget.NewButtonWithIcon("Thêm", theme.ContentAddIcon(), func() {
 		a.ShowAddAccountModal()
@@ -688,6 +695,7 @@ Thay thế nút `a.refreshBtn` ("Danh sách tài khoản" cũ) bằng nút `a.ad
 
 	toolbarLeft := container.NewHBox(
 		compactButton(a.addAccountBtn),
+		compactButton(a.refreshBtn),
 		compactButton(a.quotaRefreshAllBtn),
 		compactButton(a.alwaysOnTopBtn),
 	)
@@ -695,9 +703,20 @@ Thay thế nút `a.refreshBtn` ("Danh sách tài khoản" cũ) bằng nút `a.ad
 
 ---
 
-### 5. Cập nhật `internal/ui/app.go`
+### 5. Cập nhật [`internal/ui/app.go`](file:///g:/antigravity_auto_switch/internal/ui/app.go)
 - Tối ưu `Init()`: Khởi động app nạp UI ngay từ đĩa (dưới 50ms), không còn bị nghẽn bởi Chrome I/O.
 - Tích hợp hàm `func (a *App) ShowAddAccountModal()` đã tạo ở `add_modal.go`.
+
+---
+
+### 6. Cập nhật Kiểm Thử Hiện Có Bị Tác Động (Impacted Tests Handling)
+Coder lưu ý 2 điểm sau trong suite test hiện hữu:
+1. **`internal/ui/ui_test.go:2910` (`TestApp_HeaderRow2_RightCluster_SeparationAndPalettePersistence`):**
+   - Assertion cũ: `if len(toolbarLeft.Objects) != 3 { ... }`.
+   - Cập nhật thành: `4` do bổ sung `addAccountBtn`. Nút đầu tiên là `addAccountBtn`, nút thứ hai là `refreshBtn`.
+2. **`internal/manager/two_store_test.go` (`TestTwoStoreCaptureMergeRepeatAndRemember`):**
+   - Test cũ giả định `GetAccountStates` tự quét Chrome.
+   - Khi áp dụng luồng mới, test cần gọi `m.ScanChromeAccounts()` và `m.AddDiscoveredAccount("NEW@example.com")` để xác nhận tài khoản `NEW@example.com` xuất hiện trên `overview.Accounts`.
 
 ---
 
@@ -737,7 +756,7 @@ Coder triển khai tuần tự theo 5 bước sau:
                             │
 ┌───────────────────────────▼────────────────────────────┐
 │ BƯỚC 5: Chạy Kiểm Thử Đơn Vị & Tích Hợp (go test)      │
-│ • Chạy kiểm thử store, manager, ui                     │
+│ • Cập nhật assertion test toolbarLeft từ 3 lên 4       │
 │ • Kiểm chứng 8 bài kiểm thử chấp nhận (TC-01 -> TC-08) │
 └────────────────────────────────────────────────────────┘
 ```
