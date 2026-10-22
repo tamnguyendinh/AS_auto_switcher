@@ -145,14 +145,7 @@ Tài khoản đang dùng ưu tiên lấy quota qua Language Server; tài khoản
 
 ## Dữ liệu lưu trên máy
 
-Trong repo, kho mặc định là `accounts_store/` ở gốc, nằm ngoài `bin/` để không bị clean build xóa. Bản portable tiếp tục dùng kho hiện có gần executable, hoặc tạo kho cạnh executable khi chưa có dữ liệu. Biến môi trường **`ANTIGRAVITY_STORE_DIR`** chọn một kho khác; thư mục được tạo nếu chưa có và lỗi sẽ được báo thay vì âm thầm chuyển sang kho khác. Danh bạ `discovered_accounts/` nằm cạnh kho credential đã chọn.
-
-| Đường dẫn trong kho | Nội dung |
-| --- | --- |
-| `<email>.json` | Token và thông tin phiên của tài khoản. |
-| `.quota_cache.json` | Cache dữ liệu quota. |
-| `.ui_preferences.json` | Theme đã chọn. |
-| `active_threads_history/` | Danh sách hội thoại ghi nhận trước mỗi lần chuyển. |
+Không dùng server bên thứ 3, tất cả nằm trên PC của bạn.
 
 **Các file token trong kho được lưu dạng JSON văn bản thuần, chưa được mã hóa bằng DPAPI.** Credential của phiên IDE được đọc/ghi riêng qua Windows Credential Manager. Thư mục `accounts_store/` đã được đưa vào `.gitignore`; không chia sẻ các file token.
 
