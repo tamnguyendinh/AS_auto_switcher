@@ -45,6 +45,7 @@ type App struct {
 
 	// Dynamic UI Widgets
 	serverStatusLabel    *widget.Label
+	versionLabel         *widget.Label
 	accountListContainer *fyne.Container
 	addAccountBtn        *widget.Button
 	refreshBtn           *widget.Button
@@ -1289,12 +1290,12 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 
 	palette := GetThemePalette(a.currentTheme)
 
-	// 1. Language Server status in TopSection Row 2
+	// 1. Language Server status in Footer Bar
 	if a.serverStatusLabel != nil {
 		if overview.LanguageServerRunning && overview.ServerInfo != nil {
-			a.serverStatusLabel.SetText(fmt.Sprintf("Hoạt động  | PID %d | Port %d", overview.ServerInfo.PID, overview.ServerInfo.Port))
+			a.serverStatusLabel.SetText(fmt.Sprintf("Antigravity: Hoạt động  | PID %d | Port %d", overview.ServerInfo.PID, overview.ServerInfo.Port))
 		} else {
-			a.serverStatusLabel.SetText("Không hoạt động  | Dự phòng WinCred")
+			a.serverStatusLabel.SetText("Antigravity: Không hoạt động  | Dự phòng WinCred")
 		}
 	}
 
@@ -1350,7 +1351,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 
 }
 
-// showStatusBar displays a transient status message in the status bar.
+// showStatusBar displays a transient status message taking over the entire bottom bar.
 func (a *App) showStatusBar(msg string) {
 	if a.statusBar == nil {
 		return
@@ -1359,17 +1360,35 @@ func (a *App) showStatusBar(msg string) {
 		a.statusBarHideTimer.Stop()
 		a.statusBarHideTimer = nil
 	}
+
+	// 1. Tạm ẩn text hai bên mép để nhường 100% không gian cho thông báo
+	if a.serverStatusLabel != nil {
+		a.serverStatusLabel.Hide()
+	}
+	if a.versionLabel != nil {
+		a.versionLabel.Hide()
+	}
+
+	// 2. Cài đặt nội dung và hiển thị thông báo
 	a.statusBar.SetText(msg)
 	a.statusBar.Show()
 }
 
-// clearStatusBar hides the status bar.
+// clearStatusBar hides the status bar and restores normal left/right footer labels.
 func (a *App) clearStatusBar() {
 	if a.statusBar == nil {
 		return
 	}
 	a.statusBar.SetText("")
 	a.statusBar.Hide()
+
+	// Khôi phục lại trạng thái bình thường cho thanh đáy
+	if a.serverStatusLabel != nil {
+		a.serverStatusLabel.Show()
+	}
+	if a.versionLabel != nil {
+		a.versionLabel.Show()
+	}
 }
 
 // autoHideStatusBar schedules the status bar to be hidden after the given duration.

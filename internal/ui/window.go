@@ -12,6 +12,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"antigravity-switch/internal/version"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -116,9 +118,9 @@ func (a *App) setupLayout() {
 	row1Header := container.NewBorder(nil, nil, titleLeft, windowControls, dragArea)
 
 	// -------------------------------------------------------------------------
-	// TopSection Row 2 (Combined): Server Status + Toolbar Buttons (trái) + Theme Select (phải)
+	// TopSection Row 2 (Combined): Toolbar Buttons (trái) + Theme Select (phải)
 	// -------------------------------------------------------------------------
-	a.serverStatusLabel = widget.NewLabelWithStyle("Hoạt động  | Đang kết nối...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	a.serverStatusLabel = widget.NewLabelWithStyle("Antigravity: Hoạt động  | Đang kết nối...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
 	a.addAccountBtn = widget.NewButtonWithIcon("Thêm", theme.ContentAddIcon(), func() {
 		a.ShowAddAccountModal()
@@ -149,10 +151,8 @@ func (a *App) setupLayout() {
 		compactButton(a.alwaysOnTopBtn),
 	)
 
-	row2LeftCluster := container.NewHBox(
-		a.serverStatusLabel,
-		toolbarLeft,
-	)
+	// row2LeftCluster chỉ còn chứa toolbarLeft, đặt ngay đầu góc trái
+	row2LeftCluster := toolbarLeft
 
 	// Theme Select chỉ gồm 3 icon, thu hẹp bề ngang tối đa
 	themeOptions := []string{"🌙", "☀️", "☕"}
@@ -243,10 +243,26 @@ func (a *App) setupLayout() {
 	a.statusBar.Truncation = fyne.TextTruncateEllipsis
 	a.statusBar.Hide()
 
+	// Version Label: Mép phải thanh đáy
+	a.versionLabel = widget.NewLabelWithStyle(version.GetFullVersion(), fyne.TextAlignTrailing, fyne.TextStyle{})
+
+	// Khung chứa nội dung thanh đáy: Left (Server Status), Center (Status Bar), Right (Version Label)
+	footerContent := container.NewBorder(
+		nil, nil,
+		a.serverStatusLabel, // Mép trái thanh đáy
+		a.versionLabel,      // Mép phải thanh đáy
+		a.statusBar,         // Trung tâm
+	)
+
+	bottomSection := container.NewVBox(
+		widget.NewSeparator(),
+		container.NewPadded(footerContent),
+	)
+
 	// Main Layout
 	mainLayout := container.NewBorder(
 		topSection,
-		a.statusBar,
+		bottomSection,
 		nil,
 		nil,
 		scrollList,

@@ -118,8 +118,18 @@ function Build-GUI {
         Remove-Item -Force $outFile
     }
 
+    $AppVersion = "1.0.2.0"
+    $GitCommit = ""
+    try {
+        $GitCommit = (git rev-parse --short HEAD 2>$null).Trim()
+    } catch {
+        $GitCommit = ""
+    }
+
+    $ldflags = "-H windowsgui -s -w -X 'antigravity-switch/internal/version.Version=$AppVersion' -X 'antigravity-switch/internal/version.GitCommit=$GitCommit'"
+
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    go build -ldflags="-H windowsgui -s -w" -o $outFile .\cmd\switcher
+    go build -ldflags="$ldflags" -o $outFile .\cmd\switcher
     $stopwatch.Stop()
 
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outFile)) {

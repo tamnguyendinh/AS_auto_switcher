@@ -289,8 +289,8 @@ func TestUpdateUI_Empty(t *testing.T) {
 	if app.overview.ActiveEmail != "" {
 		t.Errorf("expected empty active email, got: %s", app.overview.ActiveEmail)
 	}
-	if !strings.Contains(app.serverStatusLabel.Text, "Không hoạt động") {
-		t.Errorf("expected server status to contain 'Không hoạt động', got: %s", app.serverStatusLabel.Text)
+	if !strings.Contains(app.serverStatusLabel.Text, "Antigravity: Không hoạt động") {
+		t.Errorf("expected server status to contain 'Antigravity: Không hoạt động', got: %s", app.serverStatusLabel.Text)
 	}
 	if len(app.accountListContainer.Objects) != 1 {
 		t.Errorf("expected 1 container object (empty label), got %d", len(app.accountListContainer.Objects))
@@ -1307,7 +1307,7 @@ func TestOwnerRedesign_ThreeColumnGrid(t *testing.T) {
 		t.Fatalf("expected 6 account cards in container, got %d", len(app.accountListContainer.Objects))
 	}
 
-	expectedStatus := "Hoạt động  | PID 7768 | Port 52704"
+	expectedStatus := "Antigravity: Hoạt động  | PID 7768 | Port 52704"
 	if app.serverStatusLabel.Text != expectedStatus {
 		t.Errorf("expected '%s', got '%s'", expectedStatus, app.serverStatusLabel.Text)
 	}
@@ -2856,16 +2856,12 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Fatalf("expected topSection.Objects[2] to be separator")
 	}
 
-	// AC-1: row2Combined layout structure: Left cluster + Right cluster (theme select)
+	// AC-1: row2Combined layout structure: Left cluster (toolbarLeft) + Right cluster (theme select)
 	var foundLeftCluster *fyne.Container
 	var foundThemeWrap *fyne.Container
 	for _, obj := range row2Combined.Objects {
 		if c, ok := obj.(*fyne.Container); ok {
 			for _, inner := range c.Objects {
-				if inner == app.serverStatusLabel {
-					foundLeftCluster = c
-					break
-				}
 				if inner == app.themeSelect {
 					foundThemeWrap = c
 					break
@@ -2876,6 +2872,10 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 							foundThemeWrap = innerC
 							break
 						}
+						if deepInner == app.addAccountBtn {
+							foundLeftCluster = c
+							break
+						}
 					}
 				}
 			}
@@ -2883,7 +2883,7 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 	}
 
 	if foundLeftCluster == nil {
-		t.Fatalf("AC-1 VIOLATION: expected to find row2LeftCluster containing serverStatusLabel in row2Combined")
+		t.Fatalf("AC-1 VIOLATION: expected to find row2LeftCluster containing toolbarLeft in row2Combined")
 	}
 	if foundThemeWrap == nil {
 		t.Fatalf("expected to find themeSelectWrap in row2Combined")
@@ -2893,20 +2893,8 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Errorf("expected themeSelectWrap size 58x20, got %fx%f", themeWrapSize.Width, themeWrapSize.Height)
 	}
 
-	// Verify row2LeftCluster contains serverStatusLabel and toolbarLeft
-	if len(foundLeftCluster.Objects) < 2 {
-		t.Fatalf("AC-1 VIOLATION: expected row2LeftCluster to have at least 2 children (serverStatusLabel, toolbarLeft), got %d", len(foundLeftCluster.Objects))
-	}
-	if foundLeftCluster.Objects[0] != app.serverStatusLabel {
-		t.Errorf("AC-1 VIOLATION: expected row2LeftCluster.Objects[0] to be serverStatusLabel")
-	}
-
-	toolbarLeft, ok := foundLeftCluster.Objects[1].(*fyne.Container)
-	if !ok || toolbarLeft == nil {
-		t.Fatalf("AC-1 VIOLATION: expected row2LeftCluster.Objects[1] to be toolbarLeft container")
-	}
-
-	// Verify toolbarLeft contains the 4 buttons: addAccountBtn, refreshBtn, quotaRefreshAllBtn, alwaysOnTopBtn
+	// Verify row2LeftCluster directly contains the 4 buttons (SPEC-ARCH-20261022: serverStatusLabel moved to footer)
+	toolbarLeft := foundLeftCluster
 	if len(toolbarLeft.Objects) != 4 {
 		t.Fatalf("AC-1 VIOLATION: expected toolbarLeft to have 4 compact button containers, got %d", len(toolbarLeft.Objects))
 	}
@@ -3476,15 +3464,15 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 		t.Fatal("AC-2 VIOLATION: expected Bold text style for lblAuto")
 	}
 
-	// Verify serverStatusLabel
-	serverLabel := app.serverStatusLabel
-	if serverLabel == nil {
-		t.Fatal("expected non-nil serverStatusLabel")
+	// Verify addAccountBtn in toolbarLeft
+	btn := app.addAccountBtn
+	if btn == nil {
+		t.Fatal("expected non-nil addAccountBtn")
 	}
 
 	// AC-1 & AC-3: Calculate vertical centers
-	// Left cluster vertical center
-	yLeft := serverLabel.Position().Y + serverLabel.Size().Height/2.0
+	// Left cluster vertical center (button inside compactButton inside toolbarLeft)
+	yLeft := btn.Position().Y + btn.Size().Height/2.0
 
 	// Right cluster items
 	yLblAuto := lblAuto.Position().Y + lblAuto.Size().Height/2.0
@@ -3503,12 +3491,12 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 	// AC-1: Zero Misalignment - vertical centerline difference <= 2.0 px
 	diffLabel := math.Abs(float64(yLeft - yLblAuto))
 	if diffLabel > 2.0 {
-		t.Fatalf("AC-1 VIOLATION: vertical centerline delta between serverStatusLabel (%f) and lblAuto (%f) is %f > 2.0 px", yLeft, yLblAuto, diffLabel)
+		t.Fatalf("AC-1 VIOLATION: vertical centerline delta between addAccountBtn (%f) and lblAuto (%f) is %f > 2.0 px", yLeft, yLblAuto, diffLabel)
 	}
 
 	diffToggle := math.Abs(float64(yLeft - yToggle))
 	if diffToggle > 2.0 {
-		t.Fatalf("AC-1 VIOLATION: vertical centerline delta between serverStatusLabel (%f) and autoSwitchToggle (%f) is %f > 2.0 px", yLeft, yToggle, diffToggle)
+		t.Fatalf("AC-1 VIOLATION: vertical centerline delta between addAccountBtn (%f) and autoSwitchToggle (%f) is %f > 2.0 px", yLeft, yToggle, diffToggle)
 	}
 
 	// Check themeSelectWrap vertical alignment
@@ -3535,7 +3523,7 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 		yTheme := foundThemeWrap.Position().Y + foundThemeWrap.Size().Height/2.0
 		diffTheme := math.Abs(float64(yLeft - yTheme))
 		if diffTheme > 2.0 {
-			t.Fatalf("AC-1 VIOLATION: vertical centerline delta between serverStatusLabel (%f) and themeSelectWrap (%f) is %f > 2.0 px", yLeft, yTheme, diffTheme)
+			t.Fatalf("AC-1 VIOLATION: vertical centerline delta between addAccountBtn (%f) and themeSelectWrap (%f) is %f > 2.0 px", yLeft, yTheme, diffTheme)
 		}
 	}
 
