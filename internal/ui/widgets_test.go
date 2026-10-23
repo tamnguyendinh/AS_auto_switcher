@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 
 	"antigravity-switch/internal/manager"
 )
@@ -392,5 +393,169 @@ func TestAccountCardWidget_TransitionFromOnToOffAndBack(t *testing.T) {
 	}
 	if card.refreshButton.Disabled() {
 		t.Fatalf("refresh button should be enabled again when status is 'on'")
+	}
+}
+
+func TestAccountCardWidget_DeleteButton_OrderAndHierarchy(t *testing.T) {
+	test.NewApp()
+	palette := DarkPalette
+
+	item := manager.AccountDisplayItem{
+		Email:    "test@example.com",
+		HasToken: true,
+		IsActive: false,
+		Status:   "on",
+	}
+
+	deletedEmail := ""
+	card := NewAccountCardWidgetWithQuota(item, nil, palette, nil, nil, nil, func(email string) {
+		deletedEmail = email
+	})
+
+	cluster := card.ActionCluster()
+	if cluster == nil {
+		t.Fatalf("expected actionCluster to be accessible")
+	}
+	if len(cluster.Objects) != 4 {
+		t.Fatalf("expected actionCluster to have exactly 4 items, got %d", len(cluster.Objects))
+	}
+
+	// Verify Invariant 2 strict order: [1. Action Slot] -> [2. Refresh Quota] -> [3. Status ON/OFF] -> [4. Trash Button 🗑]
+	if cluster.Objects[0] != card.actionSlot {
+		t.Errorf("expected slot 0 to be actionSlot")
+	}
+	if cluster.Objects[1] != card.actionCluster.Objects[1] {
+		t.Errorf("expected slot 1 to be compact refresh button")
+	}
+	if cluster.Objects[2] != card.statusButton {
+		t.Errorf("expected slot 2 to be statusButton")
+	}
+	if cluster.Objects[3] != card.deleteContainer {
+		t.Errorf("expected slot 3 to be compact delete button container")
+	}
+
+	btn := card.DeleteButton()
+	if btn == nil {
+		t.Fatalf("expected DeleteButton() to return *widget.Button")
+	}
+	if btn.Importance != widget.LowImportance {
+		t.Errorf("expected LowImportance, got %v", btn.Importance)
+	}
+
+	// Verify click triggering callback
+	card.TriggerDelete()
+	if deletedEmail != "test@example.com" {
+		t.Fatalf("expected deletedEmail 'test@example.com', got %q", deletedEmail)
+	}
+}
+
+func TestAccountCardWidget_DeleteButton_VisibilityStates(t *testing.T) {
+	test.NewApp()
+	palette := DarkPalette
+
+	// Case 1: Inactive ON
+	card1 := NewAccountCardWidgetWithQuota(manager.AccountDisplayItem{
+		Email:    "inactive.on@example.com",
+		HasToken: true,
+		IsActive: false,
+		Status:   "on",
+	}, nil, palette, nil, nil)
+	if !card1.DeleteButton().Visible() {
+		t.Errorf("expected DeleteButton to be visible for Inactive ON")
+	}
+
+	// Case 2: Inactive OFF
+	card2 := NewAccountCardWidgetWithQuota(manager.AccountDisplayItem{
+		Email:    "inactive.off@example.com",
+		HasToken: true,
+		IsActive: false,
+		Status:   "off",
+	}, nil, palette, nil, nil)
+	if !card2.DeleteButton().Visible() {
+		t.Errorf("expected DeleteButton to be visible for Inactive OFF")
+	}
+
+	// Case 3: Need OAuth
+	card3 := NewAccountCardWidgetWithQuota(manager.AccountDisplayItem{
+		Email:    "need.oauth@example.com",
+		HasToken: false,
+		IsActive: false,
+		Status:   "on",
+	}, nil, palette, nil, nil)
+	if !card3.DeleteButton().Visible() {
+		t.Errorf("expected DeleteButton to be visible for Need OAuth")
+	}
+
+	// Case 4: Active Account (Invariant 1: Tuyệt đối KHÔNG hiển thị nút Xóa)
+	card4 := NewAccountCardWidgetWithQuota(manager.AccountDisplayItem{
+		Email:    "active@example.com",
+		HasToken: true,
+		IsActive: true,
+		Status:   "on",
+	}, nil, palette, nil, nil)
+	if card4.DeleteButton().Visible() {
+		t.Errorf("Invariant 1 Violated: DeleteButton MUST be hidden for Active Account")
+	}
+
+	// Case 5: Dynamic transition: Active -> Inactive -> Active
+	item := manager.AccountDisplayItem{
+		Email:    "switchable@example.com",
+		HasToken: true,
+		IsActive: true,
+		Status:   "on",
+	}
+	dynCard := NewAccountCardWidgetWithQuota(item, nil, palette, nil, nil)
+	if dynCard.DeleteButton().Visible() {
+		t.Errorf("expected DeleteButton hidden for Active account")
+	}
+
+	item.IsActive = false
+	dynCard.UpdateState(item, palette)
+	if !dynCard.DeleteButton().Visible() {
+		t.Errorf("expected DeleteButton visible after becoming Inactive")
+	}
+
+	item.IsActive = true
+	dynCard.UpdateState(item, palette)
+	if dynCard.DeleteButton().Visible() {
+		t.Errorf("expected DeleteButton hidden after becoming Active again")
+	}
+}
+
+func TestAccountCardWidget_TriggerDelete_And_SetOnDelete(t *testing.T) {
+	test.NewApp()
+	palette := DarkPalette
+
+	deletedEmail := ""
+	card := NewAccountCardWidgetWithQuota(manager.AccountDisplayItem{
+		Email:    "test@example.com",
+		HasToken: true,
+		IsActive: false,
+		Status:   "on",
+	}, nil, palette, nil, nil)
+
+	card.SetOnDelete(func(email string) {
+		deletedEmail = email
+	})
+
+	card.TriggerDelete()
+	if deletedEmail != "test@example.com" {
+		t.Errorf("expected deletedEmail 'test@example.com', got %q", deletedEmail)
+	}
+
+	// Active card must never trigger onDelete
+	activeDeletedEmail := ""
+	activeCard := NewAccountCardWidgetWithQuota(manager.AccountDisplayItem{
+		Email:    "active@example.com",
+		HasToken: true,
+		IsActive: true,
+		Status:   "on",
+	}, nil, palette, nil, nil)
+	activeCard.SetOnDelete(func(email string) {
+		activeDeletedEmail = email
+	})
+	activeCard.TriggerDelete()
+	if activeDeletedEmail != "" {
+		t.Errorf("active card must NOT trigger delete callback")
 	}
 }

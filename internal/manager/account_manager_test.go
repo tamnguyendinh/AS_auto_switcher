@@ -1283,3 +1283,130 @@ func TestAccountManager_GetAccountStates_WithStatus(t *testing.T) {
 		t.Errorf("expected legacy account 3 status 'on', got: %q", statusMap[email3])
 	}
 }
+
+func TestAccountManager_RemoveAccount(t *testing.T) {
+	tmpDir := t.TempDir()
+	storeDir := filepath.Join(tmpDir, "accounts_store")
+	discDir := filepath.Join(tmpDir, "discovered_accounts")
+
+	accStore, err := store.NewAccountStore(storeDir)
+	if err != nil {
+		t.Fatalf("Failed creating store: %v", err)
+	}
+	discStore, err := store.NewDiscoveredStore(discDir)
+	if err != nil {
+		t.Fatalf("Failed creating discovered store: %v", err)
+	}
+
+	mgr, err := NewAccountManager(accStore, nil)
+	if err != nil {
+		t.Fatalf("Failed creating manager: %v", err)
+	}
+	mgr.SetDiscoveredStore(discStore)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, errors.New("no language server")
+	})
+
+	ctx := context.Background()
+
+	// 1. Invariant 1: Cấm xóa tài khoản Active
+	activeEmail := "active@example.com"
+	mgr.SetWincredHandlers(
+		func() (*model.TokenData, error) {
+			return &model.TokenData{
+				AccessToken: "active-access",
+				IDToken:     makeTestJWT(activeEmail),
+			}, nil
+		},
+		func(token *model.TokenData) error { return nil },
+	)
+	if err := mgr.RemoveAccount(ctx, activeEmail); !errors.Is(err, ErrCannotDeleteActiveAccount) {
+		t.Fatalf("expected ErrCannotDeleteActiveAccount, got %v", err)
+	}
+
+	// 2. Empty email error
+	if err := mgr.RemoveAccount(ctx, "   "); !errors.Is(err, store.ErrInvalidEmail) {
+		t.Fatalf("expected store.ErrInvalidEmail for empty email, got %v", err)
+	}
+
+	// 3. Xóa tài khoản có token trong accounts_store + có bản ghi trong discovered_accounts
+	inactiveEmail := "inactive@example.com"
+	tok := &model.TokenData{AccessToken: "tok", RefreshToken: "ref"}
+	if err := accStore.SaveAccount(inactiveEmail, tok); err != nil {
+		t.Fatalf("failed saving account: %v", err)
+	}
+	if err := discStore.SetDiscoveredAdded(inactiveEmail, true); err != nil {
+		t.Fatalf("failed setting discovered account added: %v", err)
+	}
+
+	// Xác nhận trước khi xóa
+	if !accStore.HasAccount(inactiveEmail) {
+		t.Fatalf("expected account to exist before deletion")
+	}
+	recordsBefore, _ := discStore.ListDiscoveredRecords()
+	foundBefore := false
+	for _, rec := range recordsBefore {
+		if strings.EqualFold(rec.Email, inactiveEmail) && rec.Added {
+			foundBefore = true
+			break
+		}
+	}
+	if !foundBefore {
+		t.Fatalf("expected discovered record to have Added=true before deletion")
+	}
+
+	// Thực hiện xóa
+	if err := mgr.RemoveAccount(ctx, inactiveEmail); err != nil {
+		t.Fatalf("RemoveAccount failed: %v", err)
+	}
+
+	// Xác nhận sau khi xóa: accounts_store không còn, discovered có Added=false
+	if accStore.HasAccount(inactiveEmail) {
+		t.Fatalf("expected account to be deleted from accounts_store")
+	}
+	recordsAfter, err := discStore.ListDiscoveredRecords()
+	if err != nil {
+		t.Fatalf("failed listing discovered records: %v", err)
+	}
+	foundAfter := false
+	for _, rec := range recordsAfter {
+		if strings.EqualFold(rec.Email, inactiveEmail) {
+			foundAfter = true
+			if rec.Added {
+				t.Fatalf("expected discovered record Added to be false after deletion")
+			}
+			break
+		}
+	}
+	if !foundAfter {
+		t.Fatalf("expected discovered record to exist after deletion")
+	}
+
+	// 4. Xóa tài khoản [Cần OAuth] (không có trong accounts_store, chỉ có trong discovered_accounts)
+	oauthEmail := "need.oauth@example.com"
+	if err := discStore.SetDiscoveredAdded(oauthEmail, true); err != nil {
+		t.Fatalf("failed setting discovered account added: %v", err)
+	}
+
+	if err := mgr.RemoveAccount(ctx, oauthEmail); err != nil {
+		t.Fatalf("RemoveAccount for need-oauth failed: %v", err)
+	}
+
+	recordsOAuth, err := discStore.ListDiscoveredRecords()
+	if err != nil {
+		t.Fatalf("failed listing discovered records: %v", err)
+	}
+	foundOAuth := false
+	for _, rec := range recordsOAuth {
+		if strings.EqualFold(rec.Email, oauthEmail) {
+			foundOAuth = true
+			if rec.Added {
+				t.Fatalf("expected oauth record Added to be false after deletion")
+			}
+			break
+		}
+	}
+	if !foundOAuth {
+		t.Fatalf("expected oauth discovered record to exist")
+	}
+}

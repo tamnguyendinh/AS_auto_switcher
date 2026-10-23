@@ -183,6 +183,16 @@ func (c *QuotaCache) UpdateBatch(items []*AccountQuotaData) {
 	}
 }
 
+// Delete removes cached quota data for an email from memory.
+func (c *QuotaCache) Delete(email string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.matrix, strings.ToLower(strings.TrimSpace(email)))
+}
+
 // SaveToDisk atomically writes the current in-memory quota matrix to disk.
 // If customPath is provided, it writes to that path instead of c.filePath.
 // When targeting daily quota sharding or default paths, it automatically directs

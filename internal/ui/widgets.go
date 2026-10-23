@@ -415,19 +415,23 @@ func (l *emailLabelWithTooltip) MouseOut() {
 
 // AccountCardWidget represents an account card with direct references to child widgets for in-place reactive updates.
 type AccountCardWidget struct {
-	Email          string
-	Status         string
-	IsActive       bool
-	HasToken       bool
-	Root           *fyne.Container
-	cardBg         *canvas.Rectangle
-	emailLabel     *emailLabelWithTooltip
-	actionCluster  fyne.CanvasObject
-	actionSlot     *fyne.Container
-	refreshButton  *widget.Button
-	statusButton   *statusTextButton
-	onSwitch       func(string)
-	onToggleStatus func(string)
+	Email           string
+	Status          string
+	IsActive        bool
+	HasToken        bool
+	Root            *fyne.Container
+	cardBg          *canvas.Rectangle
+	emailLabel      *emailLabelWithTooltip
+	actionCluster   *fyne.Container
+	actionSlot      *fyne.Container
+	refreshButton   *widget.Button
+	statusButton    *statusTextButton
+	deleteButton    *widget.Button
+	deleteContainer *fyne.Container
+	onSwitch        func(string)
+	onRefreshSingle func(string)
+	onToggleStatus  func(string)
+	onDelete        func(string)
 
 	gemini5hPct    *canvas.Text
 	gemini5hBar    *canvas.Rectangle
@@ -470,6 +474,36 @@ func (w *AccountCardWidget) RefreshButton() *widget.Button {
 		return nil
 	}
 	return w.refreshButton
+}
+
+// DeleteButton returns the internal delete button for testing and inspection.
+func (w *AccountCardWidget) DeleteButton() *widget.Button {
+	if w == nil {
+		return nil
+	}
+	return w.deleteButton
+}
+
+// ActionCluster returns the internal action cluster container for inspection.
+func (w *AccountCardWidget) ActionCluster() *fyne.Container {
+	if w == nil {
+		return nil
+	}
+	return w.actionCluster
+}
+
+// TriggerDelete invokes the onDelete callback directly (used in tests).
+func (w *AccountCardWidget) TriggerDelete() {
+	if w != nil && !w.IsActive && w.onDelete != nil {
+		w.onDelete(w.Email)
+	}
+}
+
+// SetOnDelete updates or injects the onDelete callback.
+func (w *AccountCardWidget) SetOnDelete(fn func(email string)) {
+	if w != nil {
+		w.onDelete = fn
+	}
 }
 
 // CanvasObject returns the root CanvasObject for this account card widget.
@@ -573,6 +607,24 @@ func (w *AccountCardWidget) UpdateState(item manager.AccountDisplayItem, palette
 		}
 	}
 
+	// Update deleteButton visibility and state
+	if w.deleteButton != nil {
+		if w.IsActive {
+			// Invariant 1: Thẻ Active TUYỆT ĐỐI KHÔNG HIỂN THỊ nút Xóa
+			w.deleteButton.Hide()
+			if w.deleteContainer != nil {
+				w.deleteContainer.Hide()
+			}
+		} else {
+			// Thẻ Inactive (Status ON/OFF hoặc Cần OAuth): Luôn hiển thị
+			w.deleteButton.Show()
+			w.deleteButton.Enable()
+			if w.deleteContainer != nil {
+				w.deleteContainer.Show()
+			}
+		}
+	}
+
 	var action fyne.CanvasObject
 	if w.IsActive || !w.HasToken {
 		text, tint := "[Cần OAuth]", palette.Warning
@@ -629,11 +681,16 @@ func NewAccountCardWidgetWithQuota(
 	palette ThemePalette,
 	onSwitch func(email string),
 	onRefreshSingle func(email string),
-	onToggleStatus ...func(email string),
+	extraCallbacks ...func(email string),
 ) *AccountCardWidget {
 	var toggleFn func(email string)
-	if len(onToggleStatus) > 0 {
-		toggleFn = onToggleStatus[0]
+	var deleteFn func(email string)
+
+	if len(extraCallbacks) > 0 {
+		toggleFn = extraCallbacks[0]
+	}
+	if len(extraCallbacks) > 1 {
+		deleteFn = extraCallbacks[1]
 	}
 
 	st := strings.ToLower(strings.TrimSpace(item.Status))
@@ -642,10 +699,12 @@ func NewAccountCardWidgetWithQuota(
 	}
 
 	w := &AccountCardWidget{
-		Email:          item.Email,
-		Status:         st,
-		onSwitch:       onSwitch,
-		onToggleStatus: toggleFn,
+		Email:           item.Email,
+		Status:          st,
+		onSwitch:        onSwitch,
+		onRefreshSingle: onRefreshSingle,
+		onToggleStatus:  toggleFn,
+		onDelete:        deleteFn,
 	}
 	emailLabel := newEmailLabelWithTooltip(item.Email, item.IsActive)
 	refreshBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
@@ -661,8 +720,23 @@ func NewAccountCardWidgetWithQuota(
 		}
 	}, palette)
 
+	// Tạo nút Delete với theme.DeleteIcon()
+	deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+		if !w.IsActive && w.onDelete != nil {
+			w.onDelete(w.Email)
+		}
+	})
+	deleteBtn.Importance = widget.LowImportance
+	deleteWrapper := compactButton(deleteBtn)
+
 	actionSlot := container.NewStack()
-	actionCluster := container.NewHBox(actionSlot, compactButton(refreshBtn), statusBtn)
+	// Bố trí đúng Invariant 2: [Action] [Refresh] [Status] [Delete]
+	actionCluster := container.NewHBox(
+		actionSlot,
+		compactButton(refreshBtn),
+		statusBtn,
+		deleteWrapper,
+	)
 	topRow := container.NewBorder(nil, nil, nil, actionCluster, emailLabel)
 
 	dq := ExtractDualCycleQuota(quota)
@@ -674,6 +748,7 @@ func NewAccountCardWidgetWithQuota(
 
 	w.Root, w.cardBg, w.emailLabel = root, cardBg, emailLabel
 	w.actionCluster, w.actionSlot, w.refreshButton, w.statusButton = actionCluster, actionSlot, refreshBtn, statusBtn
+	w.deleteButton, w.deleteContainer = deleteBtn, deleteWrapper
 	w.gemini5hCell, w.geminiWeekCell = cGemini5h, cGeminiWeek
 	w.claude5hCell, w.claudeWeekCell = cClaude5h, cClaudeWeek
 	w.gemini5hPct, w.gemini5hBar, w.gemini5hTime = cGemini5h.pctText, cGemini5h.fillBar, cGemini5h.timeText
@@ -692,7 +767,7 @@ func NewAccountCardWithQuota(
 	palette ThemePalette,
 	onSwitch func(email string),
 	onRefreshSingle func(email string),
-	onToggleStatus ...func(email string),
+	extraCallbacks ...func(email string),
 ) fyne.CanvasObject {
-	return NewAccountCardWidgetWithQuota(item, quota, palette, onSwitch, onRefreshSingle, onToggleStatus...).Root
+	return NewAccountCardWidgetWithQuota(item, quota, palette, onSwitch, onRefreshSingle, extraCallbacks...).Root
 }

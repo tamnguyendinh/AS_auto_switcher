@@ -458,6 +458,18 @@ func (a *App) Close() {
 	if timer != nil {
 		timer.Stop()
 	}
+
+	// Drain any in-flight background refresh/tasks before tearing down resources
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		a.mu.RLock()
+		busy := a.isBusy
+		a.mu.RUnlock()
+		if !busy {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // handleAutomationStatus handles state transitions dispatched from the AutomationController
@@ -773,6 +785,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 						a.SwitchAccount,
 						a.RefreshSingleAccountQuota,
 						a.ToggleAccountStatus,
+						a.ConfirmAndDeleteAccount,
 					)
 					if a.maskAccounts {
 						cardWidget.SetMasked(true)
@@ -1046,6 +1059,138 @@ func (a *App) ToggleAccountStatus(email string) {
 					_, _ = ctrl.TriggerSwitch(context.Background(), "tài khoản active bị tắt")
 				}()
 			}
+		}
+	}
+}
+
+// ConfirmAndDeleteAccount displays a confirmation dialog before executing two-store deletion.
+func (a *App) ConfirmAndDeleteAccount(email string) {
+	a.mu.Lock()
+	if a.isBusy {
+		a.mu.Unlock()
+		return
+	}
+	mgr := a.mgr
+	overview := a.overview
+	win := a.win
+	maskAccounts := a.maskAccounts
+	a.mu.Unlock()
+
+	if mgr == nil || win == nil {
+		return
+	}
+
+	normEmail := strings.ToLower(strings.TrimSpace(email))
+	if normEmail == "" {
+		return
+	}
+
+	// Invariant 1: Ngăn chặn xóa tài khoản Active
+	if overview != nil && strings.EqualFold(overview.ActiveEmail, normEmail) {
+		fyne.Do(func() {
+			a.showStatusBar("⚠️ Không thể xóa tài khoản đang hoạt động.")
+		})
+		return
+	}
+
+	// Phân loại thẻ có token hay thẻ [Cần OAuth]
+	hasToken := false
+	if overview != nil {
+		for _, acc := range overview.Accounts {
+			if strings.EqualFold(acc.Email, normEmail) {
+				hasToken = acc.HasToken
+				break
+			}
+		}
+	}
+
+	displayEmail := normEmail
+	if maskAccounts {
+		displayEmail = MaskEmail(normEmail)
+	}
+
+	title := "Xác nhận xóa tài khoản"
+	msg := fmt.Sprintf("Bạn có chắc chắn muốn gỡ tài khoản %s khỏi màn hình chính không?", displayEmail)
+	if hasToken {
+		msg = fmt.Sprintf("Bạn có chắc chắn muốn xóa tài khoản %s khỏi hệ thống? Thao tác này sẽ xóa token đã lưu và bạn sẽ cần đăng nhập lại.", displayEmail)
+	}
+
+	msgLabel := widget.NewLabel(msg)
+	msgLabel.Wrapping = fyne.TextWrapWord
+
+	confirmDlg := dialog.NewCustomConfirm(
+		title,
+		"Xóa",
+		"Hủy",
+		msgLabel,
+		func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+			go a.executeRemoveAccount(normEmail, displayEmail)
+		},
+		win,
+	)
+	confirmDlg.SetConfirmImportance(widget.DangerImportance)
+	confirmDlg.Show()
+}
+
+func (a *App) executeRemoveAccount(email string, displayEmail string) {
+	a.mu.Lock()
+	a.isBusy = true
+	mgr := a.mgr
+	a.mu.Unlock()
+
+	defer func() {
+		a.mu.Lock()
+		a.isBusy = false
+		a.mu.Unlock()
+	}()
+
+	// 1. Thực thi xóa nghiệp vụ qua Manager
+	if err := mgr.RemoveAccount(context.Background(), email); err != nil {
+		fyne.Do(func() {
+			a.showStatusBar(fmt.Sprintf("❌ Lỗi xóa tài khoản: %v", err))
+		})
+		return
+	}
+
+	// 2. Dọn dẹp RAM Cache
+	if a.quotaCache != nil {
+		a.quotaCache.Delete(email)
+	}
+
+	// 3. Đọc lại overview mới từ Manager
+	newOverview, err := mgr.GetAccountStates(context.Background())
+	if err != nil || newOverview == nil {
+		return
+	}
+
+	a.mu.Lock()
+	a.overview = newOverview
+	a.mu.Unlock()
+
+	// 4. Cập nhật UI trên main thread
+	fyne.Do(func() {
+		a.updateUI(newOverview)
+		a.showStatusBar(fmt.Sprintf("🗑 Đã xóa tài khoản %s khỏi hệ thống.", displayEmail))
+	})
+
+	// 5. Invariant 6: Kiểm tra an toàn Auto-switch
+	// Đếm số tài khoản hợp lệ còn lại có Token và Status == "on"
+	validCandidates := 0
+	for _, acc := range newOverview.Accounts {
+		if acc.HasToken && strings.ToLower(strings.TrimSpace(acc.Status)) != "off" {
+			validCandidates++
+		}
+	}
+
+	if validCandidates == 0 {
+		a.mu.RLock()
+		isAuto := a.autoSwitchEnabled
+		a.mu.RUnlock()
+		if isAuto {
+			a.stopAutoSwitchWithNoCandidate()
 		}
 	}
 }
@@ -1334,7 +1479,7 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 					if a.quotaCache != nil {
 						quotaData, _ = a.quotaCache.Get(acc.Email)
 					}
-					cardWidget := NewAccountCardWidgetWithQuota(acc, quotaData, palette, a.SwitchAccount, a.RefreshSingleAccountQuota, a.ToggleAccountStatus)
+					cardWidget := NewAccountCardWidgetWithQuota(acc, quotaData, palette, a.SwitchAccount, a.RefreshSingleAccountQuota, a.ToggleAccountStatus, a.ConfirmAndDeleteAccount)
 					if a.maskAccounts {
 						cardWidget.SetMasked(true)
 					}

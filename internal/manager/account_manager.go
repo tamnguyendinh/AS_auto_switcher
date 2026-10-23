@@ -21,11 +21,12 @@ import (
 )
 
 var (
-	ErrTargetNotFound   = errors.New("target account not found in account store")
-	ErrTokenInvalid     = errors.New("token payload is empty or invalid")
-	ErrWriteCredFailed  = errors.New("failed writing token to Windows Credential Manager")
-	ErrReloadFailed     = errors.New("failed reloading session")
-	ErrEmptyTargetEmail = errors.New("target email cannot be empty")
+	ErrTargetNotFound            = errors.New("target account not found in account store")
+	ErrTokenInvalid              = errors.New("token payload is empty or invalid")
+	ErrWriteCredFailed           = errors.New("failed writing token to Windows Credential Manager")
+	ErrReloadFailed              = errors.New("failed reloading session")
+	ErrEmptyTargetEmail          = errors.New("target email cannot be empty")
+	ErrCannotDeleteActiveAccount = errors.New("không thể xóa tài khoản đang hoạt động")
 )
 
 // AccountDisplayItem represents a unified account card for UI/CLI display.
@@ -165,6 +166,20 @@ func (m *AccountManager) AccountStore() *store.AccountStore {
 	return m.Store()
 }
 
+// DiscoveredStore returns the underlying DiscoveredStore instance.
+func (m *AccountManager) DiscoveredStore() *store.DiscoveredStore {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.discoveredStore
+}
+
+// SetDiscoveredStore sets the DiscoveredStore instance.
+func (m *AccountManager) SetDiscoveredStore(ds *store.DiscoveredStore) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.discoveredStore = ds
+}
+
 // SetAccountStatus updates the status ("on" or "off") of an account in the store.
 func (m *AccountManager) SetAccountStatus(email string, status string) error {
 	m.mu.RLock()
@@ -189,6 +204,49 @@ func (m *AccountManager) GetAccountStatus(email string) string {
 		return "on"
 	}
 	return status
+}
+
+// RemoveAccount orchestrates the two-store deletion workflow:
+// 1. Rejects deletion if the target email is currently active.
+// 2. Deletes the token credentials file in accounts_store/<email>.json.
+// 3. Resets the Added flag to false in discovered_accounts/<email>.json (if record exists).
+func (m *AccountManager) RemoveAccount(ctx context.Context, email string) error {
+	normEmail := strings.ToLower(strings.TrimSpace(email))
+	if normEmail == "" {
+		return store.ErrInvalidEmail
+	}
+
+	// Invariant 1: Cấm xóa tài khoản đang Active
+	activeEmail, _ := m.GetCurrentActiveEmail(ctx)
+	if activeEmail != "" && strings.EqualFold(activeEmail, normEmail) {
+		return ErrCannotDeleteActiveAccount
+	}
+
+	m.mu.Lock()
+	accStore, discStore := m.store, m.discoveredStore
+	m.mu.Unlock()
+
+	// 1. Xóa khỏi accounts_store
+	if accStore != nil {
+		if err := accStore.DeleteAccount(normEmail); err != nil {
+			return fmt.Errorf("lỗi xóa tệp tài khoản: %w", err)
+		}
+	}
+
+	// 2. Cập nhật added: false trong discovered_accounts nếu record đã tồn tại
+	if discStore != nil {
+		records, err := discStore.ListDiscoveredRecords()
+		if err == nil {
+			for _, rec := range records {
+				if strings.EqualFold(rec.Email, normEmail) {
+					_ = discStore.SetDiscoveredAdded(normEmail, false)
+					break
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // ExtractEmailFromToken extracts the email address from a TokenData payload or its JWT id_token.
