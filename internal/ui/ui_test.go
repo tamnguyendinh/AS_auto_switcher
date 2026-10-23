@@ -2911,8 +2911,8 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 	if !ok || len(btn1Wrap.Objects) == 0 || btn1Wrap.Objects[0] != app.refreshBtn {
 		t.Errorf("AC-1 VIOLATION: expected second button in toolbarLeft to wrap app.refreshBtn")
 	}
-	if app.refreshBtn.Text != "Danh sách tài khoản" {
-		t.Errorf("expected refreshBtn text 'Danh sách tài khoản', got '%s'", app.refreshBtn.Text)
+	if app.refreshBtn.Text != "Làm mới danh sách" {
+		t.Errorf("expected refreshBtn text 'Làm mới danh sách', got '%s'", app.refreshBtn.Text)
 	}
 
 	btn2Wrap, ok := toolbarLeft.Objects[2].(*fyne.Container)
@@ -4262,4 +4262,106 @@ func TestArchitectSpec_MaskAccounts_NewCardInitialMask(t *testing.T) {
 
 	// Allow goroutines to settle
 	time.Sleep(150 * time.Millisecond)
+}
+
+
+// -----------------------------------------------------------------------------
+// Tests for rp_architect_20261023_160500_toolbar_refresh_clarification_spec
+// -----------------------------------------------------------------------------
+
+func TestToolbar_RefreshButton_DefaultLabel(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	if app.refreshBtn == nil {
+		t.Fatal("expected non-nil refreshBtn on App")
+	}
+	if app.refreshBtn.Text != "Làm mới danh sách" {
+		t.Errorf("expected refreshBtn default text 'Làm mới danh sách', got '%s'", app.refreshBtn.Text)
+	}
+}
+
+func TestToolbar_RefreshButton_LoadingAndResetState(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	if app.refreshBtn == nil {
+		t.Fatal("expected non-nil refreshBtn on App")
+	}
+
+	// Trigger Refresh
+	app.Refresh()
+
+	// Immediately, button text must be "⏳ Đang làm mới..."
+	if app.refreshBtn.Text != "⏳ Đang làm mới..." {
+		t.Errorf("expected refreshBtn text during refresh '⏳ Đang làm mới...', got '%s'", app.refreshBtn.Text)
+	}
+
+	// Wait for background refresh goroutine and fyne.Do to complete
+	deadline := time.Now().Add(3 * time.Second)
+	restored := false
+	for time.Now().Before(deadline) {
+		if app.refreshBtn.Text == "Làm mới danh sách" {
+			restored = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if !restored {
+		t.Errorf("expected refreshBtn text to restore to 'Làm mới danh sách', got '%s'", app.refreshBtn.Text)
+	}
+}
+
+func TestAddModal_ScanChromeButton_Preserved(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 3*time.Second)
+
+	_, scanBtn, _, _ := app.buildAddAccountModalContent()
+	if scanBtn == nil {
+		t.Fatal("expected non-nil scanBtn from buildAddAccountModalContent")
+	}
+	if scanBtn.Text != "Quét Chrome" {
+		t.Errorf("expected modal scanBtn text 'Quét Chrome', got '%s'", scanBtn.Text)
+	}
+
+	scanBtn.OnTapped()
+	if scanBtn.Text != "⏳ Đang quét..." {
+		t.Errorf("expected modal scanBtn text '⏳ Đang quét...', got '%s'", scanBtn.Text)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	restored := false
+	for time.Now().Before(deadline) {
+		if scanBtn.Text == "Quét Chrome" && !scanBtn.Disabled() {
+			restored = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if !restored {
+		t.Errorf("expected modal scanBtn text to restore to 'Quét Chrome', got '%s'", scanBtn.Text)
+	}
 }

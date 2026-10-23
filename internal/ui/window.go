@@ -126,7 +126,7 @@ func (a *App) setupLayout() {
 		a.ShowAddAccountModal()
 	})
 
-	a.refreshBtn = widget.NewButton("Danh sách tài khoản", func() {
+	a.refreshBtn = widget.NewButton("Làm mới danh sách", func() {
 		a.Refresh()
 	})
 

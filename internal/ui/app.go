@@ -814,7 +814,7 @@ func (a *App) Refresh() {
 
 	if a.refreshBtn != nil {
 		fyne.Do(func() {
-			a.refreshBtn.SetText("⏳ Đang quét...")
+			a.refreshBtn.SetText("⏳ Đang làm mới...")
 		})
 	}
 
@@ -822,7 +822,7 @@ func (a *App) Refresh() {
 		defer func() {
 			fyne.Do(func() {
 				if a.refreshBtn != nil {
-					a.refreshBtn.SetText("Danh sách tài khoản")
+					a.refreshBtn.SetText("Làm mới danh sách")
 				}
 				a.mu.Lock()
 				a.isBusy = false
