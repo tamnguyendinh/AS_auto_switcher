@@ -130,9 +130,7 @@ Nếu chưa có phiên hợp lệ của tài khoản đích trong kho, cần đ�
 
 ### Khi chuyển tài khoản
 
-Switcher lưu danh sách hội thoại gần đây, cập nhật credential, đưa Antigravity lên trước và khởi động lại `language_server.exe`. Sau thời gian chờ **8 giây**, ứng dụng kiểm tra email trong Language Server mới rồi mới tiếp tục các hội thoại đã ghi nhận.
-
-Prompt tiếp tục được gửi tuần tự, cách nhau **3 giây** giữa các hội thoại. Vì vậy thời gian chuyển còn phụ thuộc vào OAuth, Language Server và số hội thoại; không cố định ở một giây. Từng hội thoại có thể tiếp tục thành công hoặc thất bại riêng, dù tài khoản đã chuyển thành công.
+Switcher sẽ tự động khôi phục lại session đang làm việc của bạn, đảm bảo công việc của bản không bị gián đoạn.
 
 ### Đọc quota
 
