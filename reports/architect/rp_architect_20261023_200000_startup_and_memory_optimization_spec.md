@@ -1,9 +1,9 @@
 # BÁO CÁO ĐẶC TẢ KIẾN TRÚC (ARCHITECTURE SPECIFICATION REPORT)
-## TỐI ƯU HÓA TỐC ĐỘ KHỞI ĐỘNG VÀ MỨC TIÊU THỤ BỘ NHỚ RAM ỨNG DỤNG SWITCHER
+## TỐI ƯU HÓA TỐC ĐỘ KHỞI ĐỘNG VÀ BỘ NHỚ RAM ỨNG DỤNG SWITCHER (BẢN CHUẨN HÓA BẢO TOÀN NGHIỆP VỤ)
 
 - **Mã tài liệu:** `rp_architect_20261023_200000_startup_and_memory_optimization_spec`
 - **Tác giả:** System Architect Lane
-- **Ngày lập:** 2026-10-23
+- **Ngày lập:** 2026-10-23 (Cập nhật phiên bản R2 theo chỉ đạo của Owner)
 - **Thẩm quyền:** Human Owner
 - **Đối tượng thụ hưởng:** Coder Lane, QA Lane
 - **Trạng thái:** **`VERDICT: PASS / READY_FOR_CODER`**
@@ -15,69 +15,70 @@
 ### 1.1. Hiện trạng đo đạc thực tế (Baseline Analysis)
 Khảo sát trực tiếp trên mã nguồn và tiến trình thực tế (`antigravity-switch.exe` - PID 16020):
 1. **Tốc độ khởi động:** Trễ từ **1.5s - 2.5s** trước khi giao diện sẵn sàng thao tác.
-   - *Nguyên nhân cốt lõi:* Hàm `QueryLanguageServerProcesses` trong `internal/connector/discovery.go` đang gọi `powershell.exe -Command Get-CimInstance Win32_Process ...`. Trên Windows, mỗi lần spawn PowerShell tốn **500ms - 1200ms**. Trong chu kỳ `GetAccountStates()`, do thiếu bộ nhớ đệm, PowerShell bị gọi **2 lần liên tiếp** gây nghẽn nghiêm trọng.
-   - Thêm vào đó, sau khi mở cửa sổ Fyne, có goroutine chạy nền `time.Sleep(50ms)` rồi gọi `SyncVisualScaleAndTextures()` ép re-theme và re-render lại toàn bộ cây widget lần thứ 2.
+   - *Nguyên nhân cốt lõi:* `QueryLanguageServerProcesses` trong `internal/connector/discovery.go` đang gọi `powershell.exe` thông qua `exec.Command`. Trên Windows, mỗi lần spawn PowerShell tốn **500ms - 1200ms**. Trong chu kỳ `GetAccountStates()`, do thiếu bộ nhớ đệm dùng chung, PowerShell bị gọi **2 lần liên tiếp**. Thêm vào đó, hàm fallback `discoverPortsViaNetstat` cũng đang gọi tiến trình con `netstat.exe`.
+   - Sau khi mở cửa sổ Fyne, có goroutine chạy nền `time.Sleep(50ms)` gọi `SyncVisualScaleAndTextures()` ép Fyne re-theme và re-render lại toàn bộ cây widget lần thứ 2.
 2. **Bộ nhớ RAM:** Working Set đo được trong Task Manager dao động **~134 MB – 182.4 MB** (Private Memory ~259.5 MB).
    - *Nguyên nhân cốt lõi:* Fyne render qua OpenGL (`nvoglv64.dll`, `OPENGL32.dll`), driver card đồ họa nạp vào tiến trình giữ cố định **~70MB – 90MB** (framebuffers, shader compilers, texture glyph cache).
    - Go runtime (`mheap`) giữ lại các trang nhớ sau khi giải mã JSON/config khởi động (`GOGC=100`), không tự động trả về cho OS.
 
 ### 1.2. Ba Mục tiêu Tối ưu hóa (Triple Targets)
-1. **Mở giao diện tức thì (Startup Latency < 300ms):** Render khung giao diện và dữ liệu cache ngay trong frame đầu tiên; loại bỏ 100% việc gọi subprocess `powershell.exe`.
-2. **Giảm bộ nhớ Go giữ lại (Go Heap Retention):** Thu hồi trang nhớ nhàn rỗi sau khi hoàn tất khởi động; thiết lập ngưỡng bộ nhớ linh hoạt qua `GOMEMLIMIT`.
-3. **Giảm RAM Resident khi chạy nền (Background Working Set Trim):** Khi ứng dụng ẩn vào System Tray (`win.Hide()`), giải phóng các trang bộ nhớ vật lý nhàn rỗi mà không làm ảnh hưởng đến luồng giám sát nền (AutoSwitch & Telemetry).
+1. **Mở giao diện tức thì (Startup Latency mục tiêu < 300ms):** Render khung giao diện và dữ liệu cache đĩa ngay trong frame đầu tiên; loại bỏ 100% subprocess bên ngoài.
+2. **Giảm bộ nhớ Go giữ lại (Go Heap Retention):** Thu hồi trang nhớ nhàn rỗi sau khi hoàn tất khởi động; thử nghiệm các mức `GOMEMLIMIT`.
+3. **Giảm RAM Resident khi chạy nền (Background Working Set Trim):** Khi ứng dụng ẩn vào System Tray, giải phóng các trang bộ nhớ vật lý nhàn rỗi mà không làm ảnh hưởng đến luồng giám sát nền (AutoSwitch & Telemetry).
 
 ---
 
 ## 2. NGUYÊN TẮC BẤT BIẾN KIẾN TRÚC (ARCHITECTURAL INVARIANTS)
 
 1. **`Invariant-Zero-Subprocess-Discovery`:**
-   Tuyệt đối KHÔNG gọi `powershell.exe`, `cmd.exe` hay bất kỳ tiến trình con bên ngoài nào để truy vấn tiến trình hoặc mạng. Toàn bộ thao tác giám sát hệ thống phải sử dụng Win32 / NT API thuần trong Go (`windows.CreateToolhelp32Snapshot`, `ntdll.dll::NtQueryInformationProcess`, `iphlpapi.dll`).
+   Tuyệt đối KHÔNG gọi `powershell.exe`, `netstat.exe`, `cmd.exe` hay bất kỳ tiến trình con bên ngoài nào để truy vấn tiến trình hoặc mạng. Toàn bộ thao tác giám sát hệ thống phải sử dụng Win32 / NT API thuần trong Go (`windows.CreateToolhelp32Snapshot`, `ntdll.dll::NtQueryInformationProcess`, `iphlpapi.dll::GetExtendedTcpTable`).
 2. **`Invariant-Lifecycle-Safe-Caching`:**
-   Bộ nhớ đệm Discovery phải gắn liền với cặp định danh `(PID, ProcessCreationTime)`. Không bao giờ tin tưởng riêng rẽ một mình `PID` để ngăn chặn lỗi tái sử dụng PID (PID recycling) của Windows. Khi thay thế cache, bắt buộc phải đóng Handle cũ.
-3. **`Invariant-UI-Two-Phase-Hydration`:**
-   Giao diện người dùng phân tách thành 2 giai đoạn:
-   - Giai đoạn 1 (`VERIFYING`): Hiện ngay email và quota từ cache cục bộ hôm nay để cửa sổ có nội dung hữu ích; tạm thời khóa các nút hành động nguy hiểm (Chuyển, Xóa).
-   - Giai đoạn 2 (`READY` hoặc `LIMITED_CONNECTIVITY`): Mở khóa nút bấm khi xác minh hoàn tất, hoặc hiển thị nút "Thử lại" nếu kết nối lỗi/quá hạn; tuyệt đối không để giao diện kẹt vĩnh viễn ở `VERIFYING`.
-4. **`Invariant-Stale-Response-Drop`:**
-   Mọi phản hồi bất đồng bộ từ các lượt refresh cũ phải bị hủy bỏ nếu đã có lượt refresh mới hơn hoặc đã diễn ra thao tác chuyển tài khoản (kiểm soát qua `requestID / generationID uint64`).
-5. **`Invariant-Backend-First-Safety`:**
-   Trạng thái vô hiệu hóa (disabled) của nút bấm trên UI chỉ là lớp bảo vệ thị giác (UX). Lớp chốt chặn bảo vệ cuối cùng chống race condition và bảo toàn tài khoản bắt buộc nằm ở `SwitchGate` tại tầng backend.
-6. **`Invariant-Background-Monitoring-Integrity`:**
-   Tác vụ hoán chuyển bộ nhớ (`EmptyWorkingSet`) chỉ được kích hoạt khi cửa sổ **ẩn hoàn toàn vào System Tray**, KHÔNG kích hoạt khi minimize xuống Taskbar. Vòng lặp tự động chuyển tài khoản (AutoSwitch) và đo kiểm Quota (Telemetry 60s) phải tiếp tục hoạt động chính xác và không bị gián đoạn.
+   Bộ nhớ đệm Discovery phải gắn liền với cặp định danh `(PID, ProcessCreationTime)`. Không bao giờ tin tưởng riêng rẽ một mình `PID` để ngăn chặn lỗi tái sử dụng PID (PID recycling) của Windows. Khi thay thế cache, bắt buộc phải đóng Handle cũ. TTL 10 giây phải có hiệu lực thực sự: quá hạn bắt buộc phải làm mới thông tin dù PID/CreationTime chưa đổi.
+3. **`Invariant-Action-Permission-Integrity`:**
+   Trạng thái `READY` tuyệt đối KHÔNG được hiểu là mở khóa mù quáng tất cả các nút bấm. Khi quá trình xác minh hoàn tất, hệ thống bắt buộc phải tính toán lại quyền thao tác (authorization matrix) theo đúng từng tài khoản:
+   - Tài khoản có trạng thái `status == "off"`: Luôn KHÓA nút Chuyển (`Disabled`), hiển thị badge `[OFF]`.
+   - Tài khoản thiếu token/credential (`StateUnauth`): Luôn KHÓA nút Chuyển, hiển thị `[Cần OAuth]`.
+   - Tài khoản đang hoạt động (`IsActive == true`): Luôn KHÓA nút Xóa (thùng rác), hiển thị badge `[✔ Dùng]`.
+   - Chỉ tài khoản `StateReady` (Status == "on", có token hợp lệ, không active) mới được mở khóa nút Chuyển và nút Xóa.
+4. **`Invariant-Clear-Limited-Connectivity`:**
+   Định nghĩa rõ ràng trạng thái `LIMITED_CONNECTIVITY`: Khi Language Server không chạy hoặc lỗi kết nối, nhưng WinCred và AccountStore đọc thành công -> Hệ thống tự động chuyển sang chế độ **WinCred Fallback Mode**. Người dùng vẫn được phép thực hiện chuyển tài khoản qua WinCred. Chỉ chuyển sang trạng thái lỗi kết nối hạn chế (có nút "Thử lại") khi backend không thể đọc được cả WinCred lẫn AccountStore. Cảnh báo lỗi từng phần (như quota lỗi 1 tài khoản) không được phép khóa toàn bộ app.
+5. **`Invariant-Generation-UI-Callback-Enforcement`:**
+   Mọi thao tác làm mới (`Refresh`), chuyển tài khoản thủ công (`SwitchAccount`), và chuyển tự động (`AutomationController`) đều phải tăng `generationID` để làm mất hiệu lực toàn bộ các kết quả xác minh cũ. **Việc kiểm tra `generationID` bắt buộc phải diễn ra ngay bên trong callback cập nhật UI (`fyne.Do()`)**, ngay trước khi ghi trạng thái hoặc thay đổi nút. Callback lỗi và phần cleanup của lượt cũ tuyệt đối không được mở khóa nút hoặc xóa trạng thái của lượt mới.
+6. **`Invariant-Backend-Switch-Delete-Mutual-Exclusion`:**
+   Trạng thái nút bấm trên UI chỉ là lớp phủ giao diện. Tại tầng backend, `AccountManager` bắt buộc phải điều phối đồng bộ (mutual exclusion) giữa luồng Chuyển tài khoản và luồng Xóa tài khoản (`RemoveAccount`). Tại thời điểm bắt đầu xóa tệp, `RemoveAccount` phải kiểm tra lại `activeEmail` trong vùng khóa bảo vệ để đảm bảo tài khoản không thể trở thành active giữa hai bước kiểm tra và xóa.
+7. **`Invariant-Preserve-Window-Lifecycle`:**
+   Giữ nguyên 100% hành vi hiện có của nút `X` (thoát ứng dụng hoàn toàn qua `a.Close()` + `a.app.Quit()`) và nút thu nhỏ `—` (thu nhỏ xuống Windows Taskbar). Lệnh Trim Working Set chỉ được gắn vào thao tác **"Ẩn vào khay hệ thống"** được xác định rõ ràng (qua menu Tray); tuyệt đối cấm tự ý đổi nút đóng `X` thành ẩn vào khay. Trim thất bại không được cản trở việc ẩn/hiện cửa sổ.
 
 ---
 
 ## 3. BẢN ĐỒ CAN THIỆP MÃ NGUỒN (TOUCH-MAP)
 
-| Tệp mã nguồn | Trách nhiệm can thiệp | Phạm vi thay đổi |
+| Tệp mã nguồn | Trách nhiệm can thiệp | Phạm vi thay đổi chi tiết |
 |---|---|---|
-| `internal/connector/discovery.go` | Thay thế PowerShell bằng Win32 API + Singleflight Cache | Viết lại `QueryLanguageServerProcesses`, thêm cache `(PID, CreationTime)`, thêm Singleflight |
-| `internal/manager/account_manager.go` | Tích hợp cache discovery và hủy kết quả stale | Cập nhật `clientFinder`, tích hợp Generation ID kiểm tra trạng thái |
-| `internal/ui/app.go` | UI State Machine + Bỏ Re-theme thừa + Generation ID | Thêm trạng thái `VERIFYING` -> `READY`/`LIMITED`, bỏ goroutine 50ms `SyncVisualScaleAndTextures`, thêm 1-shot `FreeOSMemory` |
-| `internal/ui/window.go` | Khóa/Mở nút theo trạng thái an toàn | Cập nhật render các nút Chuyển/Xóa theo State |
-| `internal/ui/tray.go` | Kích hoạt Working Set Trim khi Ẩn Tray | Thêm gọi Win32 `SetProcessWorkingSetSize` khi `win.Hide()` |
+| `internal/connector/discovery.go` | Loại bỏ 100% subprocess + Singleflight Cache | Viết lại `QueryLanguageServerProcesses` bằng Win32 Toolhelp32, đọc CommandLine qua `NtQueryInformationProcess`, bỏ `discoverPortsViaNetstat`, thêm cache vòng đời (PID, CreationTime, TTL 10s, singleflight, context cancellation) |
+| `internal/manager/account_manager.go` | Điều phối đồng bộ Switch-Delete + Chống Stale Discovery | Bổ sung khóa điều phối giữa `SwitchAccount` và `RemoveAccount`, double-check active trước khi xóa tệp; dùng chung discovery cache chuẩn |
+| `internal/ui/app.go` | UI State Machine + Generation ID trong `fyne.Do()` + Bỏ Re-theme thừa | Quản lý `generationID`, kiểm tra generation ngay trong `fyne.Do()`, tính ma trận quyền chi tiết tại `READY`, bỏ goroutine 50ms `SyncVisualScaleAndTextures`, 1-shot `FreeOSMemory` |
+| `internal/ui/window.go` | Phản ánh đúng quyền nút theo từng tài khoản | Cập nhật logic render nút Chuyển/Xóa theo điều kiện nghiệp vụ thực tế |
+| `internal/ui/tray.go` & `single_instance_windows.go` | Thêm lệnh "Ẩn vào khay" & Trim Working Set an toàn | Thêm mục menu Tray "Ẩn giao diện vào khay", gắn `TrimProcessWorkingSet()`, bảo đảm không ảnh hưởng nút X và nút minimize |
 
 ---
 
 ## 4. CHI TIẾT ĐẶC TẢ KỸ THUẬT (DETAILED SPECIFICATION)
 
-### 4.1. Bước 1: Win32 API Discovery + Singleflight + Cache Vòng đời
+### 4.1. Bước 1: Win32 API Discovery, Singleflight, Cache Vòng đời & Xóa bỏ Netstat
 
 #### A. Truy vấn tiến trình qua Win32 API (`internal/connector/discovery.go`)
-Thay thế toàn bộ đoạn code gọi `powershell` trong `QueryLanguageServerProcesses`:
-1. Dùng `windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)` để lấy snapshot toàn bộ tiến trình.
-2. Dùng `windows.Process32First` và `windows.Process32Next` để duyệt danh sách, lọc các tiến trình có `ExeFile == "language_server.exe"`.
-3. Với mỗi tiến trình tìm thấy:
-   - Gọi `windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pe.ProcessID)` (hoặc `PROCESS_QUERY_INFORMATION | PROCESS_VM_READ`).
-   - Lấy thời điểm khởi tạo tiến trình (`CreationTime`) qua `windows.GetProcessTimes(hProcess, &creationTime, &exitTime, &kernelTime, &userTime)`.
-   - Lấy chuỗi dòng lệnh (CommandLine) bằng một trong hai cách:
-     - **Cách ưu tiên:** Gọi hàm `ntdll.dll::NtQueryInformationProcess` với `ProcessInformationClass = 60` (`ProcessCommandLineInformation`). Kernel Windows sao chép trực tiếp struct `UNICODE_STRING` chứa CommandLine vào buffer an toàn, không lo crash nếu tiến trình thoát.
-     - **Dự phòng:** Trích xuất qua PEB (`ProcessParameters->CommandLine`) có bọc kiểm tra con trỏ hợp lệ.
-   - Nếu không thể mở tiến trình hoặc không đọc được command line (ví dụ tiến trình thoát giữa chừng), bỏ qua và không yêu cầu quyền Admin/Elevation.
-   - Đóng `hProcess` sau khi đọc xong.
+1. **Duyệt tiến trình:** Dùng `windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)` kết hợp `Process32First` / `Process32Next` để tìm `language_server.exe` trong kernel bộ nhớ (thời gian chạy < 1ms).
+2. **Đọc CommandLine an toàn:**
+   - Mở tiến trình bằng `windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pe.ProcessID)`.
+   - Lấy `CreationTime` qua `windows.GetProcessTimes(hProcess, &creationTime, &exitTime, &kernelTime, &userTime)`.
+   - Gọi `ntdll.dll::NtQueryInformationProcess` với `ProcessInformationClass = 60` (`ProcessCommandLineInformation`). Kernel Windows sao chép chuỗi CommandLine vào struct `UNICODE_STRING` của caller an toàn, không rủi ro crash nếu tiến trình thoát. Nếu không gọi được class 60, fallback sang đọc PEB có kiểm tra con trỏ hợp lệ.
+   - Nếu `OpenProcess` thất bại hoặc đọc thất bại (tiến trình thoát, quyền truy cập bị hạn chế), trả về trạng thái chưa kết nối và thử lại ở chu kỳ sau; **tuyệt đối không yêu cầu quyền Admin/UAC Elevation**.
+   - Luôn đóng Handle tiến trình sau khi đọc.
+3. **Loại bỏ hoàn toàn `discoverPortsViaNetstat`:**
+   - Xóa bỏ toàn bộ hàm gọi `exec.Command("netstat", ...)`. Việc phát hiện cổng listening loopback phải 100% sử dụng Win32 API `discoverPortsViaWin32` (`iphlpapi.dll::GetExtendedTcpTable`) đã có sẵn.
 
-#### B. Cơ chế Caching và Singleflight
-Tạo cấu trúc quản lý Discovery dùng chung:
+#### B. Cơ chế Caching, Singleflight và Bảo vệ Invalidation
 ```go
 type serverDiscoveryCache struct {
     mu           sync.Mutex
@@ -87,167 +88,213 @@ type serverDiscoveryCache struct {
 }
 
 var (
-    discCache serverDiscoveryCache
-    discFlight singleflight.Group // gom các cuộc gọi đồng thời thành 1
+    discCache  serverDiscoveryCache
+    discFlight singleflight.Group
 )
 ```
-* **Thời gian sống của cache (TTL):** 10 giây.
-* **Quy tắc tái sử dụng cache:**
-  1. Kiểm tra xem PID trong cache còn tồn tại không bằng `windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(cachedPID))`.
-  2. Nếu mở được, kiểm tra `GetProcessTimes`. Nếu `CreationTime` trùng khớp 100% với cache -> Cache hợp lệ, trả về ngay lập tức (không chạy lại Win32 Snapshot).
-  3. Nếu `CreationTime` khác hoặc tiến trình đã thoát -> Cache bị hủy, thực hiện quét lại.
-* **Hủy cache khi có lỗi kết nối:** Khi các lệnh Connect-RPC nghiệp vụ nhận mã lỗi `Connection Refused` hoặc `401 Unauthorized`, gọi hàm `InvalidateDiscoveryCache()` để xóa cache, buộc lần gọi tiếp theo phải quét lại.
-* **Không chèn HTTP Probe trước mọi API call:** Xóa bỏ bước thăm dò cổng HTTP nhân tạo nếu cổng đã được xác định trước đó; để request nghiệp vụ thật tự động xác thực cổng.
+1. **Hiệu lực TTL 10 giây:**
+   - Khi có yêu cầu discovery, kiểm tra: Nếu `time.Since(cachedAt) > 10*time.Second`, cache bị coi là hết hạn và bắt buộc phải quét lại, bất kể PID và CreationTime có thay đổi hay không.
+2. **Kiểm tra vòng đời khi còn TTL:**
+   - Nếu trong vòng 10s: Kiểm tra nhanh `windows.OpenProcess` và đối chiếu `GetProcessTimes`. Nếu `CreationTime` khớp 100% thì trả về cache ngay lập tức. Nếu tiến trình đã thoát hoặc CreationTime khác, hủy cache và quét lại.
+3. **Phạm vi dùng chung thống nhất:**
+   - `AccountManager`, `telemetry.TelemetryPool`, và `automation.AutomationController` bắt buộc phải gọi chung qua `connector.DiscoverLanguageServer()`. Tuyệt đối không lưu cache endpoint cục bộ riêng rẽ.
+4. **Hỗ trợ `context.Context` (Deadline / Cancellation):**
+   - Lời gọi gom luồng qua `singleflight` phải lắng nghe `ctx.Done()`. Nếu context của caller bị timeout hoặc cancel, goroutine caller phải lập tức thoát ra, không bị treo chờ discovery.
+5. **Bảo vệ chống Invalidate nhầm (Stale Invalidation Protection):**
+   - Khi một request RPC thất bại, hàm `InvalidateDiscoveryCache(failedPort int, failedCSRF string)` chỉ được xóa cache NẾU endpoint bị lỗi trùng khớp với endpoint đang lưu trong cache. Nếu cache đã được làm mới trước đó bởi một lượt discovery khác, không được phép xóa cache mới.
+   - Kết quả discovery chạy chậm (stale result) không được phép ghi đè vào cache nếu đã có lệnh invalidate xảy ra sau thời điểm bắt đầu quét.
+6. **Không tự ý gửi lại RPC có tác dụng phụ:** Lệnh invalidate chỉ làm mới thông tin kết nối cho các lần gọi sau, tuyệt đối không tự động retry các RPC có tác dụng phụ (như switch hoặc logout).
+7. **Không chèn HTTP Probe trước mọi API call:** Bỏ bước HTTP probe nhân tạo lặp lại; để request nghiệp vụ thật tự động xác thực kết nối.
 
 ---
 
-### 4.2. Bước 2: Chuẩn hóa Giao diện (UI Two-Phase Hydration & Stale Response Drop)
+### 4.2. Bước 2: UI Hydration, Generation Enforcement & Đồng bộ Switch-Delete
 
-#### A. Generation ID chống Stale Response (`internal/ui/app.go`)
-Trong `struct App`:
+#### A. Generation ID: Điểm tăng và Điểm kiểm tra chuẩn xác (`internal/ui/app.go`)
 ```go
 type App struct {
     ...
     refreshGen atomic.Uint64
     uiState    atomic.Int32 // 0: StateVerifying, 1: StateReady, 2: StateLimited
 }
-
-const (
-    UIStateVerifying = 0
-    UIStateReady     = 1
-    UIStateLimited   = 2
-)
 ```
-Khi kích hoạt `Refresh()`:
-1. `gen := a.refreshGen.Add(1)`: Tăng generation counter.
-2. Đặt `a.uiState.Store(UIStateVerifying)`.
-3. Hiển thị ngay tức thì dữ liệu tài khoản có sẵn trong bộ nhớ/cache đĩa hôm nay, nhãn trạng thái gắn `[⏳ Đang kiểm tra...]`.
-4. Vô hiệu hóa (`Disable()`) các nút "Chuyển tài khoản" và "Xóa" trên giao diện để ngăn người dùng thao tác trong lúc trạng thái đang được xác minh lại.
-5. Khi goroutine nền lấy được kết quả từ backend:
-   ```go
-   if a.refreshGen.Load() != gen {
-       // Đã có một lượt refresh mới hơn hoặc đã chuyển tài khoản -> BỎ QUA KẾT QUẢ CŨ
-       return
-   }
-   ```
-6. Nếu thành công: Cập nhật `UIStateReady`, mở khóa (`Enable()`) các nút bấm và cập nhật badge chuẩn.
-7. Nếu thất bại/hết thời gian: Cập nhật `UIStateLimited`, hiển thị thông báo lỗi trên thanh Status Bar kèm nút **"Thử lại"**, không để UI bị treo vô hạn ở `VERIFYING`.
+* **Các điểm bắt buộc tăng `refreshGen`:**
+  1. Khi người dùng bấm "Làm mới danh sách" (`Refresh()`).
+  2. Khi bắt đầu thao tác chuyển tài khoản thủ công (`SwitchAccount()`).
+  3. Khi `AutomationController` kích hoạt tự động chuyển tài khoản (`AutoSwitch`).
+* **Điểm kiểm tra bắt buộc:**
+  * BẮT BUỘC kiểm tra `a.refreshGen.Load() == currentGen` **ngay bên trong thân hàm `fyne.Do(func() { ... })`**, ngay trước khi cập nhật `a.overview`, ghi đè state hay cập nhật widget.
+  * Nếu `refreshGen` đã khác: Lập tức `return`, hủy bỏ toàn bộ kết quả cũ.
+  * Trong khối `defer / cleanup` của goroutine xác minh cũ: Phải kiểm tra `refreshGen`. Nếu đã là lượt cũ, tuyệt đối KHÔNG được mở khóa nút bấm hoặc xóa trạng thái/thông báo của lượt mới.
 
-#### B. Loại bỏ Re-theme và Re-render thừa sau `Show()`
-Trong hàm `ShowAndRun()` tại `internal/ui/app.go`:
-* **Hiện tại:**
-  ```go
-  go func() {
-      time.Sleep(50 * time.Millisecond)
-      fyne.Do(func() {
-          a.SyncVisualScaleAndTextures()
-      })
-  }()
-  ```
-* **Đặc tả mới:**
-  * **XÓA BỎ** hoàn toàn khối goroutine `time.Sleep(50ms)` và lời gọi `SyncVisualScaleAndTextures()` sau `Show()`.
-  * Khởi tạo Palette, Theme và Canvas scale chuẩn xác duy nhất 1 lần trong `Init()` trước khi gọi `win.Show()`.
-  * Giữ nguyên hàm `SyncVisualScaleAndTextures()` cho mục đích duy nhất: khi người dùng chủ động bấm đổi Theme Sáng/Tối trong màn hình Settings.
+#### B. Quy tắc phân quyền nút bấm chi tiết tại `READY`
+Khi xác minh hoàn tất (`UIStateReady`), hệ thống duyệt qua từng tài khoản trong `overview.Accounts` và gán trạng thái nút theo đúng ma trận nghiệp vụ hiện có:
+1. `acc.Status == "off"`:
+   - Nút Chuyển: `Disable()`, hiển thị nhãn/badge `[OFF]`.
+   - Nút Xóa: Cho phép thao tác (nếu không Active).
+2. `acc.State == model.StateUnauth` (chưa có token):
+   - Nút Chuyển: `Disable()`, hiển thị badge `[Cần OAuth]`.
+   - Nút Xóa: Cho phép thao tác.
+3. `acc.IsActive == true`:
+   - Nút Chuyển: `Disable()`, hiển thị badge `[✔ Dùng]`.
+   - Nút Xóa: `Disable()` hoàn toàn (nghiêm cấm xóa tài khoản đang active).
+4. `acc.State == model.StateReady` (Status == "on", có token hợp lệ, không active):
+   - Nút Chuyển: `Enable()`, hiển thị `[Chuyển]`.
+   - Nút Xóa: `Enable()`.
+
+#### C. Định nghĩa minh bạch `LIMITED_CONNECTIVITY`
+* **Trường hợp WinCred Fallback:**
+  - Nếu `LanguageServer` không hoạt động hoặc không tìm thấy cổng, nhưng `store.ListAccounts()` và `wincred` đọc được:
+  - Đây là hoạt động bình thường ở chế độ dự phòng. `overview.LanguageServerRunning = false`.
+  - Footer bar hiển thị: `"Antigravity: Không hoạt động | Dự phòng WinCred"`.
+  - Các nút "Chuyển tài khoản" vẫn hoạt động bình thường qua cơ chế nạp WinCred trực tiếp.
+* **Trường hợp lỗi kết nối thực sự (`UIStateLimited`):**
+  - Chỉ chuyển sang `UIStateLimited` khi không thể đọc được cả kho tài khoản lẫn WinCred (lỗi I/O ổ đĩa nghiêm trọng hoặc timeout toàn diện).
+  - Lúc này hiển thị trên Status Bar: `"⚠️ Không thể kết nối hoặc nạp danh sách tài khoản"` kèm nút **"Thử lại"**.
+
+#### D. Loại bỏ Re-theme và Re-render thừa sau `Show()`
+* **XÓA BỎ** hoàn toàn goroutine `time.Sleep(50ms)` và lời gọi `SyncVisualScaleAndTextures()` sau `win.Show()` trong file `internal/ui/app.go`.
+* Palette, Theme và Window size được cấu hình đầy đủ một lần duy nhất trong `Init()`.
+* Giữ nguyên hàm `SyncVisualScaleAndTextures()` để phục vụ người dùng đổi Theme Sáng/Tối chủ động.
 
 ---
 
-### 4.3. Bước 3: Quản lý Bộ nhớ Go Runtime (A/B Test `FreeOSMemory` & `GOMEMLIMIT`)
+### 4.3. Bước 3: Điều phối Đồng bộ Backend Chuyển - Xóa Tài khoản (`internal/manager/account_manager.go`)
+
+Tại `AccountManager`, bổ sung cơ chế khóa điều phối để loại bỏ triệt để race condition:
+```go
+type AccountManager struct {
+    ...
+    opMu sync.Mutex // Khóa điều phối độc quyền giữa Switch và Delete
+}
+```
+1. **Trong `SwitchAccount`:** Bắt buộc nắm giữ `m.opMu.Lock()` (hoặc thông qua `SwitchGate`) trong toàn bộ quá trình hot-swap tài khoản.
+2. **Trong `RemoveAccount` (`account_manager.go:215`):**
+   ```go
+   func (m *AccountManager) RemoveAccount(ctx context.Context, email string) error {
+       normEmail := strings.ToLower(strings.TrimSpace(email))
+       if normEmail == "" {
+           return store.ErrInvalidEmail
+       }
+
+       // Khóa điều phối: Chặn mọi thao tác chuyển tài khoản diễn ra đồng thời
+       m.opMu.Lock()
+       defer m.opMu.Unlock()
+
+       // Double-check: Kiểm tra lại activeEmail ngay trong vùng khóa bảo vệ
+       activeEmail, _ := m.GetCurrentActiveEmail(ctx)
+       if activeEmail != "" && strings.EqualFold(activeEmail, normEmail) {
+           return ErrCannotDeleteActiveAccount
+       }
+
+       // Tiến hành xóa tệp tài khoản an toàn
+       ...
+   }
+   ```
+* Quy tắc này đảm bảo một tài khoản không thể nào chuyển sang trạng thái Active ở giữa hai bước kiểm tra và xóa tệp!
+
+---
+
+### 4.4. Bước 4: Quản lý Go Heap (A/B Test `FreeOSMemory` & `GOMEMLIMIT`)
 
 1. **Khảo sát `FreeOSMemory()` 1 lần duy nhất:**
-   * Trong `internal/ui/app.go`, tạo một `sync.Once`:
+   * Trong `internal/ui/app.go`, dùng `sync.Once`:
      ```go
      var steadyStateOnce sync.Once
      ```
-   * Khi ứng dụng hoàn tất quá trình tải dữ liệu lần đầu tiên và chuyển sang `UIStateReady`:
+   * Khi ứng dụng đạt trạng thái `UIStateReady` lần đầu tiên sau khi khởi động:
      ```go
      steadyStateOnce.Do(func() {
          go func() {
-             // Đợi UI render xong frame đầu tiên ổn định
              time.Sleep(200 * time.Millisecond)
              debug.FreeOSMemory()
          }()
      })
      ```
-   * **Yêu cầu đo đạc A/B:** Coder/QA phải ghi nhận số liệu RAM trước và sau lệnh này so với bản baseline không gọi, xác nhận mức RAM giảm và đảm bảo CPU không bị khựng giật.
-2. **Khảo sát `GOMEMLIMIT`:**
-   * Không viết thêm code tùy biến vào UI.
-   * Thử nghiệm khởi chạy ứng dụng với các biến môi trường:
-     - Baseline: Mặc định (không gán `GOMEMLIMIT`).
-     - Test A: `GOMEMLIMIT=64MiB`.
-     - Test B: `GOMEMLIMIT=96MiB`.
-     - Test C: `GOMEMLIMIT=128MiB`.
-   * Ghi nhận tần suất GC và độ mượt của animation giao diện để tìm cấu hình tối ưu khuyến nghị.
+   * Đo đạc A/B so sánh với bản baseline không gọi, xác nhận mức RAM giảm và đảm bảo không gây khựng giao diện.
+2. **Khảo sát `GOMEMLIMIT` qua biến môi trường:**
+   * Thử nghiệm khởi chạy với các mức: `GOMEMLIMIT=64MiB`, `96MiB`, `128MiB`.
+   * Ghi nhận số liệu GC pause time và độ mượt của UI, không thêm cài đặt tùy biến vào GUI.
 
 ---
 
-### 4.4. Bước 4: Tối ưu Working Set khi Ẩn vào System Tray (`internal/ui/tray.go`)
+### 4.5. Bước 5: Thao tác "Ẩn vào Tray" & Trim Working Set An Toàn
 
-1. **Cơ chế gọi Win32 Trim Working Set:**
-   Tạo hàm tiện ích trong `internal/ui/single_instance_windows.go`:
-   ```go
-   var procSetProcessWorkingSetSize = modKernel32.NewProc("SetProcessWorkingSetSize")
-
-   func TrimProcessWorkingSet() {
-       hProcess := uintptr(windows.CurrentProcess())
-       // Giá trị -1, -1 yêu cầu Windows hoán chuyển các trang nhớ vật lý nhàn rỗi về Standby/Pagefile
-       procSetProcessWorkingSetSize.Call(hProcess, ^uintptr(0), ^uintptr(0))
-   }
-   ```
-2. **Điểm gắn móc (Hook Point) chuẩn xác:**
-   * **KHÔNG GỌI** khi người dùng minimize xuống Taskbar thông thường.
-   * **CHỈ GỌI** tại sự kiện cửa sổ **ẩn hoàn toàn vào System Tray** (`win.Hide()`):
+1. **Bảo toàn nguyên vẹn hành vi cửa sổ hiện tại:**
+   * **Nút X và Close Intercept:** Giữ nguyên 100% chức năng đóng và thoát app (`a.Close()` -> `a.app.Quit()`). Tuyệt đối KHÔNG sửa nút X thành ẩn cửa sổ.
+   * **Nút thu nhỏ `—`:** Giữ nguyên 100% chức năng thu nhỏ xuống Taskbar (`MinimizeNativeWindow()`).
+2. **Thao tác "Ẩn vào khay hệ thống" riêng biệt:**
+   * Trong menu Tray (`internal/ui/tray.go`), bổ sung rõ ràng mục menu:
      ```go
-     // Trong internal/ui/tray.go hoặc window close intercept
-     a.win.Hide()
-     TrimProcessWorkingSet()
+     fyne.NewMenuItem("Ẩn giao diện vào khay", func() {
+         if a.win != nil {
+             a.win.Hide()
+             TrimProcessWorkingSet()
+         }
+     })
      ```
-3. **Bảo toàn hoạt động giám sát nền:**
-   * Goroutine chạy ngầm của `AutoTelemetryLoop` (chu kỳ 60s) và `AutomationController` vẫn giữ nguyên hoạt động bình thường. 
-   * Khi đến chu kỳ 60s, goroutine thức dậy, gửi HTTP request lấy quota, Windows sẽ tự động page-in các trang nhớ mạng/JSON cần thiết mà không cần kéo lại toàn bộ buffer đồ họa OpenGL.
+   * Hàm `TrimProcessWorkingSet()` trong `single_instance_windows.go`:
+     ```go
+     func TrimProcessWorkingSet() {
+         hProcess := uintptr(windows.CurrentProcess())
+         _, _, _ = procSetProcessWorkingSetSize.Call(hProcess, ^uintptr(0), ^uintptr(0))
+     }
+     ```
+3. **Tính chịu lỗi (Fault-Tolerance):**
+   * Nếu `procSetProcessWorkingSetSize` thất bại, chỉ ghi log debug nhẹ, tuyệt đối không được cản trở việc ẩn hay hiện cửa sổ.
+4. **Tiêu chuẩn chấp nhận luồng nền:**
+   * Luồng `AutoTelemetryLoop` 60s và `AutomationController` vẫn phải chạy chuẩn 100% sau khi trim.
+   * Khi người dùng click menu Tray `"Hiển thị Switcher"`, cửa sổ phải hiện lại mượt mà trong **< 100ms**.
 
 ---
 
-## 5. THỨ TỰ TRIỂN KHAI VÀ THỬ NGHIỆM ĐỘC LẬP CHO CODER
+## 5. THỨ TỰ THỰC HIỆN VÀ THỬ NGHIỆM ĐỘC LẬP CHO CODER
 
-Coder bắt buộc phải tuân thủ thứ tự 4 bước sau, mỗi bước đều phải đo đạc so với cùng một cấu hình Baseline gốc:
+Coder bắt buộc thực hiện theo đúng 5 bước sau:
 
 ```
                   [ĐO ĐẠC BASELINE GỐC]
                             │
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│ BƯỚC 1: Thay PowerShell bằng Win32 API + Singleflight  │
+│ BƯỚC 1: Win32 API Discovery, Singleflight & Xóa Netstat│
 │ • Sửa internal/connector/discovery.go                  │
-│ • Đo thời gian mở app & CPU/RAM tiến trình phụ         │
+│ • Bỏ netstat, gắn TTL 10s, PID+CreationTime, context   │
+│ • Đo thời gian mở app, xác nhận không có subprocess    │
 └───────────────────────────┬────────────────────────────┘
                             │
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│ BƯỚC 2: Cắt bỏ Re-theme thừa sau Show() + UI State     │
+│ BƯỚC 2: UI Hydration, Generation ID & Bỏ Re-theme      │
 │ • Sửa internal/ui/app.go & window.go                   │
-│ • Đo độ nét phông chữ (100%, 125%, 150% DPI)           │
-│ • Kiểm chứng chuyển đổi VERIFYING -> READY             │
+│ • Kiểm tra generationID trong fyne.Do()                │
+│ • Tính lại quyền nút chi tiết tại READY                │
+│ • Xóa goroutine 50ms, kiểm tra độ nét DPI              │
 └───────────────────────────┬────────────────────────────┘
                             │
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│ BƯỚC 3: Khảo sát Go Heap (FreeOSMemory & GOMEMLIMIT)   │
-│ • Test A/B gọi 1 lần FreeOSMemory khi vào Steady State │
-│ • Chạy thử GOMEMLIMIT=64MiB, 96MiB, 128MiB             │
-│ • Đo GC pause latency và lượng heap giải phóng         │
+│ BƯỚC 3: Đồng bộ An toàn Backend Switch - Delete        │
+│ • Sửa internal/manager/account_manager.go              │
+│ • Thêm khóa opMu điều phối giữa Switch và Remove       │
+│ • Double-check active trong RemoveAccount              │
 └───────────────────────────┬────────────────────────────┘
                             │
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│ BƯỚC 4: Trim Working Set khi Ẩn vào Tray (win.Hide)    │
-│ • Sửa internal/ui/tray.go                              │
+│ BƯỚC 4: Khảo sát Go Heap (FreeOSMemory & GOMEMLIMIT)   │
+│ • Test A/B 1 lần FreeOSMemory khi vào Steady State     │
+│ • Thử nghiệm GOMEMLIMIT=64MiB, 96MiB, 128MiB           │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│ BƯỚC 5: Thao tác "Ẩn vào Tray" & Trim Working Set      │
+│ • Thêm mục menu "Ẩn giao diện vào khay" trong Tray     │
+│ • Giữ nguyên nút X và nút minimize                     │
 │ • Đo RAM trong Task Manager khi ẩn xuống Tray          │
-│ • Đo thời gian khôi phục (Restore latency) khi click   │
-│ • Xác nhận AutoSwitch & Telemetry 60s chạy chuẩn 100%  │
-└───────────────────────────┬────────────────────────────┘
-                            │
-                            ▼
-            [TỔNG HỢP CẤU HÌNH TỐI ƯU TOÀN DIỆN]
+│ • Xác nhận Telemetry 60s và AutoSwitch chạy đều đặn    │
+└────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -256,18 +303,18 @@ Coder bắt buộc phải tuân thủ thứ tự 4 bước sau, mỗi bước đ
 
 | ID Kiểm thử | Hạng mục kiểm thử | Kịch bản kiểm thử | Tiêu chuẩn Nghiệm thu bắt buộc |
 |---|---|---|---|
-| **`TC-OPT-01`** | Win32 Process Discovery | Bật app khi Language Server đang chạy | Tìm thấy PID và CSRF Token trong **< 5ms**; Task Manager không hề xuất hiện tiến trình con `powershell.exe`. |
-| **`TC-OPT-02`** | Singleflight Discovery | 5 goroutine cùng gọi `DiscoverLanguageServer()` đồng thời | Chỉ có đúng 1 lệnh snapshot Win32 được thực thi; 5 luồng cùng nhận kết quả chuẩn xác. |
-| **`TC-OPT-03`** | Server Restart Handling | Tắt `language_server.exe` và bật lại với PID mới | App phát hiện kết nối cũ thất bại, tự động xóa cache, quét lại PID mới và kết nối thành công. |
-| **`TC-OPT-04`** | UI Two-Phase Hydration | Mở app từ trạng thái đóng hoàn toàn | Cửa sổ hiện ngay tức thì (< 300ms) kèm email cache; nút Chuyển/Xóa bị khóa mờ; sau đó mở khóa khi xác minh xong. |
-| **`TC-OPT-05`** | Stale Response Drop | Bấm "Làm mới" liên tiếp 2 lần thật nhanh | Kết quả của lần bấm 1 bị hủy bỏ hoàn toàn; chỉ kết quả của lần bấm 2 được render lên UI. |
-| **`TC-OPT-06`** | Theme & Font Sharpness | Kiểm tra màn hình ở các tỷ lệ scale 100%, 125%, 150% | Chữ hiển thị sắc nét 100%, không bị vỡ texture; không có hiện tượng giật màn hình sau 50ms. |
-| **`TC-OPT-07`** | Working Set Tray Trim | Click ẩn cửa sổ xuống System Tray | Mức Working Set trong Task Manager lập tức tụt sâu (dưới 40MB); icon Tray vẫn phản hồi tốt. |
-| **`TC-OPT-08`** | Background Loop Invariant | Ẩn app xuống Tray trong 15 phút | Vòng lặp Telemetry 60s vẫn đều đặn ghi log quota; tính năng AutoSwitch vẫn phát hiện và tự động chuyển tài khoản khi hết hạn ngạch. |
-| **`TC-OPT-09`** | Restore Latency | Click icon Tray để mở lại giao diện | Cửa sổ hiện lên tức thì (< 100ms), không bị đơ hoặc treo ứng dụng. |
+| **`TC-OPT-01`** | Win32 Process Discovery | Bật app khi Language Server đang chạy | Tìm thấy PID và CSRF Token trong **< 5ms**; Task Manager không hề xuất hiện `powershell.exe` hay `netstat.exe`. |
+| **`TC-OPT-02`** | Singleflight & Context | 5 goroutine cùng gọi Discovery, 1 goroutine bị cancel context | Chỉ chạy 1 lượt Win32 snapshot; luồng bị cancel thoát ngay; 4 luồng còn lại nhận kết quả chuẩn xác. |
+| **`TC-OPT-03`** | TTL 10s & Restart Handling | Chờ 11 giây hoặc khởi động lại Language Server | Quá 10s buộc phải quét lại; server đổi PID/CreationTime tự động làm mới cache và kết nối thành công. |
+| **`TC-OPT-04`** | Authorization Matrix tại READY | Kiểm tra tài khoản OFF, Unauth, Active, Ready | Tài khoản OFF/Unauth bị khóa nút Chuyển; tài khoản Active bị khóa nút Xóa; tài khoản Ready mở cả hai nút. |
+| **`TC-OPT-05`** | Stale Response Drop trong `fyne.Do` | Bấm "Làm mới" rồi bấm "Chuyển tài khoản" ngay | Generation tăng; callback cũ khi vào `fyne.Do` phát hiện lệch gen và hủy ngay; không ghi đè trạng thái mới. |
+| **`TC-OPT-06`** | Switch-Delete Concurrency | Gọi song song SwitchAccount và RemoveAccount cùng email | Luồng được điều phối tuần tự qua khóa backend; tài khoản không thể bị xóa khi đang là active target. |
+| **`TC-OPT-07`** | Theme & DPI Sharpness | Mở app ở các tỷ lệ màn hình 100%, 125%, 150% DPI | Chữ hiển thị sắc nét 100%, không giật màn hình sau 50ms, không re-render cây widget lần 2. |
+| **`TC-OPT-08`** | Preserved Window Controls | Bấm nút thu nhỏ `—` và nút đóng `X` | Nút `—` thu nhỏ xuống Taskbar; nút `X` thoát app sạch hoàn toàn; không bị biến tướng thành ẩn tray. |
+| **`TC-OPT-09`** | Tray Trim & Background Loop | Chọn "Ẩn giao diện vào khay" trong 15 phút | RAM Task Manager tụt sâu (< 40MB); Telemetry 60s và AutoSwitch vẫn ghi log và chuyển tài khoản bình thường; click hiện lại < 100ms. |
 
 ---
 
-## 7. KẾT LUẬN & KIẾN NGHỊ
+## 7. KẾT LUẬN
 
-Bản đặc tả kiến trúc này đã phân định minh bạch giữa **tối ưu luồng khởi động**, **quản lý heap của Go runtime**, và **hoán chuyển working set của Windows OS**. Tài liệu cung cấp đầy đủ touch-map, chữ ký hàm và thứ tự thử nghiệm độc lập, đảm bảo Coder Lane có thể triển khai chính xác 100% mà không cần phải phỏng đoán.
+Bản đặc tả R2 đã bổ sung đầy đủ và chặt chẽ toàn bộ các quy tắc hành vi, loại trừ 100% việc Coder phải tự suy đoán hay vô tình làm thay đổi tính năng sản phẩm. Coder Lane có thể triển khai tuần tự theo 5 bước với độ chính xác tuyệt đối.
