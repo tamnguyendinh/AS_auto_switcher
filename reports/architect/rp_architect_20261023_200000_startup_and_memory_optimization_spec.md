@@ -35,11 +35,18 @@ Khảo sát trực tiếp trên mã nguồn và tiến trình thực tế (`anti
 2. **`Invariant-Lifecycle-Safe-Caching`:**
    Bộ nhớ đệm Discovery phải gắn liền với cặp định danh `(PID, ProcessCreationTime)`. Không bao giờ tin tưởng riêng rẽ một mình `PID` để ngăn chặn lỗi tái sử dụng PID (PID recycling) của Windows. Khi thay thế cache, bắt buộc phải đóng Handle cũ. TTL 10 giây phải có hiệu lực thực sự: quá hạn bắt buộc phải làm mới thông tin dù PID/CreationTime chưa đổi.
 3. **`Invariant-Action-Permission-Integrity`:**
-   Trạng thái `READY` tuyệt đối KHÔNG được hiểu là mở khóa mù quáng tất cả các nút bấm. Khi quá trình xác minh hoàn tất, hệ thống bắt buộc phải tính toán lại quyền thao tác (authorization matrix) theo đúng từng tài khoản:
-   - Tài khoản có trạng thái `status == "off"`: Luôn KHÓA nút Chuyển (`Disabled`), hiển thị badge `[OFF]`.
-   - Tài khoản thiếu token/credential (`StateUnauth`): Luôn KHÓA nút Chuyển, hiển thị `[Cần OAuth]`.
-   - Tài khoản đang hoạt động (`IsActive == true`): Luôn KHÓA nút Xóa (thùng rác), hiển thị badge `[✔ Dùng]`.
-   - Chỉ tài khoản `StateReady` (Status == "on", có token hợp lệ, không active) mới được mở khóa nút Chuyển và nút Xóa.
+   Trạng thái `READY` tuyệt đối KHÔNG được hiểu là mở khóa mù quáng nút Chuyển tài khoản, đồng thời **TUYỆT ĐỐI BẢO TOÀN NGUYÊN VẸN LUỒNG CHẠY HIỆN CÓ CỦA NÚT XÓA `[ 🗑 ]`**:
+   - **Quy tắc Bất biến của Nút Xóa (Trash Button):**
+     - Nút Xóa trên mọi thẻ không hoạt động (Inactive: bao gồm Status ON, Status OFF và Cần OAuth) **LÚC NÀO CŨNG BẬT VÀ HIỂN THỊ (`Show()` và `Enable()`)**.
+     - Nút Xóa trên thẻ đang hoạt động (`IsActive == true`): **ẨN HOÀN TOÀN (`Hide()`)**.
+     - Toàn bộ quá trình tối ưu khởi động / bộ nhớ tuyệt đối KHÔNG can thiệp, không vô hiệu hóa hay làm phá vỡ luồng hoạt động này của nút Xóa.
+   - **Quy tắc của Nút Chuyển tài khoản (Switch Button):**
+     - Trong lúc đang xác minh (`VERIFYING`): Nút Chuyển tạm thời bị khóa (`Disable()`) để tránh race condition.
+     - Khi xác minh hoàn tất (`READY`): Tính lại quyền cho nút Chuyển:
+       - Tài khoản có trạng thái `status == "off"`: Khóa nút Chuyển (`Disable()`), hiển thị badge `[OFF]`.
+       - Tài khoản thiếu token/credential (`StateUnauth`): Khóa nút Chuyển, hiển thị `[Cần OAuth]`.
+       - Tài khoản đang hoạt động (`IsActive == true`): Khóa nút Chuyển, hiển thị badge `[✔ Dùng]`.
+       - Chỉ tài khoản `StateReady` (Status == "on", có token hợp lệ, không active) mới được mở khóa nút Chuyển (`Enable()`).
 4. **`Invariant-Clear-Limited-Connectivity`:**
    Định nghĩa rõ ràng trạng thái `LIMITED_CONNECTIVITY`: Khi Language Server không chạy hoặc lỗi kết nối, nhưng WinCred và AccountStore đọc thành công -> Hệ thống tự động chuyển sang chế độ **WinCred Fallback Mode**. Người dùng vẫn được phép thực hiện chuyển tài khoản qua WinCred. Chỉ chuyển sang trạng thái lỗi kết nối hạn chế (có nút "Thử lại") khi backend không thể đọc được cả WinCred lẫn AccountStore. Cảnh báo lỗi từng phần (như quota lỗi 1 tài khoản) không được phép khóa toàn bộ app.
 5. **`Invariant-Generation-UI-Callback-Enforcement`:**
@@ -128,19 +135,20 @@ type App struct {
   * Trong khối `defer / cleanup` của goroutine xác minh cũ: Phải kiểm tra `refreshGen`. Nếu đã là lượt cũ, tuyệt đối KHÔNG được mở khóa nút bấm hoặc xóa trạng thái/thông báo của lượt mới.
 
 #### B. Quy tắc phân quyền nút bấm chi tiết tại `READY`
-Khi xác minh hoàn tất (`UIStateReady`), hệ thống duyệt qua từng tài khoản trong `overview.Accounts` và gán trạng thái nút theo đúng ma trận nghiệp vụ hiện có:
-1. `acc.Status == "off"`:
-   - Nút Chuyển: `Disable()`, hiển thị nhãn/badge `[OFF]`.
-   - Nút Xóa: Cho phép thao tác (nếu không Active).
-2. `acc.State == model.StateUnauth` (chưa có token):
-   - Nút Chuyển: `Disable()`, hiển thị badge `[Cần OAuth]`.
-   - Nút Xóa: Cho phép thao tác.
-3. `acc.IsActive == true`:
-   - Nút Chuyển: `Disable()`, hiển thị badge `[✔ Dùng]`.
-   - Nút Xóa: `Disable()` hoàn toàn (nghiêm cấm xóa tài khoản đang active).
-4. `acc.State == model.StateReady` (Status == "on", có token hợp lệ, không active):
-   - Nút Chuyển: `Enable()`, hiển thị `[Chuyển]`.
-   - Nút Xóa: `Enable()`.
+Khi xác minh hoàn tất (`UIStateReady`), hệ thống tính toán trạng thái nút theo đúng ma trận nghiệp vụ và **bảo toàn nguyên vẹn luồng chạy của nút Xóa**:
+
+1. **Bảo toàn 100% Hành vi Nút Xóa `[ 🗑 ]` (Trash Button):**
+   - Trên mọi thẻ Inactive (bao gồm `Status == "on"`, `Status == "off"`, hoặc `StateUnauth` [Cần OAuth]): Nút Xóa **LÚC NÀO CŨNG BẬT VÀ HIỂN THỊ (`w.deleteButton.Show()`, `w.deleteButton.Enable()`)**, cho phép người dùng click mở dialog xác nhận xóa bất cứ lúc nào.
+   - Trên thẻ Active (`IsActive == true`): Nút Xóa **ẨN HOÀN TOÀN (`w.deleteButton.Hide()`)**, cấm xóa tài khoản đang hoạt động.
+   - Tuyệt đối KHÔNG được khóa, vô hiệu hóa hay làm thay đổi luồng hoạt động sẵn có này của nút Xóa.
+
+2. **Quy tắc Nút Chuyển tài khoản `[Chuyển]` (Switch Button):**
+   - Trong thời gian `UIStateVerifying`: Nút Chuyển tạm thời bị khóa (`Disable()`) để chống race condition.
+   - Khi chuyển sang `UIStateReady`:
+     - `acc.Status == "off"`: Nút Chuyển bị khóa (`Disable()`), hiển thị nhãn `[OFF]`.
+     - `acc.State == model.StateUnauth`: Nút Chuyển bị khóa (`Disable()`), hiển thị nhãn `[Cần OAuth]`.
+     - `acc.IsActive == true`: Nút Chuyển bị khóa (`Disable()`), hiển thị nhãn `[✔ Dùng]`.
+     - `acc.State == model.StateReady` (Status == "on", có token hợp lệ, không active): Nút Chuyển được mở khóa (`Enable()`), hiển thị `[Chuyển]`.
 
 #### C. Định nghĩa minh bạch `LIMITED_CONNECTIVITY`
 * **Trường hợp WinCred Fallback:**
@@ -306,7 +314,7 @@ Coder bắt buộc thực hiện theo đúng 5 bước sau:
 | **`TC-OPT-01`** | Win32 Process Discovery | Bật app khi Language Server đang chạy | Tìm thấy PID và CSRF Token trong **< 5ms**; Task Manager không hề xuất hiện `powershell.exe` hay `netstat.exe`. |
 | **`TC-OPT-02`** | Singleflight & Context | 5 goroutine cùng gọi Discovery, 1 goroutine bị cancel context | Chỉ chạy 1 lượt Win32 snapshot; luồng bị cancel thoát ngay; 4 luồng còn lại nhận kết quả chuẩn xác. |
 | **`TC-OPT-03`** | TTL 10s & Restart Handling | Chờ 11 giây hoặc khởi động lại Language Server | Quá 10s buộc phải quét lại; server đổi PID/CreationTime tự động làm mới cache và kết nối thành công. |
-| **`TC-OPT-04`** | Authorization Matrix tại READY | Kiểm tra tài khoản OFF, Unauth, Active, Ready | Tài khoản OFF/Unauth bị khóa nút Chuyển; tài khoản Active bị khóa nút Xóa; tài khoản Ready mở cả hai nút. |
+| **`TC-OPT-04`** | Authorization Matrix tại READY | Kiểm tra tài khoản OFF, Unauth, Active, Ready | Nút Chuyển chỉ mở trên thẻ Ready; nút Xóa lúc nào cũng bật trên toàn bộ thẻ Inactive (ON, OFF, Unauth) và ẩn hoàn toàn trên thẻ Active. |
 | **`TC-OPT-05`** | Stale Response Drop trong `fyne.Do` | Bấm "Làm mới" rồi bấm "Chuyển tài khoản" ngay | Generation tăng; callback cũ khi vào `fyne.Do` phát hiện lệch gen và hủy ngay; không ghi đè trạng thái mới. |
 | **`TC-OPT-06`** | Switch-Delete Concurrency | Gọi song song SwitchAccount và RemoveAccount cùng email | Luồng được điều phối tuần tự qua khóa backend; tài khoản không thể bị xóa khi đang là active target. |
 | **`TC-OPT-07`** | Theme & DPI Sharpness | Mở app ở các tỷ lệ màn hình 100%, 125%, 150% DPI | Chữ hiển thị sắc nét 100%, không giật màn hình sau 50ms, không re-render cây widget lần 2. |
