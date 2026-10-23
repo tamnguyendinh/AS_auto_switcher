@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -75,6 +76,9 @@ type App struct {
 
 	// In-place update state
 	accountCards []*AccountCardWidget
+
+	// Generational counter for refresh/switch stale result cancellation
+	refreshGen atomic.Uint64
 }
 
 // NewApp creates a new GUI Application with default Fyne runtime and AccountManager.
@@ -470,7 +474,11 @@ func (a *App) Close() {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	// Ensure all in-flight asynchronous preference saves finish writing to disk before cleanup
+	a.prefSaveMu.Lock()
+	a.prefSaveMu.Unlock()
 }
+
 
 // handleAutomationStatus handles state transitions dispatched from the AutomationController
 // and displays transient or persistent feedback on the status bar.
@@ -515,6 +523,9 @@ func (a *App) handleAutomationStatus(evt automation.StatusEvent) {
 		a.stopAutoSwitchWithNoCandidate()
 
 	case automation.StatusError:
+		if a.statusBar != nil && strings.HasPrefix(a.statusBar.Text, "⏳ ") {
+			return
+		}
 		a.showStatusBar(fmt.Sprintf("❌ %s", msg))
 		a.autoHideStatusBar(5 * time.Second)
 
@@ -623,14 +634,10 @@ func (a *App) ShowAndRun() {
 
 	setWindowAlwaysOnTop(windowTitle, a.alwaysOnTop)
 
-	// 2. Kích hoạt đồng bộ phông chữ, texture cache và viewport hậu khởi động
-	// Chạy trong Goroutine nền nhẹ, chờ GLFW event loop sẵn sàng rồi dispatch vào main thread qua fyne.Do.
+	// 2. Thu hồi bộ nhớ heap sau khi khởi động ổn định (chạy ngầm 1 lần duy nhất)
 	go func() {
-		// Nhịp nghỉ 50ms đảm bảo GLFW đã đăng ký xong AddListener trong driver.Run()
-		time.Sleep(50 * time.Millisecond)
-		fyne.Do(func() {
-			a.SyncVisualScaleAndTextures()
-		})
+		time.Sleep(300 * time.Millisecond)
+		debug.FreeOSMemory()
 	}()
 
 	// 3. Chạy vòng lặp nhận sự kiện của Fyne
@@ -802,7 +809,7 @@ func (a *App) RefreshSingleAccountQuota(email string) {
 	}()
 }
 
-// Refresh asynchronously updates account states from Chrome and AccountStore.
+// Refresh updates the accounts overview asynchronously without locking user interactions.
 func (a *App) Refresh() {
 	a.mu.Lock()
 	if a.isBusy {
@@ -810,6 +817,7 @@ func (a *App) Refresh() {
 		return
 	}
 	a.isBusy = true
+	gen := a.refreshGen.Add(1) // Tăng thế hệ
 	a.mu.Unlock()
 
 	if a.refreshBtn != nil {
@@ -821,12 +829,14 @@ func (a *App) Refresh() {
 	go func() {
 		defer func() {
 			fyne.Do(func() {
-				if a.refreshBtn != nil {
-					a.refreshBtn.SetText("Làm mới danh sách")
+				if a.refreshGen.Load() == gen {
+					if a.refreshBtn != nil {
+						a.refreshBtn.SetText("Làm mới danh sách")
+					}
+					a.mu.Lock()
+					a.isBusy = false
+					a.mu.Unlock()
 				}
-				a.mu.Lock()
-				a.isBusy = false
-				a.mu.Unlock()
 			})
 		}()
 
@@ -839,15 +849,24 @@ func (a *App) Refresh() {
 
 		overview, err := a.mgr.GetAccountStates(ctx)
 		if err != nil {
-			fyne.Do(func() { a.showStatusBar("Không lấy được danh sách tài khoản: " + err.Error()) })
+			fyne.Do(func() {
+				if a.refreshGen.Load() == gen {
+					a.showStatusBar("Không lấy được danh sách tài khoản: " + err.Error())
+				}
+			})
 			return
 		}
 
-		a.mu.Lock()
-		a.overview = overview
-		a.mu.Unlock()
-
 		fyne.Do(func() {
+			// Bỏ qua kết quả cũ nếu người dùng đã bấm thao tác mới hơn
+			if a.refreshGen.Load() != gen {
+				return
+			}
+
+			a.mu.Lock()
+			a.overview = overview
+			a.mu.Unlock()
+
 			a.updateUI(overview)
 			if len(overview.Warnings) > 0 {
 				msg := strings.Join(overview.Warnings, "; ")
@@ -872,6 +891,7 @@ func (a *App) SwitchAccount(targetEmail string) {
 		return
 	}
 	a.isBusy = true
+	a.refreshGen.Add(1)
 	ctrl := a.controller
 	mgr := a.mgr
 	a.mu.Unlock()

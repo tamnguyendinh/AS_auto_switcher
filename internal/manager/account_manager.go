@@ -228,6 +228,12 @@ func (m *AccountManager) RemoveAccount(ctx context.Context, email string) error 
 	accStore, discStore := m.store, m.discoveredStore
 	m.mu.Unlock()
 
+	// Invariant: Double-check kiểm tra activeEmail trước khi thực hiện xóa
+	activeEmail2, _ := m.GetCurrentActiveEmail(ctx)
+	if activeEmail2 != "" && strings.EqualFold(activeEmail2, normEmail) {
+		return ErrCannotDeleteActiveAccount
+	}
+
 	// 1. Xóa khỏi accounts_store
 	if accStore != nil {
 		if err := accStore.DeleteAccount(normEmail); err != nil {

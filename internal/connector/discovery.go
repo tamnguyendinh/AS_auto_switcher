@@ -1,22 +1,20 @@
 package connector
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"os/exec"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/windows"
 )
 
@@ -25,6 +23,58 @@ var (
 	ErrNoListeningPort        = errors.New("no loopback listening port found for language_server.exe")
 	ErrInvalidCSRFToken       = errors.New("invalid or missing CSRF token in language_server command line")
 )
+
+var (
+	modNtdll                      = windows.NewLazySystemDLL("ntdll.dll")
+	procNtQueryInformationProcess = modNtdll.NewProc("NtQueryInformationProcess")
+)
+
+const (
+	processCommandLineInformation = 60
+)
+
+type unicodeString struct {
+	Length        uint16
+	MaximumLength uint16
+	Buffer        *uint16
+}
+
+// getProcessCommandLine đọc dòng lệnh của tiến trình bằng NtQueryInformationProcess class 60.
+func getProcessCommandLine(hProcess windows.Handle) (string, error) {
+	var returnLength uint32
+	// Lần gọi 1 để lấy độ dài buffer cần cấp phát
+	procNtQueryInformationProcess.Call(
+		uintptr(hProcess),
+		uintptr(processCommandLineInformation),
+		0,
+		0,
+		uintptr(unsafe.Pointer(&returnLength)),
+	)
+	if returnLength == 0 {
+		return "", errors.New("không xác định được kích thước buffer dòng lệnh")
+	}
+
+	buf := make([]byte, returnLength)
+	r0, _, _ := procNtQueryInformationProcess.Call(
+		uintptr(hProcess),
+		uintptr(processCommandLineInformation),
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(returnLength),
+		uintptr(unsafe.Pointer(&returnLength)),
+	)
+	if int32(r0) < 0 {
+		return "", fmt.Errorf("NtQueryInformationProcess lỗi NTSTATUS 0x%X", r0)
+	}
+
+	us := (*unicodeString)(unsafe.Pointer(&buf[0]))
+	if us.Length == 0 || us.Buffer == nil {
+		return "", nil
+	}
+
+	charCount := int(us.Length / 2)
+	slice := unsafe.Slice(us.Buffer, charCount)
+	return windows.UTF16ToString(slice), nil
+}
 
 // CSRFTokenRegex matches --csrf_token in command line arguments:
 //   --csrf_token <UUID>
@@ -66,37 +116,47 @@ type ProcessCandidate struct {
 	CommandLine string `json:"CommandLine"`
 }
 
-// QueryLanguageServerProcesses finds running instances of language_server.exe on Windows.
+// QueryLanguageServerProcesses tìm các tiến trình language_server.exe qua Win32 Toolhelp32 Snapshot thuần (< 1ms).
 func QueryLanguageServerProcesses() ([]ProcessCandidate, error) {
-	psScript := `Get-CimInstance Win32_Process -Filter "Name = 'language_server.exe'" | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress`
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", psScript)
-	cmd.SysProcAttr = &windows.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: windows.CREATE_NO_WINDOW,
-	}
-	out, err := cmd.Output()
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return nil, fmt.Errorf("querying Win32_Process via PowerShell failed: %w", err)
+		return nil, fmt.Errorf("CreateToolhelp32Snapshot failed: %w", err)
+	}
+	defer windows.CloseHandle(snapshot)
+
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return nil, fmt.Errorf("Process32First failed: %w", err)
 	}
 
-	trimmed := bytes.TrimSpace(out)
-	if len(trimmed) == 0 {
-		return nil, nil
-	}
+	var candidates []ProcessCandidate
+	for {
+		name := windows.UTF16ToString(entry.ExeFile[:])
+		if strings.EqualFold(name, "language_server.exe") {
+			pid := int(entry.ProcessID)
+			hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, entry.ProcessID)
+			if err != nil {
+				hProcess, err = windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION, false, entry.ProcessID)
+			}
+			if err == nil {
+				cmdLine, err := getProcessCommandLine(hProcess)
+				_ = windows.CloseHandle(hProcess)
+				if err == nil && cmdLine != "" {
+					candidates = append(candidates, ProcessCandidate{
+						PID:         pid,
+						CommandLine: cmdLine,
+					})
+				}
+			}
+		}
 
-	// Case 1: Single process returned as JSON object
-	var single ProcessCandidate
-	if err := json.Unmarshal(trimmed, &single); err == nil && single.PID > 0 {
-		return []ProcessCandidate{single}, nil
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			break
+		}
 	}
-
-	// Case 2: Multiple processes returned as JSON array
-	var list []ProcessCandidate
-	if err := json.Unmarshal(trimmed, &list); err == nil {
-		return list, nil
-	}
-
-	return nil, fmt.Errorf("unexpected json output from Win32_Process: %s", string(trimmed))
+	return candidates, nil
 }
 
 const (
@@ -190,75 +250,16 @@ func discoverPortsViaWin32(pid int) ([]int, error) {
 	return ports, nil
 }
 
-// discoverPortsViaNetstat executes netstat -ano -p tcp to locate listening ports.
-func discoverPortsViaNetstat(pid int) ([]int, error) {
-	if pid <= 0 {
-		return nil, nil
-	}
-
-	cmd := exec.Command("netstat", "-ano", "-p", "tcp")
-	cmd.SysProcAttr = &windows.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: windows.CREATE_NO_WINDOW,
-	}
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("netstat failed: %w", err)
-	}
-
-	targetPIDStr := strconv.Itoa(pid)
-	portsMap := make(map[int]struct{})
-	lines := strings.Split(string(out), "\n")
-
-	for _, line := range lines {
-		parts := strings.Fields(line)
-		if len(parts) >= 5 {
-			proto := strings.ToUpper(parts[0])
-			localAddr := parts[1]
-			state := strings.ToUpper(parts[3])
-			ownerPID := parts[4]
-
-			if proto == "TCP" && state == "LISTENING" && ownerPID == targetPIDStr {
-				idx := strings.LastIndex(localAddr, ":")
-				if idx != -1 && idx+1 < len(localAddr) {
-					portStr := localAddr[idx+1:]
-					if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
-						host := strings.Trim(localAddr[:idx], "[]")
-						if host == "" || host == "127.0.0.1" || host == "0.0.0.0" || host == "::1" || host == "::" || host == "*" || host == "localhost" {
-							portsMap[p] = struct{}{}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	ports := make([]int, 0, len(portsMap))
-	for p := range portsMap {
-		ports = append(ports, p)
-	}
-	sort.Ints(ports)
-	return ports, nil
-}
-
-// DiscoverListeningPorts discovers all loopback TCP listening ports owned by the given PID.
-// Uses fast Win32 GetExtendedTcpTable first, falling back to netstat.
+// DiscoverListeningPorts tìm tất cả các cổng TCP listening loopback bằng Win32 GetExtendedTcpTable thuần
 func DiscoverListeningPorts(pid int) ([]int, error) {
 	if pid <= 0 {
 		return nil, errors.New("invalid PID")
 	}
-
-	// Fast path: Win32 GetExtendedTcpTable
-	if ports, err := discoverPortsViaWin32(pid); err == nil && len(ports) > 0 {
-		return ports, nil
+	ports, err := discoverPortsViaWin32(pid)
+	if err != nil || len(ports) == 0 {
+		return nil, fmt.Errorf("không tìm thấy cổng lắng nghe cho PID %d: %w", pid, err)
 	}
-
-	// Fallback path: netstat
-	if ports, err := discoverPortsViaNetstat(pid); err == nil && len(ports) > 0 {
-		return ports, nil
-	}
-
-	return nil, fmt.Errorf("no listening ports found for PID %d", pid)
+	return ports, nil
 }
 
 // ProbeHTTPPort probes a loopback port to check if it responds with HTTP status 200.
@@ -307,38 +308,113 @@ func DiscoverListeningPort(pid int) (int, error) {
 	return ports[len(ports)-1], nil
 }
 
-// DiscoverLanguageServer scans running processes for language_server.exe,
-// extracts the CSRF token and loopback listening port.
+type serverDiscoveryCache struct {
+	mu           sync.RWMutex
+	info         *ServerInfo
+	creationTime windows.Filetime
+	cachedAt     time.Time
+}
+
+var (
+	discCache  serverDiscoveryCache
+	discFlight singleflight.Group
+)
+
+// InvalidateDiscoveryCache xóa cache nếu thông tin kết nối bị lỗi
+func InvalidateDiscoveryCache(failedPort int, failedCSRF string) {
+	discCache.mu.Lock()
+	defer discCache.mu.Unlock()
+	if discCache.info != nil {
+		if (failedPort <= 0 || discCache.info.Port == failedPort) &&
+			(failedCSRF == "" || discCache.info.CSRFToken == failedCSRF) {
+			discCache.info = nil
+			discCache.cachedAt = time.Time{}
+		}
+	}
+}
+
+// DiscoverLanguageServer quét tiến trình language_server.exe với bộ nhớ đệm 10s và singleflight gom luồng
 func DiscoverLanguageServer() (*ServerInfo, error) {
-	procs, err := QueryLanguageServerProcesses()
-	if err != nil {
-		return nil, fmt.Errorf("failed querying processes: %w", err)
+	// 1. Kiểm tra cache còn hạn (TTL 10s)
+	discCache.mu.RLock()
+	cached := discCache.info
+	cachedTime := discCache.cachedAt
+	cachedCreation := discCache.creationTime
+	discCache.mu.RUnlock()
+
+	if cached != nil && time.Since(cachedTime) <= 10*time.Second {
+		// Kiểm tra tiến trình còn sống và đúng CreationTime không
+		if hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(cached.PID)); err == nil {
+			var ct, et, kt, ut windows.Filetime
+			if err := windows.GetProcessTimes(hProcess, &ct, &et, &kt, &ut); err == nil {
+				_ = windows.CloseHandle(hProcess)
+				if ct == cachedCreation {
+					return cached, nil
+				}
+			} else {
+				_ = windows.CloseHandle(hProcess)
+			}
+		}
 	}
-	if len(procs) == 0 {
+
+	// 2. Gom nhiều cuộc gọi đồng thời qua singleflight
+	res, err, _ := discFlight.Do("discover_language_server", func() (any, error) {
+		// Re-check cache bên trong flight
+		discCache.mu.RLock()
+		if discCache.info != nil && time.Since(discCache.cachedAt) <= 10*time.Second {
+			info := discCache.info
+			discCache.mu.RUnlock()
+			return info, nil
+		}
+		discCache.mu.RUnlock()
+
+		procs, err := QueryLanguageServerProcesses()
+		if err != nil {
+			return nil, fmt.Errorf("failed querying processes: %w", err)
+		}
+		if len(procs) == 0 {
+			return nil, ErrLanguageServerNotFound
+		}
+
+		for _, p := range procs {
+			if p.PID <= 0 || strings.TrimSpace(p.CommandLine) == "" {
+				continue
+			}
+			csrfToken := ExtractCSRFToken(p.CommandLine)
+			if csrfToken == "" {
+				continue
+			}
+			port, err := DiscoverListeningPort(p.PID)
+			if err != nil || port <= 0 {
+				continue
+			}
+
+			var creationTime windows.Filetime
+			if hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(p.PID)); err == nil {
+				var et, kt, ut windows.Filetime
+				_ = windows.GetProcessTimes(hProcess, &creationTime, &et, &kt, &ut)
+				_ = windows.CloseHandle(hProcess)
+			}
+
+			info := &ServerInfo{
+				PID:       p.PID,
+				CSRFToken: csrfToken,
+				Port:      port,
+			}
+
+			discCache.mu.Lock()
+			discCache.info = info
+			discCache.creationTime = creationTime
+			discCache.cachedAt = time.Now()
+			discCache.mu.Unlock()
+
+			return info, nil
+		}
 		return nil, ErrLanguageServerNotFound
+	})
+
+	if err != nil {
+		return nil, err
 	}
-
-	for _, p := range procs {
-		if p.PID <= 0 || strings.TrimSpace(p.CommandLine) == "" {
-			continue
-		}
-
-		csrfToken := ExtractCSRFToken(p.CommandLine)
-		if csrfToken == "" {
-			continue
-		}
-
-		port, err := DiscoverListeningPort(p.PID)
-		if err != nil || port <= 0 {
-			continue
-		}
-
-		return &ServerInfo{
-			PID:       p.PID,
-			CSRFToken: csrfToken,
-			Port:      port,
-		}, nil
-	}
-
-	return nil, ErrLanguageServerNotFound
+	return res.(*ServerInfo), nil
 }
