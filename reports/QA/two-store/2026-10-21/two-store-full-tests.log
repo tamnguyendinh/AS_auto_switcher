@@ -1,0 +1,12 @@
+ok  	antigravity-switch/cmd/switcher	3.117s
+ok  	antigravity-switch/internal/automation	17.236s
+ok  	antigravity-switch/internal/connector	4.199s
+ok  	antigravity-switch/internal/manager	6.433s
+ok  	antigravity-switch/internal/model	0.785s
+ok  	antigravity-switch/internal/reloader	4.110s
+ok  	antigravity-switch/internal/scanner	0.898s
+ok  	antigravity-switch/internal/store	8.790s
+ok  	antigravity-switch/internal/telemetry	11.504s
+ok  	antigravity-switch/internal/ui	20.369s
+ok  	antigravity-switch/internal/wincred	0.692s
+?   	antigravity-switch/reports/supervisor/evidence/autonomous_switch_runtime_review_261020	[no test files]

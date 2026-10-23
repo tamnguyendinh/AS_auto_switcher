@@ -1,0 +1,18 @@
+================================================================================
+⚡ Antigravity Multi-Account Switcher - Windows Build System
+   OutDir: bin | SkipTests: True | Clean: False
+================================================================================
+[2/4] Skipping tests (-SkipTests specified).
+[3/4] Compiling target binaries...
+  -> Checking Windows application icon and resource...
+  -> Compiling resource with windres: cmd\switcher\app.rc -> cmd\switcher\rsrc_windows_amd64.syso
+  [SUCCESS] Compiled PE resource object: cmd\switcher\rsrc_windows_amd64.syso (12552 bytes)
+  -> Building Standalone GUI Binary (Fyne, CGO_ENABLED=1)...
+  [SUCCESS] Created: bin\antigravity-switch.exe
+  Compile Duration: 7310 ms | Size: 27.72 MB (29070848 bytes)
+[4/4] Executing quick verification...
+  [PASS] Embedded PE application icon verified on bin\antigravity-switch.exe (32x32)
+  [INFO] GUI binary built at bin\antigravity-switch.exe.
+================================================================================
+⚡ BUILD SUCCESSFUL
+================================================================================

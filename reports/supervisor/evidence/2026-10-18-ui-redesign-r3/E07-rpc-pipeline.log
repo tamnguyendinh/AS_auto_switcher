@@ -1,0 +1,18 @@
+=== RUN   TestSupervisorR3ActualRPCPoolCache
+=== RUN   TestSupervisorR3ActualRPCPoolCache/empty
+    supervisor_r3_probe_test.go:63: {"after_disk_reload":[-1,-1,-1,-1],"before":[-1,-1,-1,-1],"case":"empty","raw_buckets":null,"requests":["/exa.language_server_pb.LanguageServerService/GetUserStatus","/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"],"want":[-1,-1,-1,-1]}
+=== RUN   TestSupervisorR3ActualRPCPoolCache/missing_fraction
+    supervisor_r3_probe_test.go:63: {"after_disk_reload":[-1,-1,-1,-1],"before":[-1,-1,-1,-1],"case":"missing_fraction","raw_buckets":[{"model_id":"3p-5h","remaining_fraction":-1,"reset_time":"0001-01-01T00:00:00Z","five_hour_fraction":-1,"weekly_fraction":-1,"five_hour_reset":"0001-01-01T00:00:00Z","weekly_reset":"0001-01-01T00:00:00Z"}],"requests":["/exa.language_server_pb.LanguageServerService/GetUserStatus","/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"],"want":[-1,-1,-1,-1]}
+=== RUN   TestSupervisorR3ActualRPCPoolCache/full
+    supervisor_r3_probe_test.go:63: {"after_disk_reload":[0.46,0.12,0.88,0.9],"before":[0.46,0.12,0.88,0.9],"case":"full","raw_buckets":[{"model_id":"3p-5h","remaining_fraction":0.46,"reset_time":"0001-01-01T00:00:00Z","five_hour_fraction":-1,"weekly_fraction":-1,"five_hour_reset":"0001-01-01T00:00:00Z","weekly_reset":"0001-01-01T00:00:00Z"},{"model_id":"3p-weekly","remaining_fraction":0.12,"reset_time":"0001-01-01T00:00:00Z","five_hour_fraction":-1,"weekly_fraction":-1,"five_hour_reset":"0001-01-01T00:00:00Z","weekly_reset":"0001-01-01T00:00:00Z"},{"model_id":"gemini-5h","remaining_fraction":0.88,"reset_time":"0001-01-01T00:00:00Z","five_hour_fraction":-1,"weekly_fraction":-1,"five_hour_reset":"0001-01-01T00:00:00Z","weekly_reset":"0001-01-01T00:00:00Z"},{"model_id":"gemini-weekly","remaining_fraction":0.9,"reset_time":"0001-01-01T00:00:00Z","five_hour_fraction":-1,"weekly_fraction":-1,"five_hour_reset":"0001-01-01T00:00:00Z","weekly_reset":"0001-01-01T00:00:00Z"}],"requests":["/exa.language_server_pb.LanguageServerService/GetUserStatus","/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"],"want":[0.46,0.12,0.88,0.9]}
+=== RUN   TestSupervisorR3ActualRPCPoolCache/window_weekly_zero
+    supervisor_r3_probe_test.go:63: {"after_disk_reload":[-1,-1,-1,-1],"before":[-1,0,-1,-1],"case":"window_weekly_zero","raw_buckets":[{"model_id":"opaque","remaining_fraction":0,"reset_time":"0001-01-01T00:00:00Z","five_hour_fraction":-1,"weekly_fraction":-1,"five_hour_reset":"0001-01-01T00:00:00Z","weekly_reset":"0001-01-01T00:00:00Z"}],"requests":["/exa.language_server_pb.LanguageServerService/GetUserStatus","/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"],"want":[-1,0,-1,-1]}
+    supervisor_r3_probe_test.go:64: F1 cycle presence lost across actual RPC/cache: got [-1 -1 -1 -1] want [-1 0 -1 -1]
+--- FAIL: TestSupervisorR3ActualRPCPoolCache (0.09s)
+    --- PASS: TestSupervisorR3ActualRPCPoolCache/empty (0.03s)
+    --- PASS: TestSupervisorR3ActualRPCPoolCache/missing_fraction (0.02s)
+    --- PASS: TestSupervisorR3ActualRPCPoolCache/full (0.02s)
+    --- FAIL: TestSupervisorR3ActualRPCPoolCache/window_weekly_zero (0.02s)
+FAIL
+FAIL	antigravity-switch/internal/telemetry	2.332s
+FAIL

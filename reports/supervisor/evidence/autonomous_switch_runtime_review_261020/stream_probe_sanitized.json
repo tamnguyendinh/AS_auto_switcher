@@ -1,0 +1,86 @@
+[
+  {
+    "variant": "production_shape",
+    "port": 52205,
+    "http": 200,
+    "contentType": "application/connect+json",
+    "frameFlags": 2,
+    "topKeys": [
+      "error"
+    ],
+    "error": {
+      "code": "unauthenticated",
+      "message": "unauthenticated: missing CSRF token"
+    },
+    "updateKeys": [],
+    "trajectoryUpdateKeys": []
+  },
+  {
+    "variant": "add_auth_header_only",
+    "port": 52205,
+    "http": 200,
+    "contentType": "application/connect+json",
+    "frameFlags": 2,
+    "topKeys": [
+      "error"
+    ],
+    "error": {
+      "code": "invalid_argument",
+      "message": "invalid_argument: protocol error: promised 576941934 bytes in enveloped message, got 162 bytes (error ID: 0e105609d63949d1849952eaa92eb711)"
+    },
+    "updateKeys": [],
+    "trajectoryUpdateKeys": []
+  },
+  {
+    "variant": "add_header_and_frame",
+    "port": 52205,
+    "http": 200,
+    "contentType": "application/connect+json",
+    "frameFlags": 0,
+    "topKeys": [
+      "update"
+    ],
+    "updateKeys": [
+      "conversationId",
+      "trajectoryId",
+      "status",
+      "executableStatus",
+      "executorLoopStatus",
+      "executorMetadata",
+      "mainTrajectoryUpdate",
+      "fullyIdle",
+      "turnsUpdate"
+    ],
+    "status": "CASCADE_RUN_STATUS_IDLE",
+    "executorLoopStatus": "CASCADE_RUN_STATUS_IDLE",
+    "executableStatus": "CASCADE_RUN_STATUS_IDLE",
+    "fullyIdle": true,
+    "trajectoryUpdateKeys": []
+  },
+  {
+    "variant": "native_request",
+    "port": 52205,
+    "http": 200,
+    "contentType": "application/connect+json",
+    "frameFlags": 0,
+    "topKeys": [
+      "update"
+    ],
+    "updateKeys": [
+      "conversationId",
+      "trajectoryId",
+      "status",
+      "executableStatus",
+      "executorLoopStatus",
+      "executorMetadata",
+      "mainTrajectoryUpdate",
+      "fullyIdle",
+      "turnsUpdate"
+    ],
+    "status": "CASCADE_RUN_STATUS_IDLE",
+    "executorLoopStatus": "CASCADE_RUN_STATUS_IDLE",
+    "executableStatus": "CASCADE_RUN_STATUS_IDLE",
+    "fullyIdle": true,
+    "trajectoryUpdateKeys": []
+  }
+]

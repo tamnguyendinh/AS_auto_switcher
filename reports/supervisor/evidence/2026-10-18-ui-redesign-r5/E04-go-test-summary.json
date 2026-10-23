@@ -1,0 +1,19 @@
+{
+  "packages": [
+    "ok  \tantigravity-switch/cmd/switcher\t4.875s",
+    "ok  \tantigravity-switch/internal/connector\t4.441s",
+    "ok  \tantigravity-switch/internal/manager\t13.377s",
+    "ok  \tantigravity-switch/internal/model\t1.330s",
+    "ok  \tantigravity-switch/internal/reloader\t5.472s",
+    "ok  \tantigravity-switch/internal/scanner\t1.992s",
+    "ok  \tantigravity-switch/internal/store\t12.121s",
+    "ok  \tantigravity-switch/internal/telemetry\t17.838s",
+    "ok  \tantigravity-switch/internal/ui\t12.389s",
+    "ok  \tantigravity-switch/internal/wincred\t1.042s"
+  ],
+  "pass": 163,
+  "top_level_pass": 144,
+  "fail": 0,
+  "skip": 0,
+  "exit": 0
+}

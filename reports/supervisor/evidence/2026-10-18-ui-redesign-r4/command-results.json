@@ -1,0 +1,27 @@
+[
+  {
+    "id": "E02",
+    "command": "go build ./...",
+    "exit": 0,
+    "elapsed_ms": 4398
+  },
+  {
+    "id": "E03",
+    "command": "go build -tags gui -ldflags -H=windowsgui -o G:\\antigravity_auto_switch\\.tmp\\supervisor-ui-r4-gui.exe ./cmd/switcher",
+    "exit": 0,
+    "elapsed_ms": 10687
+  },
+  {
+    "id": "E04",
+    "command": "go test -v -count=1 ./...",
+    "exit": 0,
+    "elapsed_ms": 34808
+  },
+  {
+    "id": "E05",
+    "command": "staticcheck -tags gui ./...",
+    "exit": 0,
+    "diagnostic_count": 0,
+    "elapsed_ms": 3212
+  }
+]

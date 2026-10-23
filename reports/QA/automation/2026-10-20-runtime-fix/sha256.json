@@ -1,0 +1,12 @@
+{
+  "internal/automation/controller.go": "7e6ef3932ab8b729d5040170821bbc2f943f0768dc67106c84a9841c9f142a28",
+  "internal/automation/retry.go": "0d352c9062d2984b413ce1980b3d6e95d52d8061c0d6cf6a541bd0ff97eada6e",
+  "internal/automation/model_quota.go": "c9d00e6bdfbbc9adb949f50900185c143d400480b31895de087cbac2a93b9620",
+  "internal/automation/switch_gate_windows.go": "502943661e21783241fc1fe4351b8ae60302c8859e94137a32193cd5adc838d3",
+  "internal/connector/automation_rpc.go": "029737527cd7d88c6261133cffa5bd11f43b6c3748144927732461239a75f5eb",
+  "internal/connector/agent_state_stream.go": "e04b3f5d0d50f1e78ae855a6fc8771ee3fe817d91d07715ba40efabd368121e1",
+  "internal/ui/app.go": "73f56fe90681305d86b9d5144255d0724e5d240a0a8514f8037b3fa16f38b873",
+  "internal/automation/runtime_regression_test.go": "f7d5386baf158a60f64c3a05ec681232b4f8c72b600abb92cb284aed8edff580",
+  "bin/antigravity-switch.exe": "c0ab3b740f0fbfb203cbfa72e7de255a16139728ccf449dec19d6a3dac507e08",
+  "bin/antigravity-switch-gui.exe": "b3ef7f7ced68221dc45a4f9a7538f570037214b93cc31afd45132e39df47636d"
+}

@@ -1,0 +1,100 @@
+[
+  {
+    "HTTP_pool": {
+      "actual": {
+        "Claude5h": 1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 100%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ],
+      "matches_expected": false
+    },
+    "disk_reload": {
+      "actual": {
+        "Claude5h": 1,
+        "ClaudeWeek": -1,
+        "Gemini5h": -1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude 100%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ],
+      "matches_expected": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "input": "{\"buckets\":[{\"modelId\":\"claude-4-6\",\"remainingAmount\":37}]}"
+  },
+  {
+    "HTTP_pool": {
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": 1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini 100%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ],
+      "matches_expected": false
+    },
+    "disk_reload": {
+      "actual": {
+        "Claude5h": -1,
+        "ClaudeWeek": -1,
+        "Gemini5h": 1,
+        "GeminiWeek": -1,
+        "HasData": true,
+        "IsError": false
+      },
+      "badge": [
+        "5h:",
+        "Claude --%",
+        "Gemini 100%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ],
+      "matches_expected": false
+    },
+    "expected": {
+      "Claude5h": -1,
+      "ClaudeWeek": -1,
+      "Gemini5h": -1,
+      "GeminiWeek": -1,
+      "HasData": false,
+      "IsError": false
+    },
+    "input": "{\"buckets\":[{\"model_id\":\"gemini-2-5\",\"remaining_amount\":37}]}"
+  }
+]

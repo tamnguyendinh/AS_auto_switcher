@@ -1,0 +1,2 @@
+cmd\switcher\app_cli.go:12:7: const hasGUI is unused (U1000)
+exit status 1

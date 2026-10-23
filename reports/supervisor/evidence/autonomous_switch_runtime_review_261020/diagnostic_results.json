@@ -1,0 +1,23 @@
+{
+  "connect_error_trailer_returned_error": false,
+  "disabled_controller_retry": {
+    "enabled": false,
+    "mock_retry_calls": 1
+  },
+  "native_response_decoded": {
+    "conversation_id_empty": true,
+    "error": "\u003cnil\u003e",
+    "status": "",
+    "successful_completion": false
+  },
+  "proactive_waiting_on_gate": {
+    "events": [
+      "IDLE",
+      "SWITCHING",
+      "SWITCHING"
+    ],
+    "expected_if_context_alive": "switch remains pending at gate",
+    "identity_reads": 1,
+    "is_switching_while_gate_held": false
+  }
+}

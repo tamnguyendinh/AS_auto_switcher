@@ -1,0 +1,6 @@
+=== RUN   TestSupervisorR2ActualRPCPoolCache
+    supervisor_r2_probe_test.go:53: {"Claude5h":0.46,"ClaudeWeek":0.12,"Gemini5h":0.88,"GeminiWeek":0.9,"disk_reload":true,"raw_buckets":4,"requests":["/exa.language_server_pb.LanguageServerService/GetUserStatus","/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"]}
+--- PASS: TestSupervisorR2ActualRPCPoolCache (0.12s)
+PASS
+ok  	antigravity-switch/internal/telemetry	3.275s
+Exit: 0

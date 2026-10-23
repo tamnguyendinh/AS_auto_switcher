@@ -1,0 +1,7 @@
+internal\reloader\active_threads.go:38:2: var reActiveWorkspaces is unused (U1000)
+internal\reloader\active_threads.go:41:2: var reCommandCwd is unused (U1000)
+internal\reloader\active_threads.go:43:2: var reJSONCwd is unused (U1000)
+internal\reloader\active_threads.go:44:2: var reJSONProj is unused (U1000)
+internal\reloader\active_threads.go:45:2: var reFileURI is unused (U1000)
+internal\reloader\active_threads.go:284:6: func extractProjectFromText is unused (U1000)
+exit status 1

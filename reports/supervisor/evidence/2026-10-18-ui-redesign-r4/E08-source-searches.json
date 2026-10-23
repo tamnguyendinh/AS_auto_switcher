@@ -1,0 +1,16 @@
+[
+  {
+    "id": "retired-helper-calls",
+    "command": "rg -n --glob *.go \\b(BuildActiveQuotaSummary|NewQuotaBadgeGroup|NewDualCycleQuotaBadge|NewAccountCard|RefreshSingleQuota|NewQuotaCountdownLabel|FormatRemainingCountdown)\\s*\\( internal/ui",
+    "exit": 1,
+    "matches": 0,
+    "output": []
+  },
+  {
+    "id": "GPT-contract-consumers",
+    "command": "rg -n --glob *.go \\.\\s*GPT\\b|^\\s*GPT\\s+(telemetry\\.)?ModelQuotaBucket\\b|\\bGPT\\s*: cmd internal",
+    "exit": 1,
+    "matches": 0,
+    "output": []
+  }
+]

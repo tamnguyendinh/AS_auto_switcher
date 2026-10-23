@@ -1,0 +1,5 @@
+{
+  "command": "go run honnef.co/go/tools/cmd/staticcheck@latest -checks=U1000 ./...",
+  "exit_code": 1,
+  "note": "U1000 checks source symbols unused by production and tests; compiler/build proves imports separately."
+}

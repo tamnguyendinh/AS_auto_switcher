@@ -1,0 +1,16 @@
+ok  	antigravity-switch/cmd/switcher	3.005s
+ok  	antigravity-switch/internal/automation	17.391s
+ok  	antigravity-switch/internal/connector	3.233s
+ok  	antigravity-switch/internal/manager	4.481s
+ok  	antigravity-switch/internal/model	0.832s
+ok  	antigravity-switch/internal/reloader	3.399s
+ok  	antigravity-switch/internal/scanner	1.000s
+ok  	antigravity-switch/internal/store	6.406s
+ok  	antigravity-switch/internal/telemetry	10.642s
+--- FAIL: TestAutomation_TelemetryCallbackIntegration (0.65s)
+    ui_test.go:3686: expected lastQuotaRefresh to be updated after telemetry callback
+FAIL
+FAIL	antigravity-switch/internal/ui	16.167s
+ok  	antigravity-switch/internal/wincred	0.941s
+?   	antigravity-switch/reports/supervisor/evidence/autonomous_switch_runtime_review_261020	[no test files]
+FAIL

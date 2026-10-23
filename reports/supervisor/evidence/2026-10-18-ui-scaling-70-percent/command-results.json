@@ -1,0 +1,36 @@
+[
+  {
+    "id": "E02",
+    "command": "go build ./...",
+    "reviewed_commit": "92b324542302f2fe311b886650d89ffbfef78d1b",
+    "started_at_bangkok": "2026-10-18T18:33:34.2085334+07:00",
+    "exit": 0,
+    "elapsed_ms": 6611
+  },
+  {
+    "id": "E03",
+    "command": "go build -tags gui -o G:\\antigravity_auto_switch\\.tmp\\supervisor-ui-scaling-70.exe ./cmd/switcher",
+    "reviewed_commit": "92b324542302f2fe311b886650d89ffbfef78d1b",
+    "started_at_bangkok": "2026-10-18T18:33:40.9302907+07:00",
+    "exit": 0,
+    "elapsed_ms": 9556,
+    "binary_bytes": 53516216
+  },
+  {
+    "id": "E04",
+    "command": "go test -v -count=1 ./...",
+    "reviewed_commit": "92b324542302f2fe311b886650d89ffbfef78d1b",
+    "started_at_bangkok": "2026-10-18T18:33:50.5004896+07:00",
+    "exit": 0,
+    "elapsed_ms": 33045
+  },
+  {
+    "id": "E05",
+    "command": "staticcheck -tags gui ./...",
+    "reviewed_commit": "92b324542302f2fe311b886650d89ffbfef78d1b",
+    "started_at_bangkok": "2026-10-18T18:34:23.8463739+07:00",
+    "exit": 0,
+    "elapsed_ms": 2014,
+    "diagnostic_count": 0
+  }
+]

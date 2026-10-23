@@ -1,0 +1,53 @@
+package connector
+
+import (
+    "net"
+    "net/http"
+    "os"
+    "reflect"
+    "sync/atomic"
+    "testing"
+    "time"
+)
+
+func purgeReviewListeners(t *testing.T) (net.Listener, net.Listener) {
+    t.Helper()
+    first, err := net.Listen("tcp4", "127.0.0.1:0")
+    if err != nil { t.Fatal(err) }
+    t.Cleanup(func() { _ = first.Close() })
+    second, err := net.Listen("tcp4", "127.0.0.1:0")
+    if err != nil { t.Fatal(err) }
+    t.Cleanup(func() { _ = second.Close() })
+    if first.Addr().(*net.TCPAddr).Port < second.Addr().(*net.TCPAddr).Port { return first, second }
+    return second, first
+}
+
+func TestSupervisorPurgePortProbeAndFallback(t *testing.T) {
+    for _, scenario := range []string{"slow-http-200", "all-probes-reject"} {
+        t.Run(scenario, func(t *testing.T) {
+            low, high := purgeReviewListeners(t)
+            lowPort, highPort := low.Addr().(*net.TCPAddr).Port, high.Addr().(*net.TCPAddr).Port
+            var delayedSuccess atomic.Bool
+            var earlyCancellation atomic.Bool
+            lowServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadRequest) })}
+            highServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                if scenario == "all-probes-reject" { w.WriteHeader(http.StatusServiceUnavailable); return }
+                select {
+                case <-time.After(400*time.Millisecond): delayedSuccess.Store(true); w.WriteHeader(http.StatusOK)
+                case <-r.Context().Done(): earlyCancellation.Store(true)
+                }
+            })}
+            t.Cleanup(func() { _ = lowServer.Close(); _ = highServer.Close() })
+            go func() { _ = lowServer.Serve(low) }()
+            go func() { _ = highServer.Serve(high) }()
+            ports, err := DiscoverListeningPorts(os.Getpid())
+            if err != nil || !reflect.DeepEqual(ports, []int{lowPort, highPort}) { t.Fatalf("controlled process must own exactly two ascending listeners: ports=%v err=%v", ports, err) }
+            start := time.Now()
+            selected, err := DiscoverListeningPort(os.Getpid())
+            elapsed := time.Since(start)
+            if err != nil || selected != highPort { t.Fatalf("incorrect selected listener: ports=%v selected=%d err=%v", ports, selected, err) }
+            if scenario == "slow-http-200" && (!delayedSuccess.Load() || earlyCancellation.Load()) { t.Error("probe canceled the 400ms HTTP response; a highest-port fallback alone is insufficient evidence for the new probe budget") }
+            t.Logf("scenario=%s real_win32_ports=%v selected=%d delayed_response_completed=%v early_cancellation=%v elapsed=%v", scenario, ports, selected, delayedSuccess.Load(), earlyCancellation.Load(), elapsed)
+        })
+    }
+}

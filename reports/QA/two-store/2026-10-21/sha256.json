@@ -1,0 +1,57 @@
+[
+  {
+    "path": "internal/store/discovered_store.go",
+    "sha256": "4DEDBE7A1595DE7152A5AEFE80EF3C02427564D3A30BAE743F426193C149DC4E",
+    "bytes": 2799
+  },
+  {
+    "path": "internal/store/sanitizer.go",
+    "sha256": "40862962E9E96B11D9A199A68B789D0AB57D9459FE89E0FBB68F3F71313DCFE3",
+    "bytes": 5130
+  },
+  {
+    "path": "internal/store/account_store.go",
+    "sha256": "4BD5DDF77E296970C42E6074D5BD8017B031C8AB35BAB69B539414AB09984B85",
+    "bytes": 6756
+  },
+  {
+    "path": "internal/manager/account_manager.go",
+    "sha256": "676DFBC0B36B0A51FD21D29B686EAA9F83AB1E6EB4BC8C73BDBE7ED817CE5CF9",
+    "bytes": 22640
+  },
+  {
+    "path": "internal/ui/widgets.go",
+    "sha256": "8089215A1B10605A59768B2A7CA4B25DF2A4B710B9EA8E564145264EBA5287F0",
+    "bytes": 12577
+  },
+  {
+    "path": "internal/ui/quota_badge.go",
+    "sha256": "33517FC163198163799E95E6CF5E4B69294EAA3252B851A8E4CAF21C565C5FAD",
+    "bytes": 24605
+  },
+  {
+    "path": "internal/ui/app.go",
+    "sha256": "027E381861CCC599EF28334CBD836CEA91889A1E67681EE8D26A3E999C048F2F",
+    "bytes": 25809
+  },
+  {
+    "path": "internal/ui/tray.go",
+    "sha256": "AE879FA8B251821392185CA0F36B3296CE676C2DFFD69F25D7CF75FBA7FD710D",
+    "bytes": 1271
+  },
+  {
+    "path": "internal/ui/window.go",
+    "sha256": "B39BF26B60943168C7538E17093526C6DEAA0460F7416CD383B9490089528E05",
+    "bytes": 22982
+  },
+  {
+    "path": "cmd/switcher/main.go",
+    "sha256": "398FD50A59BE3FE3F9317E9288B1C8F5A66BD5FE1424A093CFAF12D892AB4600",
+    "bytes": 1511
+  },
+  {
+    "path": "bin/antigravity-switch.exe",
+    "sha256": "BEC4E2EF02AAA1AC63C1F4DBDC05EE7B6F4DFE5119628E8ED94779A84F1B7DCE",
+    "bytes": 29070848
+  }
+]

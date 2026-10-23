@@ -1,0 +1,55 @@
+internal/telemetry/client.go:232:	WeeklyFraction    float64   `json:"weekly_fraction"`
+internal/telemetry/client.go:238:func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
+internal/telemetry/client.go:271:		m.WeeklyFraction = *aux.Weekly
+internal/telemetry/client.go:273:		m.WeeklyFraction = *aux.WeeklyCamel
+internal/telemetry/client.go:275:		m.WeeklyFraction = -1
+internal/telemetry/client.go:281:func (a *AccountQuotaData) UnmarshalJSON(data []byte) error {
+internal/telemetry/client.go:296:		a.Claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+internal/telemetry/client.go:301:		a.Gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+internal/telemetry/client.go:433:		WeeklyFraction:    -1,
+internal/telemetry/client.go:474:	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+internal/telemetry/client.go:475:	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+internal/telemetry/client.go:476:	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+internal/telemetry/client.go:700:	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+internal/telemetry/client.go:701:	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+internal/telemetry/client.go:702:	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+internal/telemetry/client.go:735:				WeeklyFraction:    -1,
+internal/telemetry/client.go:747:				rawB.WeeklyFraction = frac
+internal/telemetry/client.go:756:					gemini.WeeklyFraction = frac
+internal/telemetry/client.go:774:					claude.WeeklyFraction = frac
+internal/telemetry/client.go:776:					gpt.WeeklyFraction = frac
+internal/ui\window.go:86:	a.monogramBg = canvas.NewRectangle(palette.Primary)
+internal/ui\window.go:87:	a.monogramBg.CornerRadius = 6
+internal/ui\window.go:92:	monogramStack := container.NewStack(a.monogramBg, container.NewCenter(monogramText))
+internal/ui\window.go:172:	scrollList := container.NewVScroll(container.NewPadded(container.NewVBox(a.accountListContainer)))
+internal/ui\quota_badge.go:71:	hasWeek := bucket.WeeklyFraction >= 0
+internal/ui\quota_badge.go:74:	if bucket.RemainingFraction > 0 && bucket.FiveHourFraction == 0 && bucket.WeeklyFraction == 0 && bucket.FiveHourReset.IsZero() && bucket.WeeklyReset.IsZero() {
+internal/ui\quota_badge.go:79:	if bucket.RemainingFraction == 0 && bucket.FiveHourFraction == 0 && bucket.WeeklyFraction == 0 && bucket.FiveHourReset.IsZero() && bucket.WeeklyReset.IsZero() && len(rawBuckets) == 0 {
+internal/ui\quota_badge.go:87:		week = bucket.WeeklyFraction
+internal/ui\quota_badge.go:92:		if b.RemainingFraction < 0 && b.FiveHourFraction < 0 && b.WeeklyFraction < 0 {
+internal/ui\quota_badge.go:109:		isWeek := strings.Contains(lower, "week") || b.WeeklyFraction >= 0
+internal/ui\quota_badge.go:120:			if b.WeeklyFraction >= 0 {
+internal/ui\quota_badge.go:121:				week = b.WeeklyFraction
+internal/ui\quota_badge.go:138:func ExtractDualCycleQuota(quota *telemetry.AccountQuotaData) DualCycleQuota {
+internal/ui\quota_badge.go:194:func CreateQuotaCycleRow(prefix string, claudeFrac, geminiFrac float64, hasData bool, isError bool) fyne.CanvasObject {
+internal/ui\app.go:53:	monogramBg           *canvas.Rectangle
+internal/ui\app.go:178:	if a.monogramBg != nil {
+internal/ui\app.go:179:		a.monogramBg.FillColor = palette.Primary
+internal/ui\app.go:180:		a.monogramBg.Refresh()
+internal/ui\app.go:346:func (a *App) RefreshSingleAccountQuota(email string) {
+internal/ui\app.go:407:					a.accountListContainer.Objects[targetIdx] = newCard
+internal/ui\widgets.go:100:func NewAccountCardWithQuota(
+internal/ui\themes_test.go:165:	assertColorMatches(t, "Init(Dark)", "monogramBg.FillColor", app.monogramBg.FillColor, DarkPalette.Primary)
+internal/ui\themes_test.go:172:	assertColorMatches(t, "SetTheme(Light)", "monogramBg.FillColor", app.monogramBg.FillColor, LightPalette.Primary)
+internal/ui\themes_test.go:179:	assertColorMatches(t, "SetTheme(Warm)", "monogramBg.FillColor", app.monogramBg.FillColor, WarmPalette.Primary)
+internal/ui\themes_test.go:186:	assertColorMatches(t, "SetTheme(Dark)", "monogramBg.FillColor", app.monogramBg.FillColor, DarkPalette.Primary)
+internal/ui\ui_test.go:1284:			WeeklyFraction:    0.12,
+internal/ui\ui_test.go:1290:			WeeklyFraction:    0.90,
+internal/ui\ui_test.go:1318:			WeeklyFraction:    -1, // Missing
+internal/ui\ui_test.go:1324:			WeeklyFraction:    0.90,
+internal/ui\ui_test.go:1475:	if app.monogramBg == nil {
+internal/ui\ui_test.go:1476:		t.Fatalf("expected app.monogramBg to be initialized")
+internal/ui\ui_test.go:1480:	assertColorMatches(t, "Init Dark", "monogramBg", app.monogramBg.FillColor, DarkPalette.Primary)
+internal/ui\ui_test.go:1484:	assertColorMatches(t, "Switch Light", "monogramBg", app.monogramBg.FillColor, LightPalette.Primary)
+internal/ui\ui_test.go:1488:	assertColorMatches(t, "Switch Warm", "monogramBg", app.monogramBg.FillColor, WarmPalette.Primary)
+internal/ui\ui_test.go:1492:	assertColorMatches(t, "Switch Dark", "monogramBg", app.monogramBg.FillColor, DarkPalette.Primary)

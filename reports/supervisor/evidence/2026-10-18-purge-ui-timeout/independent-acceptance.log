@@ -1,0 +1,69 @@
+=== RUN   TestR3PreviousThresholdInclusiveAndWAL
+    zz_timeout_previous_acceptance_test.go:51: exactly -2h included; older DB rescued by newer WAL; older-than-threshold thread excluded
+--- PASS: TestR3PreviousThresholdInclusiveAndWAL (0.11s)
+=== RUN   TestR3PreviousRejectNonUUIDDatabase
+    zz_timeout_previous_acceptance_test.go:64: scan result: [{ThreadID:11111111-1111-4111-8111-111111111111 Project: IsMainPane:true Model:}]
+--- PASS: TestR3PreviousRejectNonUUIDDatabase (0.01s)
+=== RUN   TestR3PreviousSQLiteWorkspaceColumn
+    zz_timeout_previous_acceptance_test.go:83: workspace_uris says C:/ActualProject; scanner returned "C:/ActualProject"
+--- PASS: TestR3PreviousSQLiteWorkspaceColumn (0.08s)
+=== RUN   TestR3PreviousStoragePathDoesNotReplaceConversationsDirectory
+    zz_timeout_previous_acceptance_test.go:105: configured app_storage path: capture path="C:\\Users\\TAMNGU~1\\AppData\\Local\\Temp\\TestR3PreviousStoragePathDoesNotReplaceConversationsDirectory168570178\\002\\2026-10-18-11-55-16_active_threads.json" threads=[{ThreadID:11111111-1111-4111-8111-111111111111 Project: IsMainPane:true Model:}] error=<nil>
+--- PASS: TestR3PreviousStoragePathDoesNotReplaceConversationsDirectory (0.16s)
+=== RUN   TestR3PreviousFirstThreadFailureStillPacesAndSendsRemainingThreads
+    zz_timeout_previous_acceptance_test.go:171: ordered events=[model SmartFocusConversation:11111111-1111-4111-8111-111111111111 LoadTrajectory:11111111-1111-4111-8111-111111111111 SendUserCascadeMessage:11111111-1111-4111-8111-111111111111 sleep:3s SmartFocusConversation:22222222-2222-4222-8222-222222222222 LoadTrajectory:22222222-2222-4222-8222-222222222222 SendUserCascadeMessage:22222222-2222-4222-8222-222222222222 sleep:3s SmartFocusConversation:33333333-3333-4333-8333-333333333333 LoadTrajectory:33333333-3333-4333-8333-333333333333 SendUserCascadeMessage:33333333-3333-4333-8333-333333333333] summary=&{TotalThreads:3 SuccessCount:2 FailedCount:1 SuccessThreads:[22222222-2222-4222-8222-222222222222 33333333-3333-4333-8333-333333333333] Errors:[Thread 11111111-1111-4111-8111-111111111111: SendUserCascadeMessage error: SendUserCascadeMessage returned HTTP 500]}
+--- PASS: TestR3PreviousFirstThreadFailureStillPacesAndSendsRemainingThreads (0.08s)
+=== RUN   TestR2SQLiteCommittedWALAndMultipleProjects
+    zz_timeout_wal_acceptance_test.go:42: committed WAL bytes=16512; IDLE plus RUNNING threads across projects=[{ThreadID:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa Project:C:/Project One IsMainPane:true Model:} {ThreadID:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb Project:D:/ProjectTwo IsMainPane:false Model:}]
+--- PASS: TestR2SQLiteCommittedWALAndMultipleProjects (0.46s)
+PASS
+ok  	antigravity-switch/internal/reloader	5.184s
+=== RUN   TestR3NilClientMustFailForEveryDiscoveryIdentity
+=== RUN   TestR3NilClientMustFailForEveryDiscoveryIdentity/ordinary-discovery-info
+    zz_timeout_nil_acceptance_test.go:82: discovery=(pid=9999,port=23456) finder_after_kill=(nil,nil), finds=1 discovery_calls=1 genuine_status_after_kill=0 genuine_sends=0 waits=[8s] success=false error=không tìm thấy language server mới sau khi khởi động lại summary=<nil>
+=== RUN   TestR3NilClientMustFailForEveryDiscoveryIdentity/legacy-ui-discovery-info
+    zz_timeout_nil_acceptance_test.go:82: discovery=(pid=12345,port=54321) finder_after_kill=(nil,nil), finds=1 discovery_calls=1 genuine_status_after_kill=0 genuine_sends=0 waits=[8s] success=false error=không tìm thấy language server mới sau khi khởi động lại summary=<nil>
+--- PASS: TestR3NilClientMustFailForEveryDiscoveryIdentity (0.65s)
+    --- PASS: TestR3NilClientMustFailForEveryDiscoveryIdentity/ordinary-discovery-info (0.56s)
+    --- PASS: TestR3NilClientMustFailForEveryDiscoveryIdentity/legacy-ui-discovery-info (0.09s)
+=== RUN   TestR2RAMGateEveryOutcome
+=== RUN   TestR2RAMGateEveryOutcome/target
+    zz_timeout_previous_acceptance_test.go:110: scenario=target success=true error=<nil> credential_email=target@r2.invalid status_after_kill=1 continued=1 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/stale
+    zz_timeout_previous_acceptance_test.go:110: scenario=stale success=false error=identity mismatch in RAM: expected target@r2.invalid, got old@r2.invalid credential_email=target@r2.invalid status_after_kill=1 continued=0 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/http-error
+    zz_timeout_previous_acceptance_test.go:110: scenario=http-error success=false error=failed verifying user status in RAM: no candidate endpoint responded successfully: endpoint /exa.language_server_pb.LanguageServerService/GetUserStatus returned HTTP 500 credential_email=target@r2.invalid status_after_kill=1 continued=0 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/empty-email
+    zz_timeout_previous_acceptance_test.go:110: scenario=empty-email success=false error=failed verifying user status in RAM: empty status or email credential_email=target@r2.invalid status_after_kill=1 continued=0 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/nil-client-with-error
+    zz_timeout_previous_acceptance_test.go:110: scenario=nil-client-with-error success=false error=không tìm thấy language server mới sau khi khởi động lại: synthetic discovery failure credential_email=target@r2.invalid status_after_kill=0 continued=0 finder_after_kill=1 waits=[8s]
+=== RUN   TestR2RAMGateEveryOutcome/nil-client-without-error
+    zz_timeout_previous_acceptance_test.go:110: scenario=nil-client-without-error success=false error=không tìm thấy language server mới sau khi khởi động lại credential_email=target@r2.invalid status_after_kill=0 continued=0 finder_after_kill=1 waits=[8s]
+--- PASS: TestR2RAMGateEveryOutcome (3.02s)
+    --- PASS: TestR2RAMGateEveryOutcome/target (0.08s)
+    --- PASS: TestR2RAMGateEveryOutcome/stale (0.09s)
+    --- PASS: TestR2RAMGateEveryOutcome/http-error (0.19s)
+    --- PASS: TestR2RAMGateEveryOutcome/empty-email (0.85s)
+    --- PASS: TestR2RAMGateEveryOutcome/nil-client-with-error (1.10s)
+    --- PASS: TestR2RAMGateEveryOutcome/nil-client-without-error (0.73s)
+=== RUN   TestR2ExactDiskSnapshotAfterEightSecondWaitAndRAM
+    zz_timeout_previous_acceptance_test.go:188: events=[snapshot write-credential kill wait:8s discover new-client ram-confirm continue]; disk list used despite deliberately different capture memory list
+--- PASS: TestR2ExactDiskSnapshotAfterEightSecondWaitAndRAM (0.28s)
+PASS
+ok  	antigravity-switch/internal/manager	8.304s
+=== RUN   TestSupervisorPurgePortProbeAndFallback
+=== RUN   TestSupervisorPurgePortProbeAndFallback/slow-http-200
+    zz_timeout_acceptance_test.go:50: scenario=slow-http-200 real_win32_ports=[65271 65272] selected=65272 delayed_response_completed=true early_cancellation=false elapsed=410.2908ms
+=== RUN   TestSupervisorPurgePortProbeAndFallback/all-probes-reject
+    zz_timeout_acceptance_test.go:50: scenario=all-probes-reject real_win32_ports=[65275 65276] selected=65276 delayed_response_completed=false early_cancellation=false elapsed=2.064ms
+--- PASS: TestSupervisorPurgePortProbeAndFallback (0.42s)
+    --- PASS: TestSupervisorPurgePortProbeAndFallback/slow-http-200 (0.42s)
+    --- PASS: TestSupervisorPurgePortProbeAndFallback/all-probes-reject (0.00s)
+PASS
+ok  	antigravity-switch/internal/connector	3.234s
+=== RUN   TestSupervisorPurgeUIDeadlineAndPartialSummary
+    zz_timeout_acceptance_test.go:138: deadline=false at 7 switch context checkpoints and 2 post-switch refresh finder calls; requested waits=[8s 3s 3s 3s 3s 3s] (23s virtual budget); sends=6; status=Đã chuyển sang ui@t.invalid (57ms) • Đã tiếp tục 5/6 phiên
+    zz_timeout_acceptance_test.go:147: Fyne test canvas captured: G:\antigravity_auto_switch\reports\supervisor\evidence\2026-10-18-purge-ui-timeout\ui-partial-continuation.png
+--- PASS: TestSupervisorPurgeUIDeadlineAndPartialSummary (0.60s)
+PASS
+ok  	antigravity-switch/internal/ui	3.303s

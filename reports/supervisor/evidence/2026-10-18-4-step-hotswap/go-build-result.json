@@ -1,0 +1,6 @@
+{
+  "command": "go build ./...",
+  "exit_code": 0,
+  "go_version": "go1.26.3 windows/amd64",
+  "cgo_enabled": "1"
+}

@@ -1,0 +1,11 @@
+ok  	antigravity-switch/internal/store	15.556s
+--- FAIL: TestGetAccountStates (0.42s)
+    account_manager_test.go:224: Expected [ĐANG DÙNG] badge, got [✔ Dùng]
+    account_manager_test.go:233: Ready account bad state/badge: {Email:ready-user@example.com Name: AvatarURL: ProfileDir: State:READY IsActive:false HasToken:true DisplayBadge:[Chuyển]}
+FAIL
+FAIL	antigravity-switch/internal/manager	6.977s
+--- FAIL: TestOwnerRedesign_AccountCardThreeRows (0.00s)
+    ui_test.go:1170: expected line 1 to have '[✔ Dùng]' badge for active card
+FAIL
+FAIL	antigravity-switch/internal/ui	23.423s
+FAIL

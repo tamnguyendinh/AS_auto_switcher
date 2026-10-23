@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-20",
+  "timezone": "Asia/Bangkok",
+  "baseline": "3d58dff39a73d1e0dbe4328d451e3f409bf5626a",
+  "revision": "uncommitted working tree",
+  "build": {
+    "cli": "PASS (observed tool exit 0)",
+    "gui": "PASS (observed tool exit 0)"
+  },
+  "checks": [
+    {
+      "command": "go test -tags gui ./... -count=1 -timeout 120s",
+      "result": "FAIL: TestAutomation_TelemetryCallbackIntegration; other packages PASS",
+      "log": "full-tests-initial.log"
+    },
+    {
+      "command": "go test -tags gui ./internal/ui -count=1 -timeout 120s",
+      "result": "PASS after replacing fixed sleep with condition wait",
+      "seconds": 17.113,
+      "log": "ui-tests-after-wait-fix.log"
+    },
+    {
+      "command": "go test -race ./internal/automation ./internal/connector -count=1 -timeout 120s",
+      "result": "PASS",
+      "seconds": {
+        "automation": 13.456,
+        "connector": 2.235
+      },
+      "log": "automation-connector-race.log"
+    }
+  ],
+  "native_read_only": {
+    "provenance": "observed command output in repair conversation; not rerun for report",
+    "identity": "daohien204ccyersin@gmail.com",
+    "model": "MODEL_PLACEHOLDER_M318",
+    "label": "Gemini 3.8 Flash (High)",
+    "recent_threads": 1,
+    "status": "IDLE",
+    "termination": "ERROR",
+    "error_code": "429",
+    "has_execution_id": true,
+    "is_quota_error": true
+  },
+  "owner_feedback": {
+    "text": "tuetyj voi, ngon lanh luôn",
+    "kind": "user-reported positive result, no assistant-produced full-switch trace"
+  },
+  "native_gui_automation": "capture timed out; accessibility exposed window only; full automatic switching/continuation not captured by assistant",
+  "commit_created": false
+}

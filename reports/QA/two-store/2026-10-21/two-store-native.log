@@ -1,0 +1,56 @@
+=== RUN   TestNativeTwoStoreRefreshAndResize
+    two_store_native_test.go:150: native refresh: three states, repeated refresh, credential removal/recovery, warning, resize PASS
+--- PASS: TestNativeTwoStoreRefreshAndResize (1.33s)
+=== RUN   TestNativeWindowMaximizeRestoreAndGrid
+    window_native_test.go:194: maximize cycle 1: native=canvas=1920x1042, grid 3 -> 5 columns, cards 280x130
+    window_native_test.go:211: restore cycle 1: canvas={920.00006 630}, grid=3 columns
+    window_native_test.go:194: maximize cycle 2: native=canvas=1920x1042, grid 3 -> 5 columns, cards 280x130
+    window_native_test.go:211: restore cycle 2: canvas={920.00006 630}, grid=3 columns
+--- PASS: TestNativeWindowMaximizeRestoreAndGrid (0.54s)
+=== RUN   TestNativeWindowGeometryAndPointer
+    window_native_test.go:269: native client = canvas viewport = 1196x819; no caption/resize frame
+    window_native_test.go:270: click pin center (588,71): state and native TOPMOST = false
+    window_native_test.go:271: click pin center (588,71): state and native TOPMOST = true
+    window_native_test.go:274: native client = canvas viewport = 1196x819; no caption/resize frame
+    window_native_test.go:275: click pin center (588,71): state and native TOPMOST = false
+    window_native_test.go:276: click pin center (588,71): state and native TOPMOST = true
+    window_native_test.go:274: native client = canvas viewport = 1196x819; no caption/resize frame
+    window_native_test.go:275: click pin center (588,71): state and native TOPMOST = false
+    window_native_test.go:276: click pin center (588,71): state and native TOPMOST = true
+    window_native_test.go:274: native client = canvas viewport = 1196x819; no caption/resize frame
+    window_native_test.go:275: click pin center (588,71): state and native TOPMOST = false
+    window_native_test.go:276: click pin center (588,71): state and native TOPMOST = true
+    window_native_test.go:282: native client = canvas viewport = 1196x819; no caption/resize frame
+    window_native_test.go:283: click pin center (588,71): state and native TOPMOST = false
+    window_native_test.go:284: click pin center (588,71): state and native TOPMOST = true
+--- PASS: TestNativeWindowGeometryAndPointer (0.70s)
+=== RUN   TestNativeWindowManualResize
+=== RUN   TestNativeWindowManualResize/left
+    window_resize_native_test.go:153: drag left: {362 130 1558 949} -> {322 130 1558 949}; native/canvas agree
+=== RUN   TestNativeWindowManualResize/right
+    window_resize_native_test.go:153: drag right: {362 130 1558 949} -> {362 130 1598 949}; native/canvas agree
+=== RUN   TestNativeWindowManualResize/top
+    window_resize_native_test.go:153: drag top: {362 130 1558 949} -> {362 100 1558 949}; native/canvas agree
+=== RUN   TestNativeWindowManualResize/bottom
+    window_resize_native_test.go:153: drag bottom: {362 130 1558 949} -> {362 130 1558 979}; native/canvas agree
+=== RUN   TestNativeWindowManualResize/top-left
+    window_resize_native_test.go:153: drag top-left: {362 130 1558 949} -> {322 100 1558 949}; native/canvas agree
+=== RUN   TestNativeWindowManualResize/top-right
+    window_resize_native_test.go:153: drag top-right: {362 130 1558 949} -> {362 100 1598 949}; native/canvas agree
+=== RUN   TestNativeWindowManualResize/bottom-left
+    window_resize_native_test.go:153: drag bottom-left: {362 130 1558 949} -> {322 130 1558 979}; native/canvas agree
+=== RUN   TestNativeWindowManualResize/bottom-right
+    window_resize_native_test.go:153: drag bottom-right: {362 130 1558 949} -> {362 130 1598 979}; native/canvas agree
+=== NAME  TestNativeWindowManualResize
+    window_resize_native_test.go:170: minimum clamp: 978x468; opposite corner held
+--- PASS: TestNativeWindowManualResize (1.80s)
+    --- PASS: TestNativeWindowManualResize/left (0.31s)
+    --- PASS: TestNativeWindowManualResize/right (0.20s)
+    --- PASS: TestNativeWindowManualResize/top (0.17s)
+    --- PASS: TestNativeWindowManualResize/bottom (0.13s)
+    --- PASS: TestNativeWindowManualResize/top-left (0.13s)
+    --- PASS: TestNativeWindowManualResize/top-right (0.13s)
+    --- PASS: TestNativeWindowManualResize/bottom-left (0.11s)
+    --- PASS: TestNativeWindowManualResize/bottom-right (0.13s)
+PASS
+ok  	antigravity-switch/internal/ui	6.535s

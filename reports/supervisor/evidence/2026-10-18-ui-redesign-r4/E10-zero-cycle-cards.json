@@ -1,0 +1,154 @@
+{
+  "cases": [
+    {
+      "badge_cycles": [
+        0,
+        -1,
+        -1,
+        -1
+      ],
+      "card_text": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ],
+      "case": "claude-both-zero-no-raw",
+      "disk_storage_cycles": [
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "expected": [
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "matches": false,
+      "parser_cycles": [
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "raw_bucket_count": 0
+    },
+    {
+      "badge_cycles": [
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "card_text": [
+        "5h:",
+        "Claude 0%",
+        "Gemini --%",
+        "week:",
+        "Claude 0%",
+        "Gemini --%"
+      ],
+      "case": "claude-both-zero-with-raw",
+      "disk_storage_cycles": [
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "expected": [
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "matches": true,
+      "parser_cycles": [
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "raw_bucket_count": 2
+    },
+    {
+      "badge_cycles": [
+        -1,
+        0,
+        -1,
+        -1
+      ],
+      "card_text": [
+        "5h:",
+        "Claude --%",
+        "Gemini --%",
+        "week:",
+        "Claude 0%",
+        "Gemini --%"
+      ],
+      "case": "claude-weekly-zero-no-raw",
+      "disk_storage_cycles": [
+        -1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": [
+        -1,
+        0,
+        -1,
+        -1
+      ],
+      "matches": true,
+      "parser_cycles": [
+        -1,
+        0,
+        -1,
+        -1
+      ],
+      "raw_bucket_count": 0
+    },
+    {
+      "badge_cycles": [
+        -1,
+        -1,
+        0,
+        -1
+      ],
+      "card_text": [
+        "5h:",
+        "Claude --%",
+        "Gemini 0%",
+        "week:",
+        "Claude --%",
+        "Gemini --%"
+      ],
+      "case": "gemini-both-zero-no-raw",
+      "disk_storage_cycles": [
+        -1,
+        -1,
+        0,
+        0
+      ],
+      "expected": [
+        -1,
+        -1,
+        0,
+        0
+      ],
+      "matches": false,
+      "parser_cycles": [
+        -1,
+        -1,
+        0,
+        0
+      ],
+      "raw_bucket_count": 0
+    }
+  ],
+  "driver": "Fyne software canvas, public ParseQuotaSummary -\u003e Update -\u003e SaveToDisk -\u003e LoadFromDisk -\u003e actual NewAccountCardWithQuota",
+  "failures": 2
+}

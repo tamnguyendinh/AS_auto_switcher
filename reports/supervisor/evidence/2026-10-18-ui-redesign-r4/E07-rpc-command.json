@@ -1,0 +1,5 @@
+{
+  "command": "go test -v -count=1 -overlay .tmp/supervisor-r4-rpc-overlay.json ./internal/telemetry -run ^TestSupervisorR4ActualRPCPoolCache$",
+  "exit": 0,
+  "elapsed_ms": 6562
+}

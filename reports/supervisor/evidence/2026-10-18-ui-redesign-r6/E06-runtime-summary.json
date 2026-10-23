@@ -1,0 +1,14 @@
+{
+  "reviewed_commit": "383f56b03ec88f720594ace8f03645695f568b81",
+  "assertions_total": 526,
+  "assertions_passed": 526,
+  "assertion_failures": null,
+  "r5_prior_failures_replayed": 18,
+  "r5_prior_failures_now_pass": 18,
+  "explicit_fixture_count": 65,
+  "explicit_observations": 195,
+  "explicit_observations_matched": 195,
+  "explicit_observations_failed": 0,
+  "inherited_matrix_case_count": 33,
+  "inherited_matrix_observations": 79
+}

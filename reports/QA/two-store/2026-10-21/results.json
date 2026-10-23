@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-21",
+  "timezone": "Asia/Bangkok",
+  "baseline": "3016f44",
+  "spec": "reports/architect/2026-10-21-two-store-architecture-and-ui-3-state-spec.md R2",
+  "build": {
+    "command": ".\\scripts\\build_windows.ps1 -SkipTests",
+    "result": "PASS",
+    "binary": "bin/antigravity-switch.exe",
+    "bytes": 29070848,
+    "sha256": "BEC4E2EF02AAA1AC63C1F4DBDC05EE7B6F4DFE5119628E8ED94779A84F1B7DCE",
+    "ms": 7310,
+    "icon": "32x32"
+  },
+  "tests": {
+    "command": "go test ./... -count=1 -timeout 120s",
+    "result": "PASS"
+  },
+  "vet": {
+    "command": "go vet -unsafeptr=false ./cmd/switcher/... ./internal/...",
+    "result": "PASS"
+  },
+  "race": {
+    "command": "go test -race ./internal/store ./internal/manager -count=1 -timeout 120s",
+    "result": "PASS",
+    "packages": [
+      "store",
+      "manager"
+    ]
+  },
+  "native": {
+    "command": "go test -tags \"gui nativeui\" ./internal/ui -run \"^TestNative(TwoStore|Window)\" -count=1 -timeout 120s -v",
+    "result": "PASS",
+    "durationSeconds": 6.535,
+    "environment": "real GLFW/Win32 window; fixture credentials, no real account switch",
+    "resizeDirections": 8,
+    "maximizeRestoreCycles": 2,
+    "columns": [
+      3,
+      5,
+      3
+    ],
+    "cardSize": [
+      280,
+      130
+    ],
+    "maximizedPixels": [
+      1920,
+      1042
+    ],
+    "minimumPixels": [
+      978,
+      468
+    ],
+    "screenshots": [
+      "three-states.png",
+      "maximized-grid.png"
+    ],
+    "visualReview": "images opened and visually inspected"
+  },
+  "productionSmoke": {
+    "binaryLaunched": true,
+    "responding": true,
+    "catalogRecords": 7,
+    "twoFieldRecords": 7,
+    "binStoreExists": false,
+    "binCatalogExists": false,
+    "rootCredentialStoreExists": true,
+    "screenshotResult": "Computer Use failed twice: FrameArrived timed out; window capture timed out",
+    "accountSwitchPerformed": false
+  },
+  "initialFailures": {
+    "result": "3 outdated presentation assertions failed; fixed assertions to new badges/renderer; subsequent targeted + full suites passed",
+    "log": "two-store-targeted-initial.log"
+  },
+  "graph": {
+    "result": "unavailable: repository path is not registered in Anvien",
+    "fallback": "direct source + imports/call sites + git diff inspection"
+  },
+  "notRun": [
+    "Real account switch/OAuth/continuation (engine preserved; regression suite passed)",
+    "Destructive clean build against user data",
+    "Whole-repository race"
+  ]
+}
