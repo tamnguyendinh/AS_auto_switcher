@@ -14,7 +14,8 @@
 ### 1.1. Mục tiêu
 Tài liệu này đặc tả toàn diện kiến trúc kỹ thuật và giải pháp triển khai cho Modal **"Thêm tài khoản"** (`Add Account Modal`), bao gồm:
 1. Bổ sung **Nút [Xóa]** phổ quát trên mọi dòng tài khoản hiển thị trong Modal Thêm tài khoản để xóa file JSON tương ứng trong thư mục `discovered_accounts/`.
-2. Bổ sung trạng thái mới: **`[Tài khoản không tồn tại]`** xuất hiện khi bấm nút **[Quét Chrome]** đối với những tài khoản hiển thị trên UI modal nhưng file JSON trong `discovered_accounts/` hoàn toàn không tồn tại (thay thế cho nhãn `[Đã add]` / `[Cần OAuth]`), đi kèm nút **[Xóa]** để gỡ dòng đó khỏi danh sách hiển thị Modal.
+2. Bổ sung **Hộp thoại Popup Xác nhận Xóa (Confirmation Dialog)**: Khi người dùng bấm nút [Xóa], hệ thống BẮT BUỘC phải bật popup cảnh báo xác nhận, chỉ khi người dùng bấm "Xóa" trên popup thì thao tác xóa mới được kích hoạt, tuyệt đối ngăn chặn rủi ro xóa nhầm do bấm nhầm chuột.
+3. Bổ sung trạng thái mới: **`[Tài khoản không tồn tại]`** xuất hiện khi bấm nút **[Quét Chrome]** đối với những tài khoản hiển thị trên UI modal nhưng file JSON trong `discovered_accounts/` hoàn toàn không tồn tại (thay thế cho nhãn `[Đã add]` / `[Cần OAuth]`), đi kèm nút **[Xóa]** để gỡ dòng đó khỏi danh sách hiển thị Modal.
 
 ### 1.2. Ranh giới tuyệt đối (Scope Boundaries & Non-Goals)
 - **Tách biệt hai nút Xóa (Deletion Isolation):** Nút [Xóa] trong Modal Thêm tài khoản **chỉ** thao tác trên tầng danh bạ khám phá (`discovered_accounts/`). Tuyệt đối **KHÔNG** xóa token trong `accounts_store/`, và tuyệt đối **KHÔNG** xóa hay can thiệp vào thẻ tài khoản trên màn hình chính (`UI chính`).
@@ -54,12 +55,16 @@ Coder và QA **BẮT BUỘC** tuân thủ 100% các Invariant sau:
    - Không làm mất thẻ tài khoản đang chạy trên UI chính.
 2. **`Invariant-Idempotent-Delete` (Xóa bất biến an toàn):**
    - Khi xóa một tài khoản trong `discovered_accounts/`, nếu file JSON đã không còn tồn tại trên đĩa (`os.IsNotExist`), thao tác xóa coi như thành công và trả về `nil` (không crash, không ném lỗi giả).
-3. **`Invariant-Ghost-Account-State` (Phát hiện tài khoản ma):**
+3. **`Invariant-Delete-Confirmation-Dialog` (Bắt buộc Popup Xác nhận Xóa):**
+   - Khi người dùng bấm nút [Xóa] trên bất kỳ dòng tài khoản nào trong Modal, hệ thống **BẮT BUỘC** phải bật popup hộp thoại xác nhận (`dialog.NewConfirm` hoặc `dialog.NewCustomConfirm`).
+   - Tuyệt đối **CẤM** xóa ngay lập tức khi chỉ vừa click nút Xóa trên dòng.
+   - Thao tác xóa file và cập nhật UI chỉ được phép thực thi sau khi người dùng bấm nút xác nhận trên Popup. Nếu người dùng bấm "Hủy" hoặc đóng popup, hệ thống giữ nguyên hiện trạng.
+4. **`Invariant-Ghost-Account-State` (Phát hiện tài khoản ma):**
    - Khi người dùng nhấn nút **[Quét Chrome]**: Bất kỳ tài khoản nào nằm trong danh sách theo dõi của modal (hoặc đang có thẻ `[Cần OAuth]` trên UI chính) mà kiểm tra trên đĩa cứng KHÔNG tìm thấy file JSON trong `discovered_accounts/` -> BẮT BUỘC phải chuyển thành nhãn **`[Tài khoản không tồn tại]`**.
    - Trạng thái này thay thế cho nhãn `[Đã add]` / `[Cần OAuth]`.
    - Tuyệt đối KHÔNG hiển thị nút `[ADD]` trên dòng `[Tài khoản không tồn tại]`.
-4. **`Invariant-Modal-Removal` (Làm sạch danh sách Modal):**
-   - Bấm nút [Xóa] trên bất kỳ dòng nào (kể cả dòng `[Tài khoản không tồn tại]`) phải ngay lập tức loại bỏ dòng đó khỏi danh sách hiển thị của Modal.
+5. **`Invariant-Modal-Removal` (Làm sạch danh sách Modal):**
+   - Sau khi xác nhận trên popup xóa, dòng tài khoản đó (kể cả dòng `[Tài khoản không tồn tại]`) phải ngay lập tức bị loại bỏ khỏi danh sách hiển thị của Modal.
 
 ---
 
@@ -176,21 +181,46 @@ Coder cập nhật logic hợp nhất tài khoản:
 
 ### 5.3. Tầng Giao diện UI: `internal/ui/add_modal.go`
 
-#### A. Nút [Xóa] trên từng dòng
-- Trên tất cả các dòng tài khoản trong `listContainer`, `actionSlot` phải chứa một nút **[Xóa]**.
-- Khởi tạo nút Xóa:
-  ```go
-  deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-      // 1. Nếu file có tồn tại thì xóa file trên đĩa
-      if candItem.FileExists {
-          _ = a.mgr.DeleteDiscoveredAccount(candItem.Email)
-      }
-      // 2. Gỡ ngay dòng này khỏi UI Modal
-      reloadCandidates()
-  })
-  deleteBtn.Importance = widget.LowImportance // hoặc DangerImportance gọn
-  ```
-- Dùng `compactButton(deleteBtn)` để giữ kích thước hài hòa (chiều cao 24px) với các badge và nút ADD.
+#### A. Nút [Xóa] & Hộp thoại Popup Xác nhận Xóa (Confirmation Popup)
+- Trên tất cả các dòng tài khoản trong `listContainer`, `actionSlot` phải chứa một nút **[Xóa]** (`theme.DeleteIcon()`, bọc qua `compactButton` để có chiều cao gọn 24px).
+- **Hành vi khi bấm [Xóa] (Bắt buộc bật Popup cảnh báo):**
+  - Tuyệt đối không xóa ngay lập tức.
+  - Khi click nút Xóa, gọi hàm mở popup xác nhận `a.showDeleteCandidateConfirm(candItem, reloadCandidates)`.
+  - **Thiết kế Popup Xác nhận:**
+    ```go
+    func (a *App) showDeleteCandidateConfirm(cand CandidateAccountItem, onConfirmed func()) {
+        displayEmail := cand.Email
+        if a.IsMaskAccounts() {
+            displayEmail = MaskEmail(cand.Email)
+        }
+
+        title := "Xác nhận xóa tài khoản"
+        msg := fmt.Sprintf("Bạn có chắc chắn muốn xóa tài khoản %s khỏi danh bạ đã quét không?\n\n(Lưu ý: Thao tác này chỉ xóa dữ liệu trong danh bạ khám phá, không xóa tài khoản hay token trên màn hình chính).", displayEmail)
+
+        if !cand.FileExists {
+            msg = fmt.Sprintf("Tài khoản %s không có tệp dữ liệu trên hệ thống.\nBạn có muốn gỡ bỏ tài khoản này khỏi danh sách hiển thị không?", displayEmail)
+        }
+
+        confirmDlg := dialog.NewConfirm(
+            title,
+            msg,
+            func(confirmed bool) {
+                if !confirmed {
+                    return
+                }
+                if cand.FileExists {
+                    _ = a.mgr.DeleteDiscoveredAccount(cand.Email)
+                }
+                fyne.Do(func() {
+                    onConfirmed()
+                })
+            },
+            a.win,
+        )
+        confirmDlg.SetConfirmImportance(widget.DangerImportance)
+        confirmDlg.Show()
+    }
+    ```
 
 #### B. Xử lý hiển thị 4 trạng thái
 Trong vòng lặp render danh sách tại `reloadCandidates()`:
@@ -199,11 +229,9 @@ Trong vòng lặp render danh sách tại `reloadCandidates()`:
 var actionSlot *fyne.Container
 
 deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-    if candItem.FileExists {
-        _ = a.mgr.DeleteDiscoveredAccount(candItem.Email)
-    }
-    reloadCandidates()
+    a.showDeleteCandidateConfirm(candItem, reloadCandidates)
 })
+deleteBtn.Importance = widget.LowImportance
 compactDel := compactButton(deleteBtn)
 
 if !candItem.FileExists {
@@ -285,9 +313,11 @@ Coder và QA phải đảm bảo các bộ test sau được viết và chạy P
    - `TestGetCandidateAccounts_NonExistentDetection`: Giả lập tài khoản có trên UI nhưng không có file trong `discovered_accounts/` -> kiểm tra `FileExists == false`.
 3. **Acceptance Test UI (`internal/ui/add_modal_test.go` & `add_modal_acceptance_test.go`):**
    - **TC-Modal-Delete-Button-Rendered**: Kiểm tra cả 4 trạng thái dòng tài khoản đều render nút Xóa (`theme.DeleteIcon()`).
-   - **TC-Modal-Delete-Click-Action**: Nhấn nút Xóa trên dòng tài khoản có file -> xác nhận file bị xóa khỏi `discovered_accounts/`, dòng biến mất khỏi modal, nhưng thẻ ngoài UI chính không bị mất.
+   - **TC-Modal-Delete-Click-Shows-Confirm-Dialog**: Nhấn nút Xóa trên dòng tài khoản -> xác nhận popup hộp thoại xác nhận (`dialog.Confirm`) xuất hiện, file chưa bị xóa ngay.
+   - **TC-Modal-Delete-Dialog-Cancel**: Nhấn nút "Hủy" trên popup xác nhận -> file không bị xóa và dòng tài khoản vẫn giữ nguyên trên modal.
+   - **TC-Modal-Delete-Dialog-Confirm**: Nhấn nút "Xóa" trên popup xác nhận -> file bị xóa khỏi `discovered_accounts/`, dòng biến mất khỏi modal, nhưng thẻ ngoài UI chính không bị mất.
    - **TC-Modal-ScanChrome-NonExistent-Status**: Cho 1 tài khoản có trên UI nhưng cố tình xóa file JSON trong `discovered_accounts/`. Nhấn nút **[Quét Chrome]** -> kiểm tra modal hiển thị nhãn `[Tài khoản không tồn tại]`, nút ADD bị ẩn, nút Xóa hiển thị.
-   - **TC-Modal-Delete-NonExistent**: Bấm nút Xóa trên dòng `[Tài khoản không tồn tại]` -> kiểm tra dòng đó bị xóa sạch khỏi danh sách modal.
+   - **TC-Modal-Delete-NonExistent**: Bấm nút Xóa trên dòng `[Tài khoản không tồn tại]` và xác nhận trên popup -> kiểm tra dòng đó bị xóa sạch khỏi danh sách modal.
 
 ---
 
