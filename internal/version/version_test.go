@@ -85,22 +85,25 @@ func TestVersion_ReadmeSync(t *testing.T) {
 		t.Fatalf("failed to locate repo root: %v", err)
 	}
 
-	readmePath := filepath.Join(root, "README.md")
-	data, err := os.ReadFile(readmePath)
-	if err != nil {
-		t.Fatalf("failed to read README.md: %v", err)
-	}
-
-	re := regexp.MustCompile(`\*\*Version\s+([0-9]+(?:\.[0-9]+){2,3})\*\*`)
-	matches := re.FindStringSubmatch(string(data))
-	if len(matches) < 2 {
-		t.Fatalf("failed to find version pattern in README.md header")
-	}
-
-	readmeVersion := matches[1]
+	readmeFiles := []string{"README.md", "README_VN.md", "README_EN.md"}
 	appVersion := GetVersion()
+	re := regexp.MustCompile(`\*\*Version\s+([0-9]+(?:\.[0-9]+){2,3})\*\*`)
 
-	if readmeVersion != appVersion {
-		t.Fatalf("README.md header version (%s) is out of sync with internal/version.Version (%s). Run '.\\scripts\\build_windows.ps1' or '.\\scripts\\build_windows.ps1 -SyncOnly' to synchronize.", readmeVersion, appVersion)
+	for _, relPath := range readmeFiles {
+		readmePath := filepath.Join(root, relPath)
+		data, err := os.ReadFile(readmePath)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", relPath, err)
+		}
+
+		matches := re.FindStringSubmatch(string(data))
+		if len(matches) < 2 {
+			t.Fatalf("failed to find version pattern in %s header", relPath)
+		}
+
+		readmeVersion := matches[1]
+		if readmeVersion != appVersion {
+			t.Fatalf("%s header version (%s) is out of sync with internal/version.Version (%s). Run '.\\scripts\\build_windows.ps1' or '.\\scripts\\build_windows.ps1 -SyncOnly' to synchronize.", relPath, readmeVersion, appVersion)
+		}
 	}
 }

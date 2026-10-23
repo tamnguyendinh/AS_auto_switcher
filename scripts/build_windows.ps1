@@ -54,31 +54,33 @@ function Get-AppVersionFromSource {
 
 function Sync-ReadmeVersion {
     param(
-        [string]$ReadmePath = "README.md",
+        [string[]]$ReadmePaths = @("README.md", "README_VN.md", "README_EN.md"),
         [string]$TargetVersion
     )
-    if (-not (Test-Path $ReadmePath)) {
-        Write-Warning "README file not found: $ReadmePath"
-        return
-    }
-
-    $content = Get-Content $ReadmePath -Raw -Encoding UTF8
-    $pattern = '(?m)^(#.*?\bAntigravity Multi-Account Switcher\s*-\s*\*\*Version\s*)([0-9]+(?:\.[0-9]+){2,3})(\*\*.*)$'
-
-    if ($content -match $pattern) {
-        $currentVersion = $Matches[2]
-        if ($currentVersion -ne $TargetVersion) {
-            Write-Host "  -> Synchronizing README.md version: $currentVersion -> $TargetVersion" -ForegroundColor Cyan
-            # Replace only the version token in the header line
-            $replacement = '${1}' + $TargetVersion + '${3}'
-            $newContent = [regex]::Replace($content, $pattern, $replacement, [System.Text.RegularExpressions.RegexOptions]::Multiline)
-            [System.IO.File]::WriteAllText((Get-Item $ReadmePath).FullName, $newContent, [System.Text.UTF8Encoding]::new($false))
-            Write-Host "  [SYNC] README.md synchronized to Version $TargetVersion" -ForegroundColor Green
-        } else {
-            Write-Host "  [OK] README.md version is already in sync ($TargetVersion)" -ForegroundColor DarkGray
+    foreach ($ReadmePath in $ReadmePaths) {
+        if (-not (Test-Path $ReadmePath)) {
+            Write-Warning "README file not found: $ReadmePath"
+            continue
         }
-    } else {
-        Write-Warning "Could not match version header pattern in $ReadmePath"
+
+        $content = Get-Content $ReadmePath -Raw -Encoding UTF8
+        $pattern = '(?m)^(#.*?\bAntigravity Multi-Account Switcher\s*-\s*\*\*Version\s*)([0-9]+(?:\.[0-9]+){2,3})(\*\*.*)$'
+
+        if ($content -match $pattern) {
+            $currentVersion = $Matches[2]
+            if ($currentVersion -ne $TargetVersion) {
+                Write-Host "  -> Synchronizing $ReadmePath version: $currentVersion -> $TargetVersion" -ForegroundColor Cyan
+                # Replace only the version token in the header line
+                $replacement = '${1}' + $TargetVersion + '${3}'
+                $newContent = [regex]::Replace($content, $pattern, $replacement, [System.Text.RegularExpressions.RegexOptions]::Multiline)
+                [System.IO.File]::WriteAllText((Get-Item $ReadmePath).FullName, $newContent, [System.Text.UTF8Encoding]::new($false))
+                Write-Host "  [SYNC] $ReadmePath synchronized to Version $TargetVersion" -ForegroundColor Green
+            } else {
+                Write-Host "  [OK] $ReadmePath version is already in sync ($TargetVersion)" -ForegroundColor DarkGray
+            }
+        } else {
+            Write-Warning "Could not match version header pattern in $ReadmePath"
+        }
     }
 }
 
