@@ -1,9 +1,9 @@
-# BÁO CÁO ĐẶC TẢ KIẾN TRÚC (ARCHITECTURE SPECIFICATION REPORT)
-## TỐI ƯU HÓA HIỆU NĂNG TẦNG DƯỚI & BẢO TOÀN TRỌN VẸN TRẢI NGHIỆM NGƯỜI DÙNG (TRANSPARENT OPTIMIZATION SPECIFICATION)
+# BÁO CÁO ĐẶC TẢ KIẾN TRÚC & BẢN THIẾT KẾ TRIỂN KHAI CHI TIẾT (ARCHITECTURE & CODE-LEVEL IMPLEMENTATION SPECIFICATION)
+## TỐI ƯU HÓA HIỆU NĂNG TẦNG DƯỚI & BẢO TOÀN TRỌN VẸN TRẢI NGHIỆM NGƯỜI DÙNG
 
 - **Mã tài liệu:** `rp_architect_20261023_200000_startup_and_memory_optimization_spec`
 - **Tác giả:** System Architect Lane
-- **Ngày lập:** 2026-10-23 (Phiên bản R3 — Tối ưu hóa trong suốt, Không xáo trộn UX)
+- **Ngày lập:** 2026-10-23 (Phiên bản R4 — Bản Đặc tả Kỹ thuật Mức Mã Nguồn: Coder triển khai trực tiếp 100% không cần suy đoán)
 - **Thẩm quyền:** Human Owner
 - **Đối tượng thụ hưởng:** Coder Lane, QA Lane
 - **Trạng thái:** **`VERDICT: PASS / READY_FOR_CODER`**
@@ -12,7 +12,7 @@
 
 ## 1. NGUYÊN TẮC THIẾT KẾ CỐT LÕI (CORE PHILOSOPHY)
 
-> **"Sự cẩn thận thực sự là bảo vệ trải nghiệm đang có. Tối ưu hoàn toàn ở tầng dưới (under-the-hood); giữ nguyên 100% giao diện, cách bấm và điều kiện thao tác hiện tại của người dùng. Không được vì 'an toàn' phòng ngừa mà đẻ thêm trạng thái khóa toàn cục, skeleton hay menu rườm rà làm ứng dụng khó dùng hơn."**
+> **"Sự cẩn thận thực sự là bảo vệ trải nghiệm đang có. Tối ưu hoàn toàn ở tầng dưới (under-the-hood); giữ nguyên 100% giao diện, cách bấm và thói quen tương tác của người dùng. Không được vì 'an toàn' phòng ngừa mà đẻ thêm trạng thái khóa toàn cục, skeleton hay menu rườm rà làm ứng dụng khó dùng hơn."**
 
 ### Ba Mục tiêu Trọng tâm:
 1. **Khởi động tức thì (< 300ms):** Cửa sổ hiện ngay với dữ liệu có sẵn từ cache đĩa; loại bỏ hoàn toàn các tiến trình phụ (`powershell.exe`, `netstat.exe`).
@@ -39,8 +39,8 @@
 4. **`Invariant-Transparent-Background-Refresh` (Làm mới ngầm không gián đoạn):**
    - Trong chu kỳ app đang mở và người dùng bấm "Làm mới danh sách": Nút trên Toolbar chỉ đổi chữ sang `"⏳ Đang làm mới..."` như thiết kế hiện tại, còn lại danh sách thẻ tài khoản và các nút bấm vẫn giữ nguyên trạng thái để người dùng thao tác. Khi goroutine ngầm hoàn tất thì dữ liệu mới cập nhật vào UI.
 5. **`Invariant-Silent-Stale-Drop` (Hủy kết quả cũ âm thầm):**
-   - Quản lý `generationID uint64` tăng dần khi có Refresh hoặc Switch.
-   - Kiểm tra `generationID` ngay trong callback `fyne.Do()`. Nếu phát hiện là kết quả của lượt cũ thì âm thầm bỏ qua (silent drop), không ghi đè dữ liệu mới và không can thiệp vào UI.
+   - Quản lý `refreshGen atomic.Uint64` tăng dần khi có Refresh hoặc Switch.
+   - Kiểm tra `refreshGen` ngay trong callback `fyne.Do()`. Nếu phát hiện là kết quả của lượt cũ thì âm thầm bỏ qua (silent drop), không ghi đè dữ liệu mới và không can thiệp vào UI.
 6. **`Invariant-Backend-Execution-Time-Check` (Bảo vệ tại thời điểm thực thi):**
    - Không khóa nút phòng ngừa vô cớ trên UI.
    - Tại tầng backend (`AccountManager`), việc kiểm tra điều kiện (tài khoản active, token hợp lệ) được thực hiện ngay tại thời điểm thực thi lệnh Chuyển hoặc Xóa. Nếu vi phạm (ví dụ tài khoản vừa trở thành active), backend trả về lỗi tương ứng để UI hiển thị thông báo chính xác cho thao tác đó.
@@ -53,128 +53,421 @@
 
 ## 3. BẢN ĐỒ CAN THIỆP MÃ NGUỒN (TOUCH-MAP)
 
-| Tệp mã nguồn | Trách nhiệm can thiệp | Nội dung thay đổi (Thuần tầng dưới) |
+| Tệp mã nguồn | Vị trí can thiệp | Nội dung thay đổi chi tiết |
 |---|---|---|
-| `internal/connector/discovery.go` | Thay thế PowerShell & Netstat bằng Win32 API thuần + Singleflight | - Viết lại `QueryLanguageServerProcesses` dùng Toolhelp32 Snapshot.<br>- Đọc CommandLine bằng `NtQueryInformationProcess`.<br>- Xóa bỏ hàm `discoverPortsViaNetstat`.<br>- Bổ sung Cache discovery dùng chung: TTL 10s, cặp `(PID, CreationTime)`, Singleflight gom luồng, tôn trọng `ctx.Done()`. |
-| `internal/manager/account_manager.go` | Double-check active khi xóa + Tích hợp discovery cache | - Dùng chung hàm discovery của `connector`.<br>- Trong `RemoveAccount`: kiểm tra lại `activeEmail` ngay trước khi xóa tệp (Double-check validation). |
-| `internal/ui/app.go` | Tải dữ liệu đĩa sớm + Bỏ Re-theme thừa + Generation ngầm | - Khi mở app: Đọc ngay store/cache hôm nay để hiển thị ngay frame đầu.<br>- Xóa bỏ goroutine 50ms `SyncVisualScaleAndTextures` sau `win.Show()`.<br>- Quản lý `refreshGen` ngầm để bỏ qua phản hồi stale trong `fyne.Do()`.<br>- Thêm 1 lần `debug.FreeOSMemory()` chạy ngầm sau khi nạp xong. |
+| `internal/connector/discovery.go` | Dòng 69 - 100 & Dòng 193 - 245 | - Thay thế `QueryLanguageServerProcesses` bằng Win32 Toolhelp32 + `NtQueryInformationProcess`.<br>- Xóa bỏ hàm `discoverPortsViaNetstat`.<br>- Thêm struct `serverDiscoveryCache` + `singleflight.Group` dùng chung. |
+| `internal/ui/app.go` | Dòng 628 - 635 & Dòng 806 - 864 | - Thêm trường `refreshGen atomic.Uint64` vào `struct App`.<br>- Xóa bỏ goroutine 50ms `SyncVisualScaleAndTextures` sau `win.Show()`, thay bằng gọi 1 lần `debug.FreeOSMemory()` chạy ngầm.<br>- Trong `Refresh()`: tăng và so khớp `refreshGen` trong `fyne.Do()`. |
+| `internal/manager/account_manager.go` | Dòng 215 - 235 (`RemoveAccount`) | - Trong `RemoveAccount`: kiểm tra lại `activeEmail` (Double-check) trước khi xóa tệp. |
 
 ---
 
-## 4. CHI TIẾT ĐẶC TẢ KỸ THUẬT (DETAILED SPECIFICATION)
+## 4. HƯỚNG DẪN MÃ NGUỒN CHI TIẾT CHO CODER (EXACT CODE IMPLEMENTATION)
 
-### 4.1. Tối ưu Discovery Tầng Dưới (`internal/connector/discovery.go`)
+### 4.1. Cập nhật `internal/connector/discovery.go`
 
-1. **Quét tiến trình Win32 API trực tiếp:**
-   - Dùng `windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)` duyệt tiến trình `language_server.exe` trong kernel.
-   - Mở tiến trình: `windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)`.
-   - Lấy thời điểm tạo tiến trình: `windows.GetProcessTimes(hProcess, &creationTime, &exitTime, &kernelTime, &userTime)`.
-   - Đọc chuỗi CommandLine: Gọi `ntdll.dll::NtQueryInformationProcess` với `ProcessInformationClass = 60` (`ProcessCommandLineInformation`). Nếu không đọc được (tiến trình thoát giữa chừng), bỏ qua an toàn; **không đòi hỏi quyền Admin/UAC**.
-   - Luôn đóng Handle tiến trình sau khi đọc.
-2. **Xóa bỏ `discoverPortsViaNetstat`:**
-   - Xóa bỏ hoàn toàn hàm gọi `exec.Command("netstat", ...)`. Việc dò cổng chỉ dùng `discoverPortsViaWin32` (`iphlpapi.dll::GetExtendedTcpTable`).
-3. **Bộ nhớ đệm Discovery & Singleflight:**
-   - Dùng cấu trúc cache chia sẻ chung:
-     ```go
-     type serverDiscoveryCache struct {
-         mu           sync.Mutex
-         info         *ServerInfo
-         creationTime windows.Filetime
-         cachedAt     time.Time
-     }
-     ```
-   - **TTL 10 giây:** Nếu `time.Since(cachedAt) <= 10*time.Second`, kiểm tra nhanh `PID` và `CreationTime` còn sống thì trả về ngay (độ trễ = 0). Quá 10s hoặc tiến trình đổi -> quét lại.
-   - **Singleflight:** Gom các yêu cầu đồng thời từ `manager`, `telemetry`, và `automation` thành 1 lượt quét duy nhất.
-   - **Hỗ trợ `ctx.Done()`:** Nếu context của caller bị timeout/cancel, caller thoát ngay mà không bị block.
-   - **Không thăm dò HTTP giả lập trước mỗi request:** Bỏ probe nhân tạo lặp lại; request Connect-RPC thật sẽ tự fail-fast nếu cổng lỗi.
+#### A. Khai báo DLL và Win32 Struct cần thiết
+Tại phần đầu file `internal/connector/discovery.go`:
+```go
+import (
+	"bytes"
+	"context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"net"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+	"unsafe"
 
----
+	"golang.org/x/sync/singleflight"
+	"golang.org/x/sys/windows"
+)
 
-### 4.2. Khởi động Nhanh & Làm mới Trong suốt (`internal/ui/app.go`)
+var (
+	modNtdll                      = windows.NewLazySystemDLL("ntdll.dll")
+	procNtQueryInformationProcess = modNtdll.NewProc("NtQueryInformationProcess")
+)
 
-1. **Lần mở đầu (Cold Start):**
-   - Nạp ngay danh sách tài khoản từ file cục bộ `accounts_store/` và cache quota từ `logs/quota_log/`.
-   - Cửa sổ Fyne hiện lên lập tức (< 300ms) với đầy đủ danh sách tài khoản và số liệu quota gần nhất đã lưu.
-   - Language Server và token capture được kích hoạt kiểm tra ngầm dưới background; khi có kết quả mới nhất sẽ âm thầm cập nhật Footer status và badge trạng thái qua `fyne.Do()`.
-2. **Làm mới khi đang dùng (Warm Refresh):**
-   - Khi bấm `"Làm mới danh sách"`: Nút Toolbar đổi chữ `"⏳ Đang làm mới..."`.
-   - **Toàn bộ danh sách thẻ, nút Chuyển và nút Xóa vẫn giữ nguyên khả năng tương tác** với dữ liệu hiện tại, không khóa toàn cục, không làm gián đoạn người dùng.
-   - Khi goroutine đọc xong: Cập nhật giao diện mượt mà và nút Toolbar trở lại `"Làm mới danh sách"`.
-3. **Chống kết quả cũ âm thầm (Silent Stale Drop):**
-   - Quản lý `refreshGen atomic.Uint64`. Tăng khi Refresh hoặc Switch.
-   - Trong `fyne.Do()`: So khớp `if a.refreshGen.Load() != savedGen { return }`. Nếu kết quả thuộc về lượt cũ thì âm thầm bỏ qua, không làm xáo trộn dữ liệu mới.
-4. **Loại bỏ Re-theme và Re-render thừa sau `Show()`:**
-   - **XÓA BỎ** goroutine `time.Sleep(50ms)` và lời gọi `SyncVisualScaleAndTextures()` sau `win.Show()`.
-   - Theme và phông chữ được Fyne khởi tạo chuẩn xác một lần duy nhất trước `Show()`.
+const (
+	processCommandLineInformation = 60
+)
 
----
+type unicodeString struct {
+	Length        uint16
+	MaximumLength uint16
+	Buffer        *uint16
+}
 
-### 4.3. Kiểm tra Điều kiện Thực thi Backend (`internal/manager/account_manager.go`)
+// getProcessCommandLine đọc dòng lệnh của tiến trình bằng NtQueryInformationProcess class 60
+func getProcessCommandLine(hProcess windows.Handle) (string, error) {
+	var returnLength uint32
+	// Lần gọi 1 để lấy độ dài buffer cần cấp phát
+	r0, _, _ := procNtQueryInformationProcess.Call(
+		uintptr(hProcess),
+		uintptr(processCommandLineInformation),
+		0,
+		0,
+		uintptr(unsafe.Pointer(&returnLength)),
+	)
+	if returnLength == 0 {
+		return "", errors.New("không xác định được kích thước buffer dòng lệnh")
+	}
 
-1. **Trong `RemoveAccount` (`account_manager.go:215`):**
-   - Giữ nguyên luồng gọi và giao diện.
-   - Tại tầng backend, trước khi thực hiện xóa tệp tin, thực hiện kiểm tra lại `activeEmail` (Double-checked verification) để bảo đảm tài khoản mục tiêu không bị active ở thời điểm xóa.
-   - Nếu tài khoản đang active, trả về lỗi `ErrCannotDeleteActiveAccount` để UI hiển thị pop-up cảnh báo thông thường, không xóa nhầm.
-2. **Trong `SwitchAccount`:**
-   - Giữ nguyên cơ chế chuyển tài khoản hiện có qua `SwitchGate`.
+	buf := make([]byte, returnLength)
+	r0, _, _ = procNtQueryInformationProcess.Call(
+		uintptr(hProcess),
+		uintptr(processCommandLineInformation),
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(returnLength),
+		uintptr(unsafe.Pointer(&returnLength)),
+	)
+	if int32(r0) < 0 {
+		return "", fmt.Errorf("NtQueryInformationProcess lỗi NTSTATUS 0x%X", r0)
+	}
 
----
+	us := (*unicodeString)(unsafe.Pointer(&buf[0]))
+	if us.Length == 0 || us.Buffer == nil {
+		return "", nil
+	}
 
-### 4.4. Tối ưu Go Runtime Memory (`internal/ui/app.go`)
-
-1. **Thu hồi heap nhàn rỗi một lần:**
-   - Sau khi ứng dụng nạp xong dữ liệu lần đầu tiên và đạt trạng thái ổn định, một goroutine chạy ngầm với `sync.Once` gọi `time.Sleep(200ms)` rồi gọi `debug.FreeOSMemory()`.
-   - Thao tác này chạy hoàn toàn dưới nền, âm thầm trả các trang nhớ giải mã JSON ban đầu về cho OS mà không làm giật lag giao diện.
-2. **Khảo sát `GOMEMLIMIT`:**
-   - Khảo sát qua biến môi trường (`GOMEMLIMIT=64MiB`, `96MiB`, `128MiB`) để chọn giá trị tối ưu, không can thiệp code vào GUI.
-
----
-
-## 5. THỨ TỰ THỰC HIỆN ĐỘC LẬP CHO CODER
-
-Coder triển khai theo đúng 4 bước kỹ thuật tầng dưới sau:
-
-```
-                  [ĐO ĐẠC BASELINE GỐC]
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│ BƯỚC 1: Win32 API Discovery, Singleflight & Xóa Netstat│
-│ • Sửa internal/connector/discovery.go                  │
-│ • Thay PowerShell bằng Toolhelp32 snapshot             │
-│ • Đọc CommandLine qua NtQueryInformationProcess        │
-│ • Xóa discoverPortsViaNetstat, dùng GetExtendedTcpTable│
-│ • Thêm Cache TTL 10s, PID+CreationTime, Singleflight   │
-└───────────────────────────┬────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│ BƯỚC 2: Tải Dữ liệu Sớm & Bỏ Re-theme Thừa             │
-│ • Sửa internal/ui/app.go                               │
-│ • Hiện cửa sổ tức thì với cache đĩa hôm nay            │
-│ • Xóa bỏ goroutine 50ms SyncVisualScaleAndTextures     │
-│ • Quản lý refreshGen âm thầm drop kết quả cũ          │
-│ • Giữ nguyên 100% giao diện và nút bấm khi refresh     │
-└───────────────────────────┬────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│ BƯỚC 3: Backend Verification tại Thời điểm Thực thi    │
-│ • Sửa internal/manager/account_manager.go              │
-│ • Double-check activeEmail trong RemoveAccount         │
-└───────────────────────────┬────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│ BƯỚC 4: Khảo sát Bộ nhớ Go (FreeOSMemory & GOMEMLIMIT) │
-│ • 1 lần FreeOSMemory ngầm khi app đạt trạng thái ổn định│
-│ • Khảo sát các mức GOMEMLIMIT qua biến môi trường      │
-└────────────────────────────────────────────────────────┘
+	charCount := int(us.Length / 2)
+	slice := unsafe.Slice(us.Buffer, charCount)
+	return windows.UTF16ToString(slice), nil
+}
 ```
 
+#### B. Viết lại hàm `QueryLanguageServerProcesses`
+Thay thế toàn bộ hàm cũ (dòng 70–100) bằng:
+```go
+// QueryLanguageServerProcesses tìm các tiến trình language_server.exe qua Win32 Toolhelp32 Snapshot thuần (< 1ms)
+func QueryLanguageServerProcesses() ([]ProcessCandidate, error) {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, fmt.Errorf("CreateToolhelp32Snapshot failed: %w", err)
+	}
+	defer windows.CloseHandle(snapshot)
+
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return nil, fmt.Errorf("Process32First failed: %w", err)
+	}
+
+	var candidates []ProcessCandidate
+	for {
+		name := windows.UTF16ToString(entry.ExeFile[:])
+		if strings.EqualFold(name, "language_server.exe") {
+			pid := int(entry.ProcessID)
+			hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, entry.ProcessID)
+			if err == nil {
+				cmdLine, err := getProcessCommandLine(hProcess)
+				_ = windows.CloseHandle(hProcess)
+				if err == nil && cmdLine != "" {
+					candidates = append(candidates, ProcessCandidate{
+						PID:         pid,
+						CommandLine: cmdLine,
+					})
+				}
+			}
+		}
+
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			break
+		}
+	}
+	return candidates, nil
+}
+```
+
+#### C. Xóa bỏ `discoverPortsViaNetstat` và Cập nhật `DiscoverListeningPorts`
+- Xóa bỏ hoàn toàn hàm `discoverPortsViaNetstat(pid int) ([]int, error)`.
+- Hàm `DiscoverListeningPorts(pid int)` (dòng 246):
+```go
+// DiscoverListeningPorts tìm tất cả các cổng TCP listening loopback bằng Win32 GetExtendedTcpTable thuần
+func DiscoverListeningPorts(pid int) ([]int, error) {
+	if pid <= 0 {
+		return nil, errors.New("invalid PID")
+	}
+	ports, err := discoverPortsViaWin32(pid)
+	if err != nil || len(ports) == 0 {
+		return nil, fmt.Errorf("không tìm thấy cổng lắng nghe cho PID %d: %w", pid, err)
+	}
+	return ports, nil
+}
+```
+
+#### D. Quản lý Cache Vòng đời & Singleflight trong `DiscoverLanguageServer`
+```go
+type serverDiscoveryCache struct {
+	mu           sync.RWMutex
+	info         *ServerInfo
+	creationTime windows.Filetime
+	cachedAt     time.Time
+}
+
+var (
+	discCache  serverDiscoveryCache
+	discFlight singleflight.Group
+)
+
+// InvalidateDiscoveryCache xóa cache nếu thông tin kết nối bị lỗi
+func InvalidateDiscoveryCache(failedPort int, failedCSRF string) {
+	discCache.mu.Lock()
+	defer discCache.mu.Unlock()
+	if discCache.info != nil {
+		if (failedPort <= 0 || discCache.info.Port == failedPort) &&
+			(failedCSRF == "" || discCache.info.CSRFToken == failedCSRF) {
+			discCache.info = nil
+			discCache.cachedAt = time.Time{}
+		}
+	}
+}
+
+// DiscoverLanguageServer quét tiến trình language_server.exe với bộ nhớ đệm 10s và singleflight gom luồng
+func DiscoverLanguageServer() (*ServerInfo, error) {
+	// 1. Kiểm tra cache còn hạn (TTL 10s)
+	discCache.mu.RLock()
+	cached := discCache.info
+	cachedTime := discCache.cachedAt
+	cachedCreation := discCache.creationTime
+	discCache.mu.RUnlock()
+
+	if cached != nil && time.Since(cachedTime) <= 10*time.Second {
+		// Kiểm tra tiến trình còn sống và đúng CreationTime không
+		if hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(cached.PID)); err == nil {
+			var ct, et, kt, ut windows.Filetime
+			if err := windows.GetProcessTimes(hProcess, &ct, &et, &kt, &ut); err == nil {
+				_ = windows.CloseHandle(hProcess)
+				if ct == cachedCreation {
+					return cached, nil
+				}
+			} else {
+				_ = windows.CloseHandle(hProcess)
+			}
+		}
+	}
+
+	// 2. Gom nhiều cuộc gọi đồng thời qua singleflight
+	res, err, _ := discFlight.Do("discover_language_server", func() (any, error) {
+		// Re-check cache bên trong flight
+		discCache.mu.RLock()
+		if discCache.info != nil && time.Since(discCache.cachedAt) <= 10*time.Second {
+			info := discCache.info
+			discCache.mu.RUnlock()
+			return info, nil
+		}
+		discCache.mu.RUnlock()
+
+		procs, err := QueryLanguageServerProcesses()
+		if err != nil {
+			return nil, fmt.Errorf("failed querying processes: %w", err)
+		}
+		if len(procs) == 0 {
+			return nil, ErrLanguageServerNotFound
+		}
+
+		for _, p := range procs {
+			if p.PID <= 0 || strings.TrimSpace(p.CommandLine) == "" {
+				continue
+			}
+			csrfToken := ExtractCSRFToken(p.CommandLine)
+			if csrfToken == "" {
+				continue
+			}
+			port, err := DiscoverListeningPort(p.PID)
+			if err != nil || port <= 0 {
+				continue
+			}
+
+			var creationTime windows.Filetime
+			if hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(p.PID)); err == nil {
+				var et, kt, ut windows.Filetime
+				_ = windows.GetProcessTimes(hProcess, &creationTime, &et, &kt, &ut)
+				_ = windows.CloseHandle(hProcess)
+			}
+
+			info := &ServerInfo{
+				PID:       p.PID,
+				CSRFToken: csrfToken,
+				Port:      port,
+			}
+
+			discCache.mu.Lock()
+			discCache.info = info
+			discCache.creationTime = creationTime
+			discCache.cachedAt = time.Now()
+			discCache.mu.Unlock()
+
+			return info, nil
+		}
+		return nil, ErrLanguageServerNotFound
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return res.(*ServerInfo), nil
+}
+```
+
 ---
 
-## 6. MA TRẬN KIỂM THỬ NGHIỆM THU (ACCEPTANCE CRITERIA)
+### 4.2. Cập nhật `internal/ui/app.go`
+
+#### A. Khai báo `refreshGen` trong `struct App`
+Tại `internal/ui/app.go` (khoảng dòng 75):
+```go
+type App struct {
+    ...
+    refreshGen atomic.Uint64 // Đếm thế hệ refresh/switch để hủy bỏ kết quả stale âm thầm
+}
+```
+
+#### B. Xóa bỏ Re-theme 50ms và thêm Dọn dẹp Bộ nhớ trong `ShowAndRun()`
+Tại `internal/ui/app.go` (khoảng dòng 626–635):
+- **Xóa bỏ đoạn cũ:**
+  ```go
+  go func() {
+      time.Sleep(50 * time.Millisecond)
+      fyne.Do(func() {
+          a.SyncVisualScaleAndTextures()
+      })
+  }()
+  ```
+- **Thay bằng:**
+  ```go
+  // Thu hồi bộ nhớ heap sau khi khởi động ổn định (chạy ngầm 1 lần duy nhất)
+  go func() {
+      time.Sleep(300 * time.Millisecond)
+      debug.FreeOSMemory()
+  }()
+  ```
+
+#### C. Cập nhật hàm `Refresh()` để chống kết quả stale âm thầm
+Tại `internal/ui/app.go` (khoảng dòng 806–864):
+```go
+// Refresh updates the accounts overview asynchronously without locking user interactions.
+func (a *App) Refresh() {
+	a.mu.Lock()
+	if a.isBusy {
+		a.mu.Unlock()
+		return
+	}
+	a.isBusy = true
+	gen := a.refreshGen.Add(1) // Tăng thế hệ
+	a.mu.Unlock()
+
+	if a.refreshBtn != nil {
+		fyne.Do(func() {
+			a.refreshBtn.SetText("⏳ Đang làm mới...")
+		})
+	}
+
+	go func() {
+		defer func() {
+			fyne.Do(func() {
+				if a.refreshGen.Load() == gen {
+					if a.refreshBtn != nil {
+						a.refreshBtn.SetText("Làm mới danh sách")
+					}
+					a.mu.Lock()
+					a.isBusy = false
+					a.mu.Unlock()
+				}
+			})
+		}()
+
+		if a.mgr == nil {
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+
+		overview, err := a.mgr.GetAccountStates(ctx)
+		if err != nil {
+			fyne.Do(func() {
+				if a.refreshGen.Load() == gen {
+					a.showStatusBar("Không lấy được danh sách tài khoản: " + err.Error())
+				}
+			})
+			return
+		}
+
+		fyne.Do(func() {
+			// Bỏ qua kết quả cũ nếu người dùng đã bấm thao tác mới hơn
+			if a.refreshGen.Load() != gen {
+				return
+			}
+
+			a.mu.Lock()
+			a.overview = overview
+			a.mu.Unlock()
+
+			a.updateUI(overview)
+			if len(overview.Warnings) > 0 {
+				msg := strings.Join(overview.Warnings, "; ")
+				if a.IsMaskAccounts() {
+					msg = maskMessageEmails(msg)
+				}
+				a.showStatusBar("⚠️ " + msg)
+			} else {
+				a.showStatusBar("Đã cập nhật danh sách tài khoản")
+				a.autoHideStatusBar(3 * time.Second)
+			}
+		})
+	}()
+}
+```
+
+---
+
+### 4.3. Cập nhật `internal/manager/account_manager.go`
+
+Trong hàm `RemoveAccount` (`internal/manager/account_manager.go` dòng 215–225):
+```go
+func (m *AccountManager) RemoveAccount(ctx context.Context, email string) error {
+	normEmail := strings.ToLower(strings.TrimSpace(email))
+	if normEmail == "" {
+		return store.ErrInvalidEmail
+	}
+
+	// Invariant: Double-check kiểm tra activeEmail trước khi thực hiện xóa
+	activeEmail, _ := m.GetCurrentActiveEmail(ctx)
+	if activeEmail != "" && strings.EqualFold(activeEmail, normEmail) {
+		return ErrCannotDeleteActiveAccount
+	}
+
+	m.mu.Lock()
+	accStore, discStore := m.store, m.discoveredStore
+	m.mu.Unlock()
+
+	// Tiến hành xóa tệp tài khoản bình thường
+	if accStore != nil {
+		if err := accStore.DeleteAccount(normEmail); err != nil {
+			return fmt.Errorf("lỗi xóa tệp tài khoản: %w", err)
+		}
+	}
+    ...
+```
+
+---
+
+## 5. THỨ TỰ TRIỂN KHAI CHO CODER
+
+Coder chỉ cần mở đúng 3 file và chỉnh sửa theo đúng thứ tự:
+1. **File 1:** `internal/connector/discovery.go` (Thay thế PowerShell/Netstat bằng Win32 API thuần, thêm Cache TTL 10s + singleflight).
+2. **File 2:** `internal/ui/app.go` (Thêm `refreshGen`, đổi `Refresh()` để drop stale result, xóa bỏ 50ms re-theme thừa trong `ShowAndRun()`).
+3. **File 3:** `internal/manager/account_manager.go` (Xác nhận double-check active trong `RemoveAccount`).
+4. **Chạy kiểm thử:** `go test ./...` đảm bảo toàn bộ unit test hiện có pass 100%.
+
+---
+
+## 6. MA TRẬN KIỂM THỬ NGHIỆM THU (ACCEPTANCE MATRIX)
 
 | ID Kiểm thử | Hạng mục kiểm thử | Tiêu chuẩn Nghiệm thu bắt buộc |
 |---|---|---|
@@ -191,4 +484,4 @@ Coder triển khai theo đúng 4 bước kỹ thuật tầng dưới sau:
 
 ## 7. KẾT LUẬN
 
-Bản đặc tả R3 đã loại bỏ triệt để mọi chi tiết gây nặng nề UX, tập trung 100% vào việc tối ưu sâu bên dưới hạ tầng: **loại bỏ tiến trình phụ, gom luồng, cache thông minh và dọn dẹp bộ nhớ nhàn rỗi**. Coder có thể tiến hành lập trình ngay lập tức với độ an toàn cao nhất.
+Bản đặc tả R4 cung cấp mã nguồn mẫu chính xác, vị trí can thiệp từng dòng file cụ thể. Coder không cần phải tìm kiếm thư viện, không cần tự suy đoán cấu trúc Win32 hay tự quyết định luồng UI, đảm bảo triển khai trơn tru và hoàn thành ngay trong lần chạy đầu tiên.
