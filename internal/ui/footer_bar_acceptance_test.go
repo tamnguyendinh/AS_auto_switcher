@@ -216,7 +216,8 @@ func TestAcceptance_TC02_FooterPlacementAndPrefix(t *testing.T) {
 // TC-03: Nhãn Phiên Bản Mép Phải (Version Display & Formatting)
 // Tiêu chí PASS:
 // - a.versionLabel nằm ở mép phải của footerContent, căn lề phải (TextAlignTrailing).
-// - Chuỗi hiển thị bắt đầu bằng "Version: 1.0.2.0".
+// - Chuỗi hiển thị chính xác là "Version: 1.0.2.0" (chuẩn thương mại sạch, không chứa commit hash).
+// - Tuyệt đối không chứa chuỗi "rev" hoặc dấu ngoặc "(".
 func TestAcceptance_TC03_VersionDisplayAndFormatting(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
@@ -236,8 +237,17 @@ func TestAcceptance_TC03_VersionDisplayAndFormatting(t *testing.T) {
 		t.Errorf("TC-03 VIOLATION: expected versionLabel.Alignment == fyne.TextAlignTrailing, got %v", app.versionLabel.Alignment)
 	}
 
-	if !strings.HasPrefix(app.versionLabel.Text, "Version: 1.0.2.0") {
-		t.Errorf("TC-03 VIOLATION: expected versionLabel text to start with 'Version: 1.0.2.0', got '%s'", app.versionLabel.Text)
+	expectedVersion := "Version: 1.0.2.0"
+	if app.versionLabel.Text != expectedVersion {
+		t.Errorf("TC-03 VIOLATION: expected versionLabel text '%s', got '%s'", expectedVersion, app.versionLabel.Text)
+	}
+
+	if strings.Contains(app.versionLabel.Text, "rev") {
+		t.Errorf("TC-03 VIOLATION: versionLabel must NOT contain 'rev', got '%s'", app.versionLabel.Text)
+	}
+
+	if strings.Contains(app.versionLabel.Text, "(") {
+		t.Errorf("TC-03 VIOLATION: versionLabel must NOT contain '(', got '%s'", app.versionLabel.Text)
 	}
 }
 

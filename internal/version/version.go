@@ -17,11 +17,15 @@ func GetVersion() string {
 }
 
 // GetFullVersion trả về chuỗi phiên bản định dạng đầy đủ hiển thị trên UI.
-// Nếu có GitCommit: "Version: 1.0.2.0 (rev a77efb9)"
-// Nếu không có GitCommit: "Version: 1.0.2.0"
+// Luôn trả về định dạng phiên bản thương mại sạch: "Version: 1.0.2.0", tuyệt đối không nối commit hash.
 func GetFullVersion() string {
-	if GitCommit != "" {
-		return fmt.Sprintf("Version: %s (rev %s)", Version, GitCommit)
-	}
 	return fmt.Sprintf("Version: %s", Version)
+}
+
+// GetBuildInfo trả về đầy đủ thông tin kỹ thuật gồm cả Git commit (nếu có) phục vụ logging và chẩn đoán.
+func GetBuildInfo() string {
+	if GitCommit != "" {
+		return fmt.Sprintf("Version %s (commit %s)", Version, GitCommit)
+	}
+	return fmt.Sprintf("Version %s", Version)
 }
