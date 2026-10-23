@@ -1,4 +1,4 @@
-# ⚡ Antigravity Multi-Account Switcher - **Version 1.0.1.9**
+# ⚡ Antigravity Multi-Account Switcher - **Version 1.0.2.0**
 
 Nếu bạn có 1 tài khoản cá nhân, 1 tài khoản công ty, 1 tài khoản để làm dự án bên ngoài; mỗi khi chuyển tài khoản để làm việc cứ phải sign in/out mất thời gian thì công cụ này chính là dành cho bạn.
 
