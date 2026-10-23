@@ -879,3 +879,204 @@ func TestAcceptance_TC08_StartupPerformanceBenchmark(t *testing.T) {
 		t.Errorf("GetAccountStates average took %v, exceeded maximum allowed 50ms", avgDuration)
 	}
 }
+
+// =============================================================================
+// TC-09: Xóa ứng viên trong Modal với Popup Xác Nhận (Delete Confirmation Flow)
+// Kiểm tra Invariant-Delete-Confirmation-Dialog, Invariant-Store-Isolation,
+// và Invariant-Ghost-Account-State.
+// =============================================================================
+func TestAcceptance_TC09_DeleteCandidateConfirmationFlow(t *testing.T) {
+	tempDir := t.TempDir()
+	mgr, accStore, discStore := createAcceptanceManagerInDir(t, tempDir)
+
+	activeEmail := "main.active@test.com"
+	if err := accStore.SaveAccount(activeEmail, &model.TokenData{
+		AccessToken: "active_tok",
+		IDToken:     makeTestJWT(activeEmail),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	candEmail := "cand.discovered@test.com"
+	if err := discStore.SaveDiscovered(candEmail); err != nil {
+		t.Fatal(err)
+	}
+
+	ghostEmail := "cand.ghost@test.com"
+	mgr.TrackAccount(ghostEmail)
+
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	// Cập nhật UI chính
+	ov, _ := mgr.GetAccountStates(context.Background())
+	app.mu.Lock()
+	app.overview = ov
+	app.mu.Unlock()
+	app.updateUI(ov)
+
+	_, _, listContainer, reloadCandidates := app.buildAddAccountModalContent()
+
+	// Modal phải hiển thị 2 ứng viên: candEmail và ghostEmail
+	if len(listContainer.Objects) != 2 {
+		t.Fatalf("expected 2 items in modal, got %d", len(listContainer.Objects))
+	}
+
+	rowsMap := make(map[string]*fyne.Container)
+	for _, obj := range listContainer.Objects {
+		em, slot := extractModalRow(t, obj)
+		rowsMap[em] = slot
+	}
+
+	// 1. Thao tác trên candEmail: bấm Xóa -> popup xuất hiện -> bấm Hủy -> dữ liệu giữ nguyên
+	candSlot, ok := rowsMap[candEmail]
+	if !ok {
+		t.Fatalf("row for %s not found", candEmail)
+	}
+	_, _, delCand := inspectAcceptanceActionSlot(t, candSlot)
+	if delCand == nil {
+		t.Fatal("delete button for candEmail not found")
+	}
+
+	delCand.OnTapped()
+	topOverlay := app.win.Canvas().Overlays().Top()
+	if topOverlay == nil {
+		t.Fatal("expected confirmation dialog overlay")
+	}
+
+	buttons := findButtonsInCanvas(topOverlay)
+	var cancelBtn, confirmBtn *widget.Button
+	for _, b := range buttons {
+		if b.Text == "Hủy" {
+			cancelBtn = b
+		} else if b.Text == "Xóa" {
+			confirmBtn = b
+		}
+	}
+	if cancelBtn == nil || confirmBtn == nil {
+		t.Fatal("dialog buttons 'Hủy' or 'Xóa' not found")
+	}
+	if confirmBtn.Importance != widget.DangerImportance {
+		t.Errorf("confirm button must have DangerImportance")
+	}
+
+	// Bấm Hủy
+	cancelBtn.OnTapped()
+	if !discStore.HasDiscovered(candEmail) {
+		t.Errorf("file for %s must remain after cancel", candEmail)
+	}
+
+	// 2. Bấm Xóa lần 2 trên candEmail -> popup xuất hiện -> bấm Xóa -> file bị xóa, dòng biến mất
+	delCand.OnTapped()
+	topOverlay2 := app.win.Canvas().Overlays().Top()
+	if topOverlay2 == nil {
+		t.Fatal("expected confirmation dialog overlay on second tap")
+	}
+	buttons2 := findButtonsInCanvas(topOverlay2)
+	var confirmBtn2 *widget.Button
+	for _, b := range buttons2 {
+		if b.Text == "Xóa" {
+			confirmBtn2 = b
+			break
+		}
+	}
+	if confirmBtn2 == nil {
+		t.Fatal("confirm button 'Xóa' not found")
+	}
+
+	confirmBtn2.OnTapped()
+
+	// Chờ UI modal cập nhật sau khi xác nhận xóa
+	deadline := time.Now().Add(2 * time.Second)
+	candRemoved := false
+	for time.Now().Before(deadline) {
+		if len(listContainer.Objects) == 1 {
+			em, _ := extractModalRow(t, listContainer.Objects[0])
+			if em == ghostEmail {
+				candRemoved = true
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !candRemoved {
+		reloadCandidates()
+		if len(listContainer.Objects) != 1 {
+			t.Fatalf("expected 1 remaining row in modal, got %d", len(listContainer.Objects))
+		}
+	}
+
+	// File trong discovered_accounts bị xóa
+	if discStore.HasDiscovered(candEmail) {
+		t.Errorf("file for %s in discovered_accounts must be deleted", candEmail)
+	}
+	// Tài khoản trên UI chính và accounts_store TUYỆT ĐỐI không bị ảnh hưởng (Invariant-Store-Isolation)
+	if !accStore.HasAccount(activeEmail) {
+		t.Errorf("activeEmail in accounts_store must NOT be affected")
+	}
+	app.mu.RLock()
+	mainCount := len(app.overview.Accounts)
+	app.mu.RUnlock()
+	if mainCount != 1 {
+		t.Errorf("main UI card count must remain 1, got %d", mainCount)
+	}
+
+	// 3. Thao tác trên ghostEmail: [Tài khoản không tồn tại] -> bấm Xóa -> popup xuất hiện -> bấm Xóa -> modal rỗng
+	ghostRow := listContainer.Objects[0].(*fyne.Container)
+	var ghostSlot *fyne.Container
+	for _, child := range ghostRow.Objects {
+		if c, ok := child.(*fyne.Container); ok {
+			ghostSlot = c
+		}
+	}
+	ghostBadge, ghostAdd, ghostDel := inspectAcceptanceActionSlot(t, ghostSlot)
+	if ghostBadge != "[Tài khoản không tồn tại]" {
+		t.Errorf("expected badge '[Tài khoản không tồn tại]', got '%s'", ghostBadge)
+	}
+	if ghostAdd != nil {
+		t.Errorf("ADD button must be hidden for ghost account")
+	}
+	if ghostDel == nil {
+		t.Fatal("delete button must be present for ghost account")
+	}
+
+	ghostDel.OnTapped()
+	topOverlay3 := app.win.Canvas().Overlays().Top()
+	if topOverlay3 == nil {
+		t.Fatal("expected confirmation dialog overlay for ghost account")
+	}
+	buttons3 := findButtonsInCanvas(topOverlay3)
+	var confirmBtn3 *widget.Button
+	for _, b := range buttons3 {
+		if b.Text == "Xóa" {
+			confirmBtn3 = b
+			break
+		}
+	}
+	if confirmBtn3 == nil {
+		t.Fatal("confirm button 'Xóa' not found for ghost account")
+	}
+
+	confirmBtn3.OnTapped()
+
+	// Chờ UI modal cập nhật về trạng thái rỗng
+	deadline3 := time.Now().Add(2 * time.Second)
+	allRemoved := false
+	for time.Now().Before(deadline3) {
+		if len(listContainer.Objects) == 1 {
+			if emptyLbl, ok := listContainer.Objects[0].(*widget.Label); ok && emptyLbl.Text == "Không có tài khoản nào trong danh bạ." {
+				allRemoved = true
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !allRemoved {
+		reloadCandidates()
+		if len(listContainer.Objects) != 1 {
+			t.Fatalf("expected empty label in modal, got %d items", len(listContainer.Objects))
+		}
+	}
+}

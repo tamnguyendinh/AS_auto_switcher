@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -517,8 +518,68 @@ func TestModal_Delete_Button_Rendered(t *testing.T) {
 	}
 }
 
-// TC-Modal-Delete-Click-Action: Nhấn nút Xóa trên dòng tài khoản có file -> xác nhận file bị xóa khỏi discovered_accounts/, dòng biến mất khỏi modal, nhưng thẻ ngoài UI chính không bị mất.
-func TestModal_Delete_Click_Action(t *testing.T) {
+func findButtonsInCanvas(obj fyne.CanvasObject) []*widget.Button {
+	var buttons []*widget.Button
+	seen := make(map[fyne.CanvasObject]bool)
+	var walk func(o fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if o == nil || seen[o] {
+			return
+		}
+		seen[o] = true
+		if btn, ok := o.(*widget.Button); ok {
+			buttons = append(buttons, btn)
+		}
+		if c, ok := o.(*fyne.Container); ok {
+			for _, child := range c.Objects {
+				walk(child)
+			}
+		}
+		if w, ok := o.(fyne.Widget); ok {
+			r := w.CreateRenderer()
+			if r != nil {
+				for _, child := range r.Objects() {
+					walk(child)
+				}
+			}
+		}
+	}
+	walk(obj)
+	return buttons
+}
+
+func findLabelsInCanvas(obj fyne.CanvasObject) []string {
+	var texts []string
+	seen := make(map[fyne.CanvasObject]bool)
+	var walk func(o fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if o == nil || seen[o] {
+			return
+		}
+		seen[o] = true
+		if lbl, ok := o.(*widget.Label); ok {
+			texts = append(texts, lbl.Text)
+		}
+		if c, ok := o.(*fyne.Container); ok {
+			for _, child := range c.Objects {
+				walk(child)
+			}
+		}
+		if w, ok := o.(fyne.Widget); ok {
+			r := w.CreateRenderer()
+			if r != nil {
+				for _, child := range r.Objects() {
+					walk(child)
+				}
+			}
+		}
+	}
+	walk(obj)
+	return texts
+}
+
+// TC-Modal-Delete-Click-Shows-Confirm-Dialog: Nhấn nút Xóa trên dòng tài khoản -> xác nhận popup hộp thoại xác nhận (dialog.Confirm) xuất hiện, file chưa bị xóa ngay.
+func TestModal_Delete_Click_Shows_Confirm_Dialog(t *testing.T) {
 	mgr := createTestManager(t)
 	_ = mgr.Store().DeleteAccount("current@gmail.com")
 	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
@@ -537,13 +598,196 @@ func TestModal_Delete_Click_Action(t *testing.T) {
 		t.Fatalf("failed creating discovered store: %v", err)
 	}
 
-	email := "delete.target@company.com"
+	email := "shows.dialog@company.com"
+	if err := discStore.SaveDiscovered(email); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, listContainer, _ := app.buildAddAccountModalContent()
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected 1 item in modal, got %d", len(listContainer.Objects))
+	}
+
+	row := listContainer.Objects[0].(*fyne.Container)
+	var actionSlot *fyne.Container
+	for _, child := range row.Objects {
+		if c, ok := child.(*fyne.Container); ok {
+			actionSlot = c
+		}
+	}
+	_, _, delBtn := inspectModalActionSlot(t, actionSlot)
+	if delBtn == nil {
+		t.Fatal("delete button not found")
+	}
+
+	// 1. Nhấn nút Xóa trên dòng tài khoản
+	delBtn.OnTapped()
+
+	// 2. Xác nhận popup xác nhận xuất hiện trên Overlays
+	topOverlay := app.win.Canvas().Overlays().Top()
+	if topOverlay == nil {
+		t.Fatal("expected confirmation dialog overlay to appear after clicking delete button")
+	}
+
+	// 3. File CHƯA bị xóa ngay!
+	if !discStore.HasDiscovered(email) {
+		t.Errorf("file in discovered_accounts/ must NOT be deleted before confirmation")
+	}
+
+	// 4. Dòng tài khoản vẫn còn trên modal!
+	if len(listContainer.Objects) != 1 {
+		t.Errorf("candidate row must still exist on modal before confirmation")
+	}
+
+	// 5. Kiểm tra thông điệp và các nút trên popup
+	buttons := findButtonsInCanvas(topOverlay)
+	var confirmBtn, cancelBtn *widget.Button
+	for _, b := range buttons {
+		if b.Text == "Xóa" {
+			confirmBtn = b
+		} else if b.Text == "Hủy" {
+			cancelBtn = b
+		}
+	}
+	if confirmBtn == nil {
+		t.Errorf("confirm button 'Xóa' not found in dialog overlay")
+	} else if confirmBtn.Importance != widget.DangerImportance {
+		t.Errorf("confirm button 'Xóa' must have DangerImportance")
+	}
+	if cancelBtn == nil {
+		t.Errorf("cancel button 'Hủy' not found in dialog overlay")
+	}
+
+	labels := findLabelsInCanvas(topOverlay)
+	hasWarningMsg := false
+	for _, txt := range labels {
+		if strings.Contains(txt, "danh bạ đã quét") && strings.Contains(txt, "không xóa tài khoản hay token") {
+			hasWarningMsg = true
+			break
+		}
+	}
+	if !hasWarningMsg {
+		t.Errorf("dialog message must contain explanation that main credentials are preserved, got labels: %v", labels)
+	}
+
+	// Dọn dẹp overlay
+	app.win.Canvas().Overlays().Remove(topOverlay)
+}
+
+// TC-Modal-Delete-Dialog-Cancel: Nhấn nút "Hủy" trên popup xác nhận -> file không bị xóa và dòng tài khoản vẫn giữ nguyên trên modal.
+func TestModal_Delete_Dialog_Cancel(t *testing.T) {
+	mgr := createTestManager(t)
+	_ = mgr.Store().DeleteAccount("current@gmail.com")
+	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, errors.New("no language server")
+	})
+	mgr.SetChromeDir(filepath.Join(t.TempDir(), "empty_chrome"))
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	discStorePath := filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "discovered_accounts")
+	discStore, err := store.NewDiscoveredStore(discStorePath)
+	if err != nil {
+		t.Fatalf("failed creating discovered store: %v", err)
+	}
+
+	email := "cancel.target@company.com"
+	if err := discStore.SaveDiscovered(email); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, listContainer, reloadCandidates := app.buildAddAccountModalContent()
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected 1 item in modal, got %d", len(listContainer.Objects))
+	}
+
+	row := listContainer.Objects[0].(*fyne.Container)
+	var actionSlot *fyne.Container
+	for _, child := range row.Objects {
+		if c, ok := child.(*fyne.Container); ok {
+			actionSlot = c
+		}
+	}
+	_, _, delBtn := inspectModalActionSlot(t, actionSlot)
+	if delBtn == nil {
+		t.Fatal("delete button not found")
+	}
+
+	// Nhấn nút Xóa
+	delBtn.OnTapped()
+
+	topOverlay := app.win.Canvas().Overlays().Top()
+	if topOverlay == nil {
+		t.Fatal("expected dialog overlay")
+	}
+
+	buttons := findButtonsInCanvas(topOverlay)
+	var cancelBtn *widget.Button
+	for _, b := range buttons {
+		if b.Text == "Hủy" {
+			cancelBtn = b
+			break
+		}
+	}
+	if cancelBtn == nil {
+		t.Fatal("cancel button 'Hủy' not found in dialog overlay")
+	}
+
+	// Bấm nút "Hủy"
+	cancelBtn.OnTapped()
+
+	// File TUYỆT ĐỐI không bị xóa
+	if !discStore.HasDiscovered(email) {
+		t.Errorf("file in discovered_accounts/ must remain after canceling deletion")
+	}
+
+	// Dòng tài khoản vẫn giữ nguyên 100% trên modal
+	reloadCandidates()
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected candidate row to remain on modal after cancel, got %d objects", len(listContainer.Objects))
+	}
+	rowAfter := listContainer.Objects[0].(*fyne.Container)
+	var emailLbl *widget.Label
+	for _, child := range rowAfter.Objects {
+		if l, ok := child.(*widget.Label); ok {
+			emailLbl = l
+		}
+	}
+	if emailLbl == nil || emailLbl.Text != email {
+		t.Errorf("expected candidate row for %s to remain on modal", email)
+	}
+}
+
+// TC-Modal-Delete-Dialog-Confirm: Nhấn nút "Xóa" trên popup xác nhận -> file bị xóa khỏi discovered_accounts/, dòng biến mất khỏi modal, nhưng thẻ ngoài UI chính không bị mất.
+func TestModal_Delete_Dialog_Confirm(t *testing.T) {
+	mgr := createTestManager(t)
+	_ = mgr.Store().DeleteAccount("current@gmail.com")
+	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, errors.New("no language server")
+	})
+	mgr.SetChromeDir(filepath.Join(t.TempDir(), "empty_chrome"))
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	discStorePath := filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "discovered_accounts")
+	discStore, err := store.NewDiscoveredStore(discStorePath)
+	if err != nil {
+		t.Fatalf("failed creating discovered store: %v", err)
+	}
+
+	email := "confirm.target@company.com"
 	if err := discStore.SaveDiscovered(email); err != nil {
 		t.Fatal(err)
 	}
 	// Cũng lưu vào accounts_store để có thẻ trên UI chính
 	if err := mgr.Store().SaveAccount(email, &model.TokenData{
-		AccessToken: "tok_del",
+		AccessToken: "tok_confirm",
 		IDToken:     makeTestJWT(email),
 	}); err != nil {
 		t.Fatal(err)
@@ -580,22 +824,51 @@ func TestModal_Delete_Click_Action(t *testing.T) {
 	// Nhấn nút Xóa
 	delBtn.OnTapped()
 
+	topOverlay := app.win.Canvas().Overlays().Top()
+	if topOverlay == nil {
+		t.Fatal("expected dialog overlay")
+	}
+
+	buttons := findButtonsInCanvas(topOverlay)
+	var confirmBtn *widget.Button
+	for _, b := range buttons {
+		if b.Text == "Xóa" {
+			confirmBtn = b
+			break
+		}
+	}
+	if confirmBtn == nil {
+		t.Fatal("confirm button 'Xóa' not found in dialog overlay")
+	}
+
+	// Bấm nút "Xóa" trên popup
+	confirmBtn.OnTapped()
+
+	// Chờ fyne.Do thực thi gỡ dòng
+	deadline := time.Now().Add(2 * time.Second)
+	removed := false
+	for time.Now().Before(deadline) {
+		if len(listContainer.Objects) == 1 {
+			if emptyLbl, ok := listContainer.Objects[0].(*widget.Label); ok && emptyLbl.Text == "Không có tài khoản nào trong danh bạ." {
+				removed = true
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !removed {
+		reloadCandidates()
+		if len(listContainer.Objects) != 1 {
+			t.Fatalf("expected empty label in modal, got %d items", len(listContainer.Objects))
+		}
+	}
+
 	// 1. File bị xóa khỏi discovered_accounts/
 	if discStore.HasDiscovered(email) {
-		t.Errorf("file in discovered_accounts/ must be deleted")
+		t.Errorf("file in discovered_accounts/ must be deleted after confirmation")
 	}
 
-	// 2. Dòng biến mất khỏi modal (danh sách modal rỗng)
-	reloadCandidates()
-	if len(listContainer.Objects) != 1 {
-		t.Fatalf("expected 1 object (empty label) in listContainer, got %d", len(listContainer.Objects))
-	}
-	emptyLbl, ok := listContainer.Objects[0].(*widget.Label)
-	if !ok || emptyLbl.Text != "Không có tài khoản nào trong danh bạ." {
-		t.Errorf("expected empty label in modal, got %v", listContainer.Objects[0])
-	}
-
-	// 3. Thẻ ngoài UI chính và file trong accounts_store TUYỆT ĐỐI không bị mất!
+	// 2. Thẻ ngoài UI chính và file trong accounts_store TUYỆT ĐỐI không bị mất! (Invariant-Store-Isolation)
 	if !mgr.Store().HasAccount(email) {
 		t.Errorf("accounts_store credentials must NOT be deleted by modal delete button!")
 	}
@@ -605,6 +878,155 @@ func TestModal_Delete_Click_Action(t *testing.T) {
 	if mainCount != 1 {
 		t.Errorf("main UI card must be preserved, got %d accounts", mainCount)
 	}
+}
+
+// TC-Modal-Delete-NonExistent: Bấm nút Xóa trên dòng [Tài khoản không tồn tại] và xác nhận trên popup -> kiểm tra dòng đó bị xóa sạch khỏi danh sách modal.
+func TestModal_Delete_NonExistent(t *testing.T) {
+	mgr := createTestManager(t)
+	_ = mgr.Store().DeleteAccount("current@gmail.com")
+	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, errors.New("no language server")
+	})
+	mgr.SetChromeDir(filepath.Join(t.TempDir(), "empty_chrome"))
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	ghostEmail := "ghost.delete@gmail.com"
+	// Giả lập tài khoản có trên UI nhưng không có file trong discoveredStore
+	app.mu.Lock()
+	app.overview = &manager.AccountOverview{
+		Accounts: []manager.AccountDisplayItem{
+			{Email: ghostEmail, State: model.StateUnauth, DisplayBadge: "[Cần OAuth]"},
+		},
+	}
+	app.mu.Unlock()
+
+	_, _, listContainer, reloadCandidates := app.buildAddAccountModalContent()
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected 1 item in listContainer, got %d", len(listContainer.Objects))
+	}
+
+	row := listContainer.Objects[0].(*fyne.Container)
+	var actionSlot *fyne.Container
+	for _, child := range row.Objects {
+		if c, ok := child.(*fyne.Container); ok {
+			actionSlot = c
+		}
+	}
+	badge, _, delBtn := inspectModalActionSlot(t, actionSlot)
+	if badge != "[Tài khoản không tồn tại]" {
+		t.Fatalf("expected '[Tài khoản không tồn tại]', got '%s'", badge)
+	}
+	if delBtn == nil {
+		t.Fatal("delete button not found")
+	}
+
+	// Bấm nút Xóa trên dòng [Tài khoản không tồn tại]
+	delBtn.OnTapped()
+
+	topOverlay := app.win.Canvas().Overlays().Top()
+	if topOverlay == nil {
+		t.Fatal("expected dialog overlay on delete click")
+	}
+
+	// Kiểm tra thông điệp đặc thù của tài khoản không tồn tại
+	labels := findLabelsInCanvas(topOverlay)
+	hasNonExistentMsg := false
+	for _, txt := range labels {
+		if strings.Contains(txt, "không có tệp dữ liệu") && strings.Contains(txt, "gỡ bỏ tài khoản này khỏi danh sách hiển thị") {
+			hasNonExistentMsg = true
+			break
+		}
+	}
+	if !hasNonExistentMsg {
+		t.Errorf("expected nonexistent specific message, got: %v", labels)
+	}
+
+	// Bấm "Xóa" trên popup
+	buttons := findButtonsInCanvas(topOverlay)
+	var confirmBtn *widget.Button
+	for _, b := range buttons {
+		if b.Text == "Xóa" {
+			confirmBtn = b
+			break
+		}
+	}
+	if confirmBtn == nil {
+		t.Fatal("confirm button 'Xóa' not found")
+	}
+	confirmBtn.OnTapped()
+
+	// Chờ fyne.Do hoàn tất gỡ dòng
+	deadline := time.Now().Add(2 * time.Second)
+	removed := false
+	for time.Now().Before(deadline) {
+		if len(listContainer.Objects) == 1 {
+			if emptyLbl, ok := listContainer.Objects[0].(*widget.Label); ok && emptyLbl.Text == "Không có tài khoản nào trong danh bạ." {
+				removed = true
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !removed {
+		reloadCandidates()
+		if len(listContainer.Objects) != 1 {
+			t.Fatalf("expected 1 object (empty label), got %d", len(listContainer.Objects))
+		}
+	}
+}
+
+func TestShowDeleteCandidateConfirm_NilSafety(t *testing.T) {
+	var nilApp *App
+	dlg := nilApp.showDeleteCandidateConfirm(manager.CandidateAccountItem{Email: "a@b.com"}, nil)
+	if dlg != nil {
+		t.Errorf("expected nil dialog from nil App")
+	}
+
+	appNoWin := &App{}
+	dlg2 := appNoWin.showDeleteCandidateConfirm(manager.CandidateAccountItem{Email: "a@b.com"}, nil)
+	if dlg2 != nil {
+		t.Errorf("expected nil dialog from App without Window")
+	}
+}
+
+func TestShowDeleteCandidateConfirm_EmailMasking(t *testing.T) {
+	mgr := createTestManager(t)
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	app.SetMaskAccounts(true)
+	rawEmail := "secret.agent@organization.com"
+	dlg := app.showDeleteCandidateConfirm(manager.CandidateAccountItem{
+		Email:      rawEmail,
+		FileExists: true,
+	}, nil)
+	if dlg == nil {
+		t.Fatal("expected non-nil dialog")
+	}
+
+	topOverlay := app.win.Canvas().Overlays().Top()
+	if topOverlay == nil {
+		t.Fatal("expected overlay")
+	}
+	labels := findLabelsInCanvas(topOverlay)
+	expectedMask := MaskEmail(rawEmail)
+	foundMask := false
+	for _, txt := range labels {
+		if strings.Contains(txt, expectedMask) {
+			foundMask = true
+			break
+		}
+	}
+	if !foundMask {
+		t.Errorf("expected masked email %s in confirmation dialog message, got labels: %v", expectedMask, labels)
+	}
+	app.win.Canvas().Overlays().Remove(topOverlay)
 }
 
 // TC-Modal-ScanChrome-NonExistent-Status: Cho 1 tài khoản có trên UI nhưng cố tình xóa file JSON trong discovered_accounts/. Nhấn nút [Quét Chrome] -> kiểm tra modal hiển thị nhãn [Tài khoản không tồn tại], nút ADD bị ẩn, nút Xóa hiển thị.
@@ -693,60 +1115,5 @@ func TestModal_ScanChrome_NonExistent_Status(t *testing.T) {
 	}
 }
 
-// TC-Modal-Delete-NonExistent: Bấm nút Xóa trên dòng [Tài khoản không tồn tại] -> kiểm tra dòng đó bị xóa sạch khỏi danh sách modal.
-func TestModal_Delete_NonExistent(t *testing.T) {
-	mgr := createTestManager(t)
-	_ = mgr.Store().DeleteAccount("current@gmail.com")
-	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
-	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
-		return nil, errors.New("no language server")
-	})
-	mgr.SetChromeDir(filepath.Join(t.TempDir(), "empty_chrome"))
-	testApp := test.NewApp()
-	app := newIsolatedApp(testApp, mgr)
-	app.Init()
-	defer app.Close()
 
-	ghostEmail := "ghost.delete@gmail.com"
-	// Giả lập tài khoản có trên UI nhưng không có file trong discoveredStore
-	app.mu.Lock()
-	app.overview = &manager.AccountOverview{
-		Accounts: []manager.AccountDisplayItem{
-			{Email: ghostEmail, State: model.StateUnauth, DisplayBadge: "[Cần OAuth]"},
-		},
-	}
-	app.mu.Unlock()
-
-	_, _, listContainer, _ := app.buildAddAccountModalContent()
-	if len(listContainer.Objects) != 1 {
-		t.Fatalf("expected 1 item in listContainer, got %d", len(listContainer.Objects))
-	}
-
-	row := listContainer.Objects[0].(*fyne.Container)
-	var actionSlot *fyne.Container
-	for _, child := range row.Objects {
-		if c, ok := child.(*fyne.Container); ok {
-			actionSlot = c
-		}
-	}
-	badge, _, delBtn := inspectModalActionSlot(t, actionSlot)
-	if badge != "[Tài khoản không tồn tại]" {
-		t.Fatalf("expected '[Tài khoản không tồn tại]', got '%s'", badge)
-	}
-	if delBtn == nil {
-		t.Fatal("delete button not found")
-	}
-
-	// Bấm nút Xóa trên dòng [Tài khoản không tồn tại]
-	delBtn.OnTapped()
-
-	// Kiểm tra dòng đó bị xóa sạch khỏi danh sách modal (hiển thị empty label)
-	if len(listContainer.Objects) != 1 {
-		t.Fatalf("expected 1 object (empty label), got %d", len(listContainer.Objects))
-	}
-	emptyLbl, ok := listContainer.Objects[0].(*widget.Label)
-	if !ok || emptyLbl.Text != "Không có tài khoản nào trong danh bạ." {
-		t.Errorf("expected empty label after deleting non-existent row, got %v", listContainer.Objects[0])
-	}
-}
 

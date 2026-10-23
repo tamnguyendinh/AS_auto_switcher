@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -67,12 +68,11 @@ func (a *App) buildAddAccountModalContent() (contentBox *fyne.Container, scanBtn
 			emailLbl.Truncation = fyne.TextTruncateEllipsis
 
 			deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-				norm := strings.ToLower(strings.TrimSpace(candItem.Email))
-				dismissedAccounts[norm] = true
-				if candItem.FileExists {
-					_ = a.mgr.DeleteDiscoveredAccount(candItem.Email)
-				}
-				reloadCandidates()
+				a.showDeleteCandidateConfirm(candItem, func() {
+					norm := strings.ToLower(strings.TrimSpace(candItem.Email))
+					dismissedAccounts[norm] = true
+					reloadCandidates()
+				})
 			})
 			deleteBtn.Importance = widget.LowImportance
 			compactDel := compactButton(deleteBtn)
@@ -181,4 +181,47 @@ func (a *App) ShowAddAccountModal() {
 	d := dialog.NewCustom("Thêm tài khoản", "Đóng", contentBox, a.win)
 	d.Resize(fyne.NewSize(460, 340))
 	d.Show()
+}
+
+// showDeleteCandidateConfirm displays a confirmation dialog before deleting a candidate account.
+func (a *App) showDeleteCandidateConfirm(cand manager.CandidateAccountItem, onConfirmed func()) *dialog.ConfirmDialog {
+	if a == nil || a.win == nil {
+		return nil
+	}
+
+	displayEmail := cand.Email
+	if a.IsMaskAccounts() {
+		displayEmail = MaskEmail(cand.Email)
+	}
+
+	title := "Xác nhận xóa tài khoản"
+	msg := fmt.Sprintf("Bạn có chắc chắn muốn xóa tài khoản %s khỏi danh bạ đã quét không?\n\n(Lưu ý: Thao tác này chỉ xóa dữ liệu trong danh bạ khám phá, không xóa tài khoản hay token trên màn hình chính).", displayEmail)
+
+	if !cand.FileExists {
+		msg = fmt.Sprintf("Tài khoản %s không có tệp dữ liệu trên hệ thống.\nBạn có muốn gỡ bỏ tài khoản này khỏi danh sách hiển thị không?", displayEmail)
+	}
+
+	confirmDlg := dialog.NewConfirm(
+		title,
+		msg,
+		func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+			if cand.FileExists && a.mgr != nil {
+				_ = a.mgr.DeleteDiscoveredAccount(cand.Email)
+			}
+			fyne.Do(func() {
+				if onConfirmed != nil {
+					onConfirmed()
+				}
+			})
+		},
+		a.win,
+	)
+	confirmDlg.SetConfirmImportance(widget.DangerImportance)
+	confirmDlg.SetConfirmText("Xóa")
+	confirmDlg.SetDismissText("Hủy")
+	confirmDlg.Show()
+	return confirmDlg
 }
