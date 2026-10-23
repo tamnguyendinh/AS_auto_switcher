@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"antigravity-switch/internal/automation"
@@ -91,6 +92,30 @@ func extractModalRow(t *testing.T, obj fyne.CanvasObject) (string, *fyne.Contain
 		}
 	}
 	return email, actionSlot
+}
+
+// Helper to extract badge text, add button, and delete button from an actionSlot container
+func inspectAcceptanceActionSlot(t *testing.T, slot *fyne.Container) (badgeText string, addBtn *widget.Button, deleteBtn *widget.Button) {
+	t.Helper()
+	if slot == nil {
+		t.Fatal("actionSlot is nil")
+	}
+	for _, obj := range slot.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			for _, inner := range c.Objects {
+				if txt, ok := inner.(*canvas.Text); ok {
+					badgeText = txt.Text
+				} else if btn, ok := inner.(*widget.Button); ok {
+					if btn.Icon == theme.DeleteIcon() || btn.Text == "" {
+						deleteBtn = btn
+					} else if btn.Text == "ADD" {
+						addBtn = btn
+					}
+				}
+			}
+		}
+	}
+	return
 }
 
 // =============================================================================
@@ -233,47 +258,44 @@ func TestAcceptance_TC02_OpenAddModal_ThreeStates(t *testing.T) {
 		rowsMap[em] = slot
 	}
 
-	// 1. Dòng [✔ Đã OAuth]
+	// 1. Dòng [✔ Đã OAuth] + Nút Xóa
 	slotOAuth := rowsMap[oauthEmail]
-	if slotOAuth == nil || len(slotOAuth.Objects) != 1 {
-		t.Fatalf("expected 1 badge in actionSlot for %s", oauthEmail)
+	badgeOAuth, addOAuth, delOAuth := inspectAcceptanceActionSlot(t, slotOAuth)
+	if badgeOAuth != "[✔ Đã OAuth]" {
+		t.Fatalf("expected badge '[✔ Đã OAuth]' for %s, got '%s'", oauthEmail, badgeOAuth)
 	}
-	badgeOAuth, ok := slotOAuth.Objects[0].(*canvas.Text)
-	if !ok || badgeOAuth.Text != "[✔ Đã OAuth]" {
-		t.Fatalf("expected badge '[✔ Đã OAuth]' for %s, got %v", oauthEmail, slotOAuth.Objects[0])
+	if addOAuth != nil {
+		t.Fatalf("expected no ADD button for %s", oauthEmail)
+	}
+	if delOAuth == nil || delOAuth.Icon != theme.DeleteIcon() {
+		t.Fatalf("expected delete button for %s", oauthEmail)
 	}
 
-	// 2. Dòng [Đã add]
+	// 2. Dòng [Đã add] + Nút Xóa
 	slotAdded := rowsMap[addedEmail]
-	if slotAdded == nil || len(slotAdded.Objects) != 1 {
-		t.Fatalf("expected 1 badge in actionSlot for %s", addedEmail)
+	badgeAdded, addAdded, delAdded := inspectAcceptanceActionSlot(t, slotAdded)
+	if badgeAdded != "[Đã add]" {
+		t.Fatalf("expected badge '[Đã add]' for %s, got '%s'", addedEmail, badgeAdded)
 	}
-	badgeAdded, ok := slotAdded.Objects[0].(*canvas.Text)
-	if !ok || badgeAdded.Text != "[Đã add]" {
-		t.Fatalf("expected badge '[Đã add]' for %s, got %v", addedEmail, slotAdded.Objects[0])
+	if addAdded != nil {
+		t.Fatalf("expected no ADD button for %s", addedEmail)
+	}
+	if delAdded == nil || delAdded.Icon != theme.DeleteIcon() {
+		t.Fatalf("expected delete button for %s", addedEmail)
 	}
 
-	// 3. 3 dòng [Cần OAuth] + [ + ADD ]
+	// 3. 3 dòng [Cần OAuth] + [ + ADD ] + Nút Xóa
 	for _, rawEm := range rawEmails {
 		slotRaw := rowsMap[rawEm]
-		if slotRaw == nil || len(slotRaw.Objects) != 2 {
-			t.Fatalf("expected 2 elements (badge + ADD button) for %s, got %d", rawEm, len(slotRaw.Objects))
+		badgeRaw, addRaw, delRaw := inspectAcceptanceActionSlot(t, slotRaw)
+		if badgeRaw != "[Cần OAuth]" {
+			t.Fatalf("expected '[Cần OAuth]' for %s, got '%s'", rawEm, badgeRaw)
 		}
-		centerBadge, ok := slotRaw.Objects[0].(*fyne.Container)
-		if !ok || len(centerBadge.Objects) < 1 {
-			t.Fatalf("expected center badge container for %s", rawEm)
+		if addRaw == nil || addRaw.Text != "ADD" {
+			t.Fatalf("expected ADD button for %s", rawEm)
 		}
-		txtBadge, ok := centerBadge.Objects[0].(*canvas.Text)
-		if !ok || txtBadge.Text != "[Cần OAuth]" {
-			t.Fatalf("expected '[Cần OAuth]' for %s, got %v", rawEm, centerBadge.Objects[0])
-		}
-		compactBtn, ok := slotRaw.Objects[1].(*fyne.Container)
-		if !ok || len(compactBtn.Objects) < 1 {
-			t.Fatalf("expected compact button container for %s", rawEm)
-		}
-		addBtn, ok := compactBtn.Objects[0].(*widget.Button)
-		if !ok || addBtn.Text != "ADD" {
-			t.Fatalf("expected ADD button for %s, got %v", rawEm, compactBtn.Objects[0])
+		if delRaw == nil || delRaw.Icon != theme.DeleteIcon() {
+			t.Fatalf("expected delete button for %s", rawEm)
 		}
 	}
 }
@@ -304,23 +326,27 @@ func TestAcceptance_TC03_TapAddButton_InPlaceMutationAndOverviewCard(t *testing.
 	}
 
 	_, actionSlot := extractModalRow(t, listContainer.Objects[0])
-	if actionSlot == nil || len(actionSlot.Objects) != 2 {
-		t.Fatal("actionSlot with badge and button not found")
+	_, addBtn, delBtn := inspectAcceptanceActionSlot(t, actionSlot)
+	if addBtn == nil {
+		t.Fatal("ADD button not found")
 	}
-
-	compactBtn := actionSlot.Objects[1].(*fyne.Container)
-	addBtn := compactBtn.Objects[0].(*widget.Button)
+	if delBtn == nil {
+		t.Fatal("delete button not found")
+	}
 
 	// Nhấn nút [ + ADD ] tại email test@gmail.com
 	addBtn.OnTapped()
 
-	// 1. Nhãn [Cần OAuth] đổi thành [Đã add], nút [ + ADD ] biến mất
-	if len(actionSlot.Objects) != 1 {
-		t.Fatalf("expected exactly 1 object in actionSlot after click, got %d", len(actionSlot.Objects))
+	// 1. Nhãn [Cần OAuth] đổi thành [Đã add], nút [ + ADD ] biến mất, nút Xóa vẫn còn
+	badgeAfter, addAfter, delAfter := inspectAcceptanceActionSlot(t, actionSlot)
+	if badgeAfter != "[Đã add]" {
+		t.Fatalf("expected badge '[Đã add]', got '%s'", badgeAfter)
 	}
-	doneBadge, ok := actionSlot.Objects[0].(*canvas.Text)
-	if !ok || doneBadge.Text != "[Đã add]" {
-		t.Fatalf("expected badge '[Đã add]', got %v", actionSlot.Objects[0])
+	if addAfter != nil {
+		t.Fatalf("expected ADD button to disappear after click")
+	}
+	if delAfter == nil {
+		t.Fatalf("expected delete button to remain after ADD clicked")
 	}
 
 	// 2. File discovered_accounts/ ghi nhận Added: true
@@ -637,12 +663,15 @@ func TestAcceptance_TC06_CompleteOAuthAfterAdd(t *testing.T) {
 		t.Fatalf("expected 1 candidate in modal, got %d", len(listContainer.Objects))
 	}
 	_, actionSlot := extractModalRow(t, listContainer.Objects[0])
-	if actionSlot == nil || len(actionSlot.Objects) != 1 {
-		t.Fatalf("expected 1 badge in actionSlot, got %d", len(actionSlot.Objects))
+	badge, addOAuth, delOAuth := inspectAcceptanceActionSlot(t, actionSlot)
+	if badge != "[✔ Đã OAuth]" {
+		t.Fatalf("expected badge '[✔ Đã OAuth]' in modal, got '%s'", badge)
 	}
-	badge, ok := actionSlot.Objects[0].(*canvas.Text)
-	if !ok || badge.Text != "[✔ Đã OAuth]" {
-		t.Fatalf("expected badge '[✔ Đã OAuth]' in modal, got %v", actionSlot.Objects[0])
+	if addOAuth != nil {
+		t.Fatalf("expected no ADD button for OAuth account in modal")
+	}
+	if delOAuth == nil || delOAuth.Icon != theme.DeleteIcon() {
+		t.Fatalf("expected delete button for OAuth account in modal")
 	}
 }
 

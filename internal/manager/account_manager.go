@@ -74,6 +74,7 @@ type AccountManager struct {
 	wincredReader   func() (*model.TokenData, error)
 	wincredWriter   func(token *model.TokenData) error
 	oauthRefresher  connector.OAuthRefresher
+	trackedAccounts map[string]bool
 }
 
 // NewAccountManager creates a fully initialized AccountManager with default production dependencies.
@@ -114,6 +115,7 @@ func NewAccountManager(accStore *store.AccountStore, sessionReloader *reloader.S
 			}
 			return connector.NewClient(proc), nil
 		},
+		trackedAccounts: make(map[string]bool),
 	}
 
 	return mgr, nil
@@ -435,6 +437,16 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 	})
 
 	overview := &AccountOverview{ActiveEmail: activeEmail, Accounts: accounts, Warnings: warnings}
+	m.mu.Lock()
+	if m.trackedAccounts == nil {
+		m.trackedAccounts = make(map[string]bool)
+	}
+	for _, item := range accounts {
+		if item.State == model.StateUnauth || !item.HasToken {
+			m.trackedAccounts[item.Email] = true
+		}
+	}
+	m.mu.Unlock()
 	if finder != nil {
 		if client, err := finder(ctx); err == nil && client != nil {
 			overview.LanguageServerRunning = true
@@ -471,17 +483,23 @@ func (m *AccountManager) ScanChromeAccounts() ([]string, error) {
 	return scannedEmails, nil
 }
 
-// CandidateAccountItem represents a discovered account candidate with token and added state.
+// CandidateAccountItem represents a discovered account candidate with token, added, and file existence state.
 type CandidateAccountItem struct {
-	Email    string
-	HasToken bool
-	Added    bool
+	Email      string
+	HasToken   bool
+	Added      bool
+	FileExists bool // true: file JSON trong discovered_accounts tồn tại; false: không tồn tại
 }
 
-// GetCandidateAccounts returns all discovered accounts enriched with token and added state.
-func (m *AccountManager) GetCandidateAccounts() ([]CandidateAccountItem, error) {
+// GetCandidateAccounts returns all discovered accounts enriched with token, added, and file existence state.
+// It detects non-existent accounts that appear in UI/management tracking but lack a JSON file on disk.
+func (m *AccountManager) GetCandidateAccounts(knownEmails ...string) ([]CandidateAccountItem, error) {
 	m.mu.RLock()
 	st, discovered := m.store, m.discoveredStore
+	tracked := make(map[string]bool, len(m.trackedAccounts))
+	for k, v := range m.trackedAccounts {
+		tracked[k] = v
+	}
 	m.mu.RUnlock()
 
 	if discovered == nil {
@@ -494,8 +512,10 @@ func (m *AccountManager) GetCandidateAccounts() ([]CandidateAccountItem, error) 
 	}
 
 	storedSet := make(map[string]bool)
+	var storedEmails []string
 	if st != nil {
-		if storedEmails, err := st.ListAccounts(); err == nil {
+		if stored, err := st.ListAccounts(); err == nil {
+			storedEmails = stored
 			for _, em := range storedEmails {
 				storedSet[strings.ToLower(strings.TrimSpace(em))] = true
 			}
@@ -503,12 +523,40 @@ func (m *AccountManager) GetCandidateAccounts() ([]CandidateAccountItem, error) 
 	}
 
 	items := make([]CandidateAccountItem, 0, len(records))
+	seen := make(map[string]bool)
 	for _, r := range records {
+		norm := strings.ToLower(strings.TrimSpace(r.Email))
+		seen[norm] = true
 		items = append(items, CandidateAccountItem{
-			Email:    r.Email,
-			HasToken: storedSet[r.Email],
-			Added:    r.Added,
+			Email:      norm,
+			HasToken:   storedSet[norm],
+			Added:      r.Added,
+			FileExists: true,
 		})
+	}
+
+	// Kiểm tra các tài khoản đang tồn tại trên màn hình chính (tracked, known):
+	checkGhost := func(email string) {
+		norm := strings.ToLower(strings.TrimSpace(email))
+		if norm == "" || seen[norm] {
+			return
+		}
+		seen[norm] = true
+		if !discovered.HasDiscovered(norm) {
+			items = append(items, CandidateAccountItem{
+				Email:      norm,
+				HasToken:   storedSet[norm],
+				Added:      true,
+				FileExists: false,
+			})
+		}
+	}
+
+	for em := range tracked {
+		checkGhost(em)
+	}
+	for _, em := range knownEmails {
+		checkGhost(em)
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -525,13 +573,63 @@ func (m *AccountManager) GetCandidateAccounts() ([]CandidateAccountItem, error) 
 
 // AddDiscoveredAccount marks an account as added to the main UI.
 func (m *AccountManager) AddDiscoveredAccount(email string) error {
-	m.mu.RLock()
+	normEmail := strings.ToLower(strings.TrimSpace(email))
+	m.mu.Lock()
+	if m.trackedAccounts == nil {
+		m.trackedAccounts = make(map[string]bool)
+	}
+	m.trackedAccounts[normEmail] = true
 	discovered := m.discoveredStore
-	m.mu.RUnlock()
+	m.mu.Unlock()
+
 	if discovered == nil {
 		return errors.New("discovered store uninitialized")
 	}
-	return discovered.SetDiscoveredAdded(email, true)
+	return discovered.SetDiscoveredAdded(normEmail, true)
+}
+
+// DeleteDiscoveredAccount deletes the discovered account JSON file from discovered_accounts/.
+// It does NOT touch accounts_store/ or main UI active credentials.
+func (m *AccountManager) DeleteDiscoveredAccount(email string) error {
+	normEmail := strings.ToLower(strings.TrimSpace(email))
+	m.mu.Lock()
+	discovered := m.discoveredStore
+	if m.trackedAccounts != nil {
+		delete(m.trackedAccounts, normEmail)
+	}
+	m.mu.Unlock()
+
+	if discovered == nil {
+		return errors.New("discovered store uninitialized")
+	}
+	return discovered.DeleteDiscovered(normEmail)
+}
+
+// TrackAccount registers an account as tracked by the application UI/management.
+func (m *AccountManager) TrackAccount(email string) {
+	normEmail := strings.ToLower(strings.TrimSpace(email))
+	if normEmail == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.trackedAccounts == nil {
+		m.trackedAccounts = make(map[string]bool)
+	}
+	m.trackedAccounts[normEmail] = true
+}
+
+// UntrackAccount unregisters an account from tracked UI accounts.
+func (m *AccountManager) UntrackAccount(email string) {
+	normEmail := strings.ToLower(strings.TrimSpace(email))
+	if normEmail == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.trackedAccounts != nil {
+		delete(m.trackedAccounts, normEmail)
+	}
 }
 
 // SwitchAccount performs a closed-loop hot-swap:

@@ -213,3 +213,46 @@ func (s *DiscoveredStore) ListDiscoveredRecords() ([]DiscoveredAccountEnvelope, 
 	})
 	return records, errors.Join(failures...)
 }
+
+// DeleteDiscovered removes the discovered account JSON file for an email.
+// It is idempotent: if the file does not exist, it returns nil.
+func (s *DiscoveredStore) DeleteDiscovered(email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return ErrInvalidEmail
+	}
+	path, err := SafeAccountPath(s.dir, email)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// HasDiscovered checks if the discovered account JSON file exists on disk.
+func (s *DiscoveredStore) HasDiscovered(email string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return false
+	}
+	path, err := SafeAccountPath(s.dir, email)
+	if err != nil {
+		return false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+

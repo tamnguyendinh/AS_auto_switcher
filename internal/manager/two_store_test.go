@@ -296,4 +296,171 @@ func TestCandidateAccounts_UninitializedStore(t *testing.T) {
 	if err := mgr.AddDiscoveredAccount("test@example.com"); err == nil {
 		t.Error("expected error for uninitialized discovered store in AddDiscoveredAccount")
 	}
+	if err := mgr.DeleteDiscoveredAccount("test@example.com"); err == nil {
+		t.Error("expected error for uninitialized discovered store in DeleteDiscoveredAccount")
+	}
 }
+
+func TestDeleteDiscoveredAccount_Isolation(t *testing.T) {
+	m, root := catalogManager(t)
+	email := "isolated@example.com"
+
+	// 1. Lưu token vào accounts_store/
+	tok := &model.TokenData{
+		AccessToken:  "token_iso",
+		RefreshToken: "ref_iso",
+		IDToken:      makeTestJWT(email),
+	}
+	if err := m.Store().SaveAccount(email, tok); err != nil {
+		t.Fatalf("SaveAccount failed: %v", err)
+	}
+
+	// 2. Lưu vào discoveredStore
+	if err := m.DiscoveredStore().SaveDiscovered(email); err != nil {
+		t.Fatalf("SaveDiscovered failed: %v", err)
+	}
+	discPath := filepath.Join(root, "discovered_accounts", email+".json")
+	accPath := filepath.Join(m.Store().GetStoreDir(), email+".json")
+
+	if _, err := os.Stat(discPath); err != nil {
+		t.Fatalf("discovered file should exist before delete: %v", err)
+	}
+	if _, err := os.Stat(accPath); err != nil {
+		t.Fatalf("accounts_store file should exist before delete: %v", err)
+	}
+
+	// 3. Thực hiện DeleteDiscoveredAccount
+	if err := m.DeleteDiscoveredAccount(email); err != nil {
+		t.Fatalf("DeleteDiscoveredAccount failed: %v", err)
+	}
+
+	// 4. Invariant-Store-Isolation: File trong discovered_accounts bị xóa
+	if _, err := os.Stat(discPath); !os.IsNotExist(err) {
+		t.Fatalf("discovered file must be deleted, got err: %v", err)
+	}
+	if m.DiscoveredStore().HasDiscovered(email) {
+		t.Fatalf("HasDiscovered must return false after delete")
+	}
+
+	// 5. Invariant-Store-Isolation: accounts_store TUYỆT ĐỐI không bị ảnh hưởng!
+	if _, err := os.Stat(accPath); err != nil {
+		t.Fatalf("accounts_store file MUST be preserved, but got: %v", err)
+	}
+	if !m.Store().HasAccount(email) {
+		t.Fatalf("m.Store().HasAccount must return true, credentials must not be deleted!")
+	}
+
+	// UI Overview vẫn hiển thị tài khoản từ accounts_store
+	view, err := m.GetAccountStates(context.Background())
+	if err != nil {
+		t.Fatalf("GetAccountStates failed: %v", err)
+	}
+	var foundInOverview bool
+	for _, acc := range view.Accounts {
+		if acc.Email == email {
+			foundInOverview = true
+			if !acc.HasToken {
+				t.Errorf("expected HasToken=true on main UI card")
+			}
+			break
+		}
+	}
+	if !foundInOverview {
+		t.Fatalf("account %s must still be present on main UI overview", email)
+	}
+}
+
+func TestGetCandidateAccounts_NonExistentDetection(t *testing.T) {
+	m, _ := catalogManager(t)
+
+	tokGhost := "tok_ghost@example.com"
+	unauthGhost := "unauth_ghost@example.com"
+	normalUser := "normal@example.com"
+
+	// 1. tokGhost có trong accounts_store nhưng KHÔNG có file trong discoveredStore
+	tok := &model.TokenData{
+		AccessToken:  "token_ghost",
+		RefreshToken: "ref_ghost",
+		IDToken:      makeTestJWT(tokGhost),
+	}
+	if err := m.Store().SaveAccount(tokGhost, tok); err != nil {
+		t.Fatal(err)
+	}
+	m.TrackAccount(tokGhost)
+
+	// 2. unauthGhost được track trên UI (ví dụ unauth card) nhưng KHÔNG có file trong discoveredStore
+	m.TrackAccount(unauthGhost)
+
+	// 3. normalUser có file hợp lệ trong discoveredStore
+	if err := m.DiscoveredStore().SaveDiscovered(normalUser); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lấy danh sách candidates
+	candidates, err := m.GetCandidateAccounts()
+	if err != nil {
+		t.Fatalf("GetCandidateAccounts failed: %v", err)
+	}
+	if len(candidates) != 3 {
+		t.Fatalf("expected 3 candidates, got %d: %+v", len(candidates), candidates)
+	}
+
+	candMap := make(map[string]CandidateAccountItem)
+	for _, c := range candidates {
+		candMap[c.Email] = c
+	}
+
+	// Kiểm tra tokGhost: FileExists == false, HasToken == true, Added == true
+	cTok, ok := candMap[tokGhost]
+	if !ok {
+		t.Fatalf("candidate %s not found", tokGhost)
+	}
+	if cTok.FileExists {
+		t.Errorf("expected tokGhost FileExists == false, got true")
+	}
+	if !cTok.HasToken {
+		t.Errorf("expected tokGhost HasToken == true")
+	}
+	if !cTok.Added {
+		t.Errorf("expected tokGhost Added == true")
+	}
+
+	// Kiểm tra unauthGhost: FileExists == false, HasToken == false, Added == true
+	cUnauth, ok := candMap[unauthGhost]
+	if !ok {
+		t.Fatalf("candidate %s not found", unauthGhost)
+	}
+	if cUnauth.FileExists {
+		t.Errorf("expected unauthGhost FileExists == false, got true")
+	}
+	if cUnauth.HasToken {
+		t.Errorf("expected unauthGhost HasToken == false")
+	}
+	if !cUnauth.Added {
+		t.Errorf("expected unauthGhost Added == true")
+	}
+
+	// Kiểm tra normalUser: FileExists == true
+	cNormal, ok := candMap[normalUser]
+	if !ok {
+		t.Fatalf("candidate %s not found", normalUser)
+	}
+	if !cNormal.FileExists {
+		t.Errorf("expected normalUser FileExists == true, got false")
+	}
+
+	// Sau khi gọi DeleteDiscoveredAccount trên unauthGhost (gỡ khỏi tracking)
+	if err := m.DeleteDiscoveredAccount(unauthGhost); err != nil {
+		t.Fatal(err)
+	}
+	candidatesAfter, err := m.GetCandidateAccounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range candidatesAfter {
+		if c.Email == unauthGhost {
+			t.Errorf("unauthGhost %s should be removed after DeleteDiscoveredAccount", unauthGhost)
+		}
+	}
+}
+

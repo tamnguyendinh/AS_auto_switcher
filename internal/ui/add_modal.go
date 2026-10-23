@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -9,30 +10,54 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"antigravity-switch/internal/manager"
+	"antigravity-switch/internal/model"
 )
 
 // buildAddAccountModalContent creates and binds the internal UI layout and candidate reloader.
 func (a *App) buildAddAccountModalContent() (contentBox *fyne.Container, scanBtn *widget.Button, listContainer *fyne.Container, reloadCandidates func()) {
 	palette := GetThemePalette(a.currentTheme)
+	dismissedAccounts := make(map[string]bool)
 
 	listContainer = container.NewVBox()
 	scrollContent := container.NewVScroll(container.NewPadded(listContainer))
 	scrollContent.SetMinSize(fyne.NewSize(420, 260))
 
 	reloadCandidates = func() {
-		candidates, err := a.mgr.GetCandidateAccounts()
+		var known []string
+		a.mu.RLock()
+		if a.overview != nil {
+			for _, acc := range a.overview.Accounts {
+				if acc.State == model.StateUnauth || !acc.HasToken {
+					known = append(known, acc.Email)
+				}
+			}
+		}
+		a.mu.RUnlock()
+
+		candidates, err := a.mgr.GetCandidateAccounts(known...)
 		if err != nil {
 			return
 		}
 		listContainer.Objects = nil
-		if len(candidates) == 0 {
+
+		var activeCandidates []manager.CandidateAccountItem
+		for _, cand := range candidates {
+			norm := strings.ToLower(strings.TrimSpace(cand.Email))
+			if !dismissedAccounts[norm] {
+				activeCandidates = append(activeCandidates, cand)
+			}
+		}
+
+		if len(activeCandidates) == 0 {
 			emptyLbl := widget.NewLabelWithStyle("Không có tài khoản nào trong danh bạ.", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
 			listContainer.Add(emptyLbl)
 			listContainer.Refresh()
 			return
 		}
 
-		for _, cand := range candidates {
+		for _, cand := range activeCandidates {
 			candItem := cand // capture
 			emailText := candItem.Email
 			if a.IsMaskAccounts() {
@@ -41,22 +66,45 @@ func (a *App) buildAddAccountModalContent() (contentBox *fyne.Container, scanBtn
 			emailLbl := widget.NewLabel(emailText)
 			emailLbl.Truncation = fyne.TextTruncateEllipsis
 
+			deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+				norm := strings.ToLower(strings.TrimSpace(candItem.Email))
+				dismissedAccounts[norm] = true
+				if candItem.FileExists {
+					_ = a.mgr.DeleteDiscoveredAccount(candItem.Email)
+				}
+				reloadCandidates()
+			})
+			deleteBtn.Importance = widget.LowImportance
+			compactDel := compactButton(deleteBtn)
+
 			var actionSlot *fyne.Container
 
-			if candItem.HasToken {
-				// Trường hợp 1: [✔ Đã OAuth]
+			if !candItem.FileExists {
+				// Trường hợp 4: [Tài khoản không tồn tại] + Nút [Xóa] (Ẩn nút ADD)
+				statusBadge := canvas.NewText("[Tài khoản không tồn tại]", palette.TextMuted)
+				statusBadge.TextSize = 11
+				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
+
+				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactDel)
+
+			} else if candItem.HasToken {
+				// Trường hợp 1: [✔ Đã OAuth] + Nút [Xóa]
 				statusBadge := canvas.NewText("[✔ Đã OAuth]", palette.Success)
 				statusBadge.TextSize = 11
 				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
-				actionSlot = container.NewCenter(statusBadge)
+
+				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactDel)
+
 			} else if candItem.Added {
-				// Trường hợp 3: [Đã add]
+				// Trường hợp 2: [Đã add] + Nút [Xóa]
 				statusBadge := canvas.NewText("[Đã add]", palette.TextMuted)
 				statusBadge.TextSize = 11
 				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
-				actionSlot = container.NewCenter(statusBadge)
+
+				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactDel)
+
 			} else {
-				// Trường hợp 2: [Cần OAuth] + Nút [ + ADD ]
+				// Trường hợp 3: [Cần OAuth] + Nút [ + ADD ] + Nút [Xóa]
 				statusBadge := canvas.NewText("[Cần OAuth]", palette.Warning)
 				statusBadge.TextSize = 11
 				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
@@ -64,11 +112,11 @@ func (a *App) buildAddAccountModalContent() (contentBox *fyne.Container, scanBtn
 				var addBtn *widget.Button
 				addBtn = widget.NewButtonWithIcon("ADD", theme.ContentAddIcon(), func() {
 					if err := a.mgr.AddDiscoveredAccount(candItem.Email); err == nil {
-						// Chuyển đổi tại chỗ: [Cần OAuth] đổi thành [Đã add] và nút ADD biến mất
+						// Chuyển đổi tại chỗ: [Cần OAuth] đổi thành [Đã add] và nút ADD biến mất, giữ nguyên nút Xóa
 						doneBadge := canvas.NewText("[Đã add]", palette.TextMuted)
 						doneBadge.TextSize = 11
 						doneBadge.TextStyle = fyne.TextStyle{Bold: true}
-						actionSlot.Objects = []fyne.CanvasObject{doneBadge}
+						actionSlot.Objects = []fyne.CanvasObject{container.NewCenter(doneBadge), compactDel}
 						actionSlot.Refresh()
 
 						// Nạp ngay thẻ mới lên UI tổng
@@ -84,7 +132,7 @@ func (a *App) buildAddAccountModalContent() (contentBox *fyne.Container, scanBtn
 					}
 				})
 				addBtn.Importance = widget.HighImportance
-				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactButton(addBtn))
+				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactButton(addBtn), compactDel)
 			}
 
 			row := container.NewBorder(nil, nil, nil, actionSlot, emailLbl)

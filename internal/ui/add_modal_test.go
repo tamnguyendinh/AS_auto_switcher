@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -8,10 +11,14 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"antigravity-switch/internal/connector"
+	"antigravity-switch/internal/manager"
 	"antigravity-switch/internal/model"
 	"antigravity-switch/internal/store"
+	"antigravity-switch/internal/wincred"
 )
 
 func TestShowAddAccountModal_NilSafety(t *testing.T) {
@@ -134,76 +141,76 @@ func TestShowAddAccountModal_ThreeCandidateStates(t *testing.T) {
 		rowsByEmail[em] = slot
 	}
 
-	// Verify State 1: user1@company.com -> [✔ Đã OAuth]
+	// Verify State 1: user1@company.com -> [✔ Đã OAuth] + Nút Xóa
 	slot1, ok := rowsByEmail[email1]
 	if !ok || slot1 == nil {
 		t.Fatalf("row for %s not found", email1)
 	}
-	// Center container -> 1 object: *canvas.Text
-	if len(slot1.Objects) != 1 {
-		t.Fatalf("expected 1 object in slot1, got %d", len(slot1.Objects))
+	badge1, add1, del1 := inspectModalActionSlot(t, slot1)
+	if badge1 != "[✔ Đã OAuth]" {
+		t.Errorf("expected [✔ Đã OAuth], got '%s'", badge1)
 	}
-	txt1, ok := slot1.Objects[0].(*canvas.Text)
-	if !ok {
-		t.Fatalf("expected *canvas.Text in slot1, got %T", slot1.Objects[0])
+	if add1 != nil {
+		t.Errorf("expected no ADD button for state 1")
 	}
-	if txt1.Text != "[✔ Đã OAuth]" {
-		t.Errorf("expected [✔ Đã OAuth], got '%s'", txt1.Text)
-	}
-	if txt1.TextSize != 11 || !txt1.TextStyle.Bold {
-		t.Errorf("expected size 11 bold for badge 1")
+	if del1 == nil || del1.Icon != theme.DeleteIcon() {
+		t.Errorf("expected delete button with DeleteIcon for state 1")
 	}
 
-	// Verify State 3: user3@school.edu -> [Đã add]
+	// Verify State 3: user3@school.edu -> [Đã add] + Nút Xóa
 	slot3, ok := rowsByEmail[email3]
 	if !ok || slot3 == nil {
 		t.Fatalf("row for %s not found", email3)
 	}
-	if len(slot3.Objects) != 1 {
-		t.Fatalf("expected 1 object in slot3, got %d", len(slot3.Objects))
+	badge3, add3, del3 := inspectModalActionSlot(t, slot3)
+	if badge3 != "[Đã add]" {
+		t.Errorf("expected [Đã add], got '%s'", badge3)
 	}
-	txt3, ok := slot3.Objects[0].(*canvas.Text)
-	if !ok {
-		t.Fatalf("expected *canvas.Text in slot3, got %T", slot3.Objects[0])
+	if add3 != nil {
+		t.Errorf("expected no ADD button for state 3")
 	}
-	if txt3.Text != "[Đã add]" {
-		t.Errorf("expected [Đã add], got '%s'", txt3.Text)
-	}
-	if txt3.TextSize != 11 || !txt3.TextStyle.Bold {
-		t.Errorf("expected size 11 bold for badge 3")
+	if del3 == nil || del3.Icon != theme.DeleteIcon() {
+		t.Errorf("expected delete button with DeleteIcon for state 3")
 	}
 
-	// Verify State 2: user2@gmail.com -> [Cần OAuth] + ADD button
+	// Verify State 2: user2@gmail.com -> [Cần OAuth] + ADD button + Nút Xóa
 	slot2, ok := rowsByEmail[email2]
 	if !ok || slot2 == nil {
 		t.Fatalf("row for %s not found", email2)
 	}
-	if len(slot2.Objects) != 2 {
-		t.Fatalf("expected 2 objects in slot2 (badge container + compactButton), got %d", len(slot2.Objects))
+	badge2, add2, del2 := inspectModalActionSlot(t, slot2)
+	if badge2 != "[Cần OAuth]" {
+		t.Errorf("expected [Cần OAuth], got '%s'", badge2)
 	}
-	centerBadge, ok := slot2.Objects[0].(*fyne.Container)
-	if !ok || len(centerBadge.Objects) < 1 {
-		t.Fatalf("expected center container for badge in slot2")
+	if add2 == nil || add2.Text != "ADD" || add2.Importance != widget.HighImportance {
+		t.Errorf("expected ADD button with HighImportance for state 2")
 	}
-	txt2, ok := centerBadge.Objects[0].(*canvas.Text)
-	if !ok || txt2.Text != "[Cần OAuth]" {
-		t.Errorf("expected [Cần OAuth], got '%v'", txt2)
+	if del2 == nil || del2.Icon != theme.DeleteIcon() {
+		t.Errorf("expected delete button with DeleteIcon for state 2")
 	}
+}
 
-	compactBtn, ok := slot2.Objects[1].(*fyne.Container)
-	if !ok || len(compactBtn.Objects) < 1 {
-		t.Fatalf("expected compactButton container in slot2")
+func inspectModalActionSlot(t *testing.T, slot *fyne.Container) (badgeText string, addBtn *widget.Button, deleteBtn *widget.Button) {
+	t.Helper()
+	if slot == nil {
+		t.Fatal("actionSlot is nil")
 	}
-	addBtn, ok := compactBtn.Objects[0].(*widget.Button)
-	if !ok {
-		t.Fatalf("expected *widget.Button in compact container, got %T", compactBtn.Objects[0])
+	for _, obj := range slot.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			for _, inner := range c.Objects {
+				if txt, ok := inner.(*canvas.Text); ok {
+					badgeText = txt.Text
+				} else if btn, ok := inner.(*widget.Button); ok {
+					if btn.Icon == theme.DeleteIcon() || btn.Text == "" {
+						deleteBtn = btn
+					} else if btn.Text == "ADD" {
+						addBtn = btn
+					}
+				}
+			}
+		}
 	}
-	if addBtn.Text != "ADD" {
-		t.Errorf("expected ADD button text, got '%s'", addBtn.Text)
-	}
-	if addBtn.Importance != widget.HighImportance {
-		t.Errorf("expected HighImportance for ADD button")
-	}
+	return
 }
 
 func TestShowAddAccountModal_AddActionInPlaceMutationAndOverviewUpdate(t *testing.T) {
@@ -241,22 +248,27 @@ func TestShowAddAccountModal_AddActionInPlaceMutationAndOverviewUpdate(t *testin
 		t.Fatal("actionSlot not found")
 	}
 
-	compactBtn := actionSlot.Objects[1].(*fyne.Container)
-	addBtn := compactBtn.Objects[0].(*widget.Button)
+	_, addBtn, delBtn := inspectModalActionSlot(t, actionSlot)
+	if addBtn == nil {
+		t.Fatal("addBtn not found")
+	}
+	if delBtn == nil {
+		t.Fatal("delBtn not found")
+	}
 
 	// Tap the ADD button
 	addBtn.OnTapped()
 
-	// 1. Verify in-place reaction: actionSlot now has only doneBadge [Đã add]
-	if len(actionSlot.Objects) != 1 {
-		t.Fatalf("expected 1 object in actionSlot after ADD, got %d", len(actionSlot.Objects))
+	// 1. Verify in-place reaction: badge now says [Đã add], ADD button is gone, delete button remains
+	badgeAfter, addAfter, delAfter := inspectModalActionSlot(t, actionSlot)
+	if badgeAfter != "[Đã add]" {
+		t.Errorf("expected '[Đã add]', got '%s'", badgeAfter)
 	}
-	doneBadge, ok := actionSlot.Objects[0].(*canvas.Text)
-	if !ok {
-		t.Fatalf("expected *canvas.Text after ADD, got %T", actionSlot.Objects[0])
+	if addAfter != nil {
+		t.Errorf("expected add button to disappear after click, got %+v", addAfter)
 	}
-	if doneBadge.Text != "[Đã add]" {
-		t.Errorf("expected '[Đã add]', got '%s'", doneBadge.Text)
+	if delAfter == nil {
+		t.Errorf("expected delete button to remain present after ADD clicked")
 	}
 
 	// 2. Verify store persistence: record marked as Added: true
@@ -414,3 +426,327 @@ func TestShowAddAccountModal_DialogDisplayAndOverlay(t *testing.T) {
 		t.Errorf("expected overlays cleared")
 	}
 }
+
+// TC-Modal-Delete-Button-Rendered: Kiểm tra cả 4 trạng thái dòng tài khoản đều render nút Xóa (theme.DeleteIcon()).
+func TestModal_Delete_Button_Rendered(t *testing.T) {
+	mgr := createTestManager(t)
+	_ = mgr.Store().DeleteAccount("current@gmail.com")
+	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, errors.New("no language server")
+	})
+	mgr.SetChromeDir(filepath.Join(t.TempDir(), "empty_chrome"))
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	discStorePath := filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "discovered_accounts")
+	discStore, err := store.NewDiscoveredStore(discStorePath)
+	if err != nil {
+		t.Fatalf("failed creating discovered store: %v", err)
+	}
+
+	// 1. HasToken == true, FileExists == true
+	email1 := "state1@example.com"
+	_ = discStore.SaveDiscovered(email1)
+	_ = mgr.Store().SaveAccount(email1, &model.TokenData{AccessToken: "tok", IDToken: makeTestJWT(email1)})
+
+	// 2. Added == true, FileExists == true
+	email2 := "state2@example.com"
+	_ = discStore.SaveDiscovered(email2)
+	_ = discStore.SetDiscoveredAdded(email2, true)
+
+	// 3. !Added && !HasToken, FileExists == true
+	email3 := "state3@example.com"
+	_ = discStore.SaveDiscovered(email3)
+
+	// 4. FileExists == false (tài khoản không tồn tại trên đĩa)
+	email4 := "state4_ghost@example.com"
+	mgr.TrackAccount(email4)
+
+	_, _, listContainer, _ := app.buildAddAccountModalContent()
+
+	if len(listContainer.Objects) != 4 {
+		t.Fatalf("expected 4 candidate rows, got %d", len(listContainer.Objects))
+	}
+
+	rowsByEmail := make(map[string]*fyne.Container)
+	for _, obj := range listContainer.Objects {
+		row := obj.(*fyne.Container)
+		var email string
+		var slot *fyne.Container
+		for _, child := range row.Objects {
+			if lbl, ok := child.(*widget.Label); ok {
+				email = lbl.Text
+			} else if c, ok := child.(*fyne.Container); ok {
+				slot = c
+			}
+		}
+		rowsByEmail[email] = slot
+	}
+
+	// Kiểm tra State 1: [✔ Đã OAuth] + Nút Xóa
+	badge1, add1, del1 := inspectModalActionSlot(t, rowsByEmail[email1])
+	if badge1 != "[✔ Đã OAuth]" || add1 != nil || del1 == nil || del1.Icon != theme.DeleteIcon() {
+		t.Errorf("state 1 mismatch: badge=%s, add=%v, del=%v", badge1, add1, del1)
+	}
+
+	// Kiểm tra State 2: [Đã add] + Nút Xóa
+	badge2, add2, del2 := inspectModalActionSlot(t, rowsByEmail[email2])
+	if badge2 != "[Đã add]" || add2 != nil || del2 == nil || del2.Icon != theme.DeleteIcon() {
+		t.Errorf("state 2 mismatch: badge=%s, add=%v, del=%v", badge2, add2, del2)
+	}
+
+	// Kiểm tra State 3: [Cần OAuth] + Nút ADD + Nút Xóa
+	badge3, add3, del3 := inspectModalActionSlot(t, rowsByEmail[email3])
+	if badge3 != "[Cần OAuth]" || add3 == nil || del3 == nil || del3.Icon != theme.DeleteIcon() {
+		t.Errorf("state 3 mismatch: badge=%s, add=%v, del=%v", badge3, add3, del3)
+	}
+
+	// Kiểm tra State 4: [Tài khoản không tồn tại] + Nút Xóa (Ẩn nút ADD)
+	badge4, add4, del4 := inspectModalActionSlot(t, rowsByEmail[email4])
+	if badge4 != "[Tài khoản không tồn tại]" {
+		t.Errorf("state 4 badge mismatch: expected '[Tài khoản không tồn tại]', got '%s'", badge4)
+	}
+	if add4 != nil {
+		t.Errorf("state 4 must NOT have ADD button")
+	}
+	if del4 == nil || del4.Icon != theme.DeleteIcon() {
+		t.Errorf("state 4 must have delete button with DeleteIcon")
+	}
+}
+
+// TC-Modal-Delete-Click-Action: Nhấn nút Xóa trên dòng tài khoản có file -> xác nhận file bị xóa khỏi discovered_accounts/, dòng biến mất khỏi modal, nhưng thẻ ngoài UI chính không bị mất.
+func TestModal_Delete_Click_Action(t *testing.T) {
+	mgr := createTestManager(t)
+	_ = mgr.Store().DeleteAccount("current@gmail.com")
+	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, errors.New("no language server")
+	})
+	mgr.SetChromeDir(filepath.Join(t.TempDir(), "empty_chrome"))
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	discStorePath := filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "discovered_accounts")
+	discStore, err := store.NewDiscoveredStore(discStorePath)
+	if err != nil {
+		t.Fatalf("failed creating discovered store: %v", err)
+	}
+
+	email := "delete.target@company.com"
+	if err := discStore.SaveDiscovered(email); err != nil {
+		t.Fatal(err)
+	}
+	// Cũng lưu vào accounts_store để có thẻ trên UI chính
+	if err := mgr.Store().SaveAccount(email, &model.TokenData{
+		AccessToken: "tok_del",
+		IDToken:     makeTestJWT(email),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cập nhật UI chính để có thẻ
+	ov, _ := mgr.GetAccountStates(context.Background())
+	app.mu.Lock()
+	app.overview = ov
+	app.mu.Unlock()
+	app.updateUI(ov)
+
+	if len(app.overview.Accounts) != 1 {
+		t.Fatalf("expected 1 account on main UI, got %d", len(app.overview.Accounts))
+	}
+
+	_, _, listContainer, reloadCandidates := app.buildAddAccountModalContent()
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected 1 item in modal, got %d", len(listContainer.Objects))
+	}
+
+	row := listContainer.Objects[0].(*fyne.Container)
+	var actionSlot *fyne.Container
+	for _, child := range row.Objects {
+		if c, ok := child.(*fyne.Container); ok {
+			actionSlot = c
+		}
+	}
+	_, _, delBtn := inspectModalActionSlot(t, actionSlot)
+	if delBtn == nil {
+		t.Fatal("delete button not found")
+	}
+
+	// Nhấn nút Xóa
+	delBtn.OnTapped()
+
+	// 1. File bị xóa khỏi discovered_accounts/
+	if discStore.HasDiscovered(email) {
+		t.Errorf("file in discovered_accounts/ must be deleted")
+	}
+
+	// 2. Dòng biến mất khỏi modal (danh sách modal rỗng)
+	reloadCandidates()
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected 1 object (empty label) in listContainer, got %d", len(listContainer.Objects))
+	}
+	emptyLbl, ok := listContainer.Objects[0].(*widget.Label)
+	if !ok || emptyLbl.Text != "Không có tài khoản nào trong danh bạ." {
+		t.Errorf("expected empty label in modal, got %v", listContainer.Objects[0])
+	}
+
+	// 3. Thẻ ngoài UI chính và file trong accounts_store TUYỆT ĐỐI không bị mất!
+	if !mgr.Store().HasAccount(email) {
+		t.Errorf("accounts_store credentials must NOT be deleted by modal delete button!")
+	}
+	app.mu.RLock()
+	mainCount := len(app.overview.Accounts)
+	app.mu.RUnlock()
+	if mainCount != 1 {
+		t.Errorf("main UI card must be preserved, got %d accounts", mainCount)
+	}
+}
+
+// TC-Modal-ScanChrome-NonExistent-Status: Cho 1 tài khoản có trên UI nhưng cố tình xóa file JSON trong discovered_accounts/. Nhấn nút [Quét Chrome] -> kiểm tra modal hiển thị nhãn [Tài khoản không tồn tại], nút ADD bị ẩn, nút Xóa hiển thị.
+func TestModal_ScanChrome_NonExistent_Status(t *testing.T) {
+	mgr := createTestManager(t)
+	_ = mgr.Store().DeleteAccount("current@gmail.com")
+	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, errors.New("no language server")
+	})
+	mgr.SetChromeDir(filepath.Join(t.TempDir(), "empty_chrome"))
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	discStorePath := filepath.Join(filepath.Dir(mgr.Store().GetStoreDir()), "discovered_accounts")
+	discStore, err := store.NewDiscoveredStore(discStorePath)
+	if err != nil {
+		t.Fatalf("failed creating discovered store: %v", err)
+	}
+
+	ghostEmail := "ghost.account@gmail.com"
+	if err := discStore.SaveDiscovered(ghostEmail); err != nil {
+		t.Fatal(err)
+	}
+	if err := discStore.SetDiscoveredAdded(ghostEmail, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nạp lên UI chính
+	ov, _ := mgr.GetAccountStates(context.Background())
+	app.mu.Lock()
+	app.overview = ov
+	app.mu.Unlock()
+	app.updateUI(ov)
+
+	// Cố tình xóa file JSON trong discovered_accounts/ để biến thành tài khoản ma
+	jsonFile := filepath.Join(discStorePath, ghostEmail+".json")
+	if err := os.Remove(jsonFile); err != nil {
+		t.Fatalf("failed removing discovered json file: %v", err)
+	}
+	if discStore.HasDiscovered(ghostEmail) {
+		t.Fatal("file should not exist in discoveredStore")
+	}
+
+	// Mở Modal và nhấn nút [Quét Chrome]
+	_, scanBtn, listContainer, _ := app.buildAddAccountModalContent()
+
+	scanBtn.OnTapped()
+
+	// Chờ scan hoàn tất
+	deadline := time.Now().Add(3 * time.Second)
+	scanDone := false
+	for time.Now().Before(deadline) {
+		if !scanBtn.Disabled() && scanBtn.Text == "Quét Chrome" {
+			scanDone = true
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !scanDone {
+		t.Fatal("scan chrome button did not restore within timeout")
+	}
+
+	// Kiểm tra modal hiển thị nhãn [Tài khoản không tồn tại], nút ADD bị ẩn, nút Xóa hiển thị
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected 1 item in listContainer, got %d", len(listContainer.Objects))
+	}
+	row := listContainer.Objects[0].(*fyne.Container)
+	var actionSlot *fyne.Container
+	for _, child := range row.Objects {
+		if c, ok := child.(*fyne.Container); ok {
+			actionSlot = c
+		}
+	}
+	badge, addBtn, delBtn := inspectModalActionSlot(t, actionSlot)
+	if badge != "[Tài khoản không tồn tại]" {
+		t.Errorf("expected '[Tài khoản không tồn tại]', got '%s'", badge)
+	}
+	if addBtn != nil {
+		t.Errorf("ADD button must be hidden for non-existent account")
+	}
+	if delBtn == nil || delBtn.Icon != theme.DeleteIcon() {
+		t.Errorf("delete button must be rendered for non-existent account")
+	}
+}
+
+// TC-Modal-Delete-NonExistent: Bấm nút Xóa trên dòng [Tài khoản không tồn tại] -> kiểm tra dòng đó bị xóa sạch khỏi danh sách modal.
+func TestModal_Delete_NonExistent(t *testing.T) {
+	mgr := createTestManager(t)
+	_ = mgr.Store().DeleteAccount("current@gmail.com")
+	mgr.SetWincredHandlers(func() (*model.TokenData, error) { return nil, wincred.ErrNotFound }, nil)
+	mgr.SetClientFinder(func(ctx context.Context) (*connector.Client, error) {
+		return nil, errors.New("no language server")
+	})
+	mgr.SetChromeDir(filepath.Join(t.TempDir(), "empty_chrome"))
+	testApp := test.NewApp()
+	app := newIsolatedApp(testApp, mgr)
+	app.Init()
+	defer app.Close()
+
+	ghostEmail := "ghost.delete@gmail.com"
+	// Giả lập tài khoản có trên UI nhưng không có file trong discoveredStore
+	app.mu.Lock()
+	app.overview = &manager.AccountOverview{
+		Accounts: []manager.AccountDisplayItem{
+			{Email: ghostEmail, State: model.StateUnauth, DisplayBadge: "[Cần OAuth]"},
+		},
+	}
+	app.mu.Unlock()
+
+	_, _, listContainer, _ := app.buildAddAccountModalContent()
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected 1 item in listContainer, got %d", len(listContainer.Objects))
+	}
+
+	row := listContainer.Objects[0].(*fyne.Container)
+	var actionSlot *fyne.Container
+	for _, child := range row.Objects {
+		if c, ok := child.(*fyne.Container); ok {
+			actionSlot = c
+		}
+	}
+	badge, _, delBtn := inspectModalActionSlot(t, actionSlot)
+	if badge != "[Tài khoản không tồn tại]" {
+		t.Fatalf("expected '[Tài khoản không tồn tại]', got '%s'", badge)
+	}
+	if delBtn == nil {
+		t.Fatal("delete button not found")
+	}
+
+	// Bấm nút Xóa trên dòng [Tài khoản không tồn tại]
+	delBtn.OnTapped()
+
+	// Kiểm tra dòng đó bị xóa sạch khỏi danh sách modal (hiển thị empty label)
+	if len(listContainer.Objects) != 1 {
+		t.Fatalf("expected 1 object (empty label), got %d", len(listContainer.Objects))
+	}
+	emptyLbl, ok := listContainer.Objects[0].(*widget.Label)
+	if !ok || emptyLbl.Text != "Không có tài khoản nào trong danh bạ." {
+		t.Errorf("expected empty label after deleting non-existent row, got %v", listContainer.Objects[0])
+	}
+}
+

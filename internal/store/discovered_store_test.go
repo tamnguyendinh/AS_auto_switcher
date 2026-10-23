@@ -444,3 +444,124 @@ func TestDiscoveredStore_SetDiscoveredAdded_ErrorAndEdgeCases(t *testing.T) {
 		t.Errorf("expected error when setting added in occupied directory path, got nil")
 	}
 }
+
+func TestDiscoveredStore_DeleteDiscovered_Success(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "delete_success_store")
+	s, err := NewDiscoveredStore(dir)
+	if err != nil {
+		t.Fatalf("failed creating store: %v", err)
+	}
+
+	email := "delete.me@example.com"
+	if err := s.SaveDiscovered(email); err != nil {
+		t.Fatalf("SaveDiscovered failed: %v", err)
+	}
+
+	// Xác nhận file tồn tại trước khi xóa
+	filePath := filepath.Join(dir, "delete.me@example.com.json")
+	if _, err := os.Stat(filePath); err != nil {
+		t.Fatalf("file should exist before deletion: %v", err)
+	}
+	if !s.HasDiscovered(email) {
+		t.Fatalf("HasDiscovered should return true before deletion")
+	}
+
+	// Gọi DeleteDiscovered
+	if err := s.DeleteDiscovered(email); err != nil {
+		t.Fatalf("DeleteDiscovered failed: %v", err)
+	}
+
+	// Xác nhận file đã bị xóa trên đĩa
+	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+		t.Fatalf("file should not exist on disk after deletion: %v", err)
+	}
+	if s.HasDiscovered(email) {
+		t.Fatalf("HasDiscovered should return false after deletion")
+	}
+
+	// Kiểm tra ListDiscovered và ListDiscoveredRecords không còn email này
+	records, err := s.ListDiscoveredRecords()
+	if err != nil {
+		t.Fatalf("ListDiscoveredRecords failed: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected 0 records after deletion, got %d", len(records))
+	}
+}
+
+func TestDiscoveredStore_DeleteDiscovered_Idempotent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "delete_idempotent_store")
+	s, err := NewDiscoveredStore(dir)
+	if err != nil {
+		t.Fatalf("failed creating store: %v", err)
+	}
+
+	// Xóa tài khoản chưa từng tồn tại -> trả về nil
+	if err := s.DeleteDiscovered("nonexistent@example.com"); err != nil {
+		t.Fatalf("expected nil for non-existent file, got %v", err)
+	}
+
+	// Xóa 2 lần liên tiếp -> cả 2 lần đều trả về nil
+	email := "repeat.delete@example.com"
+	if err := s.SaveDiscovered(email); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteDiscovered(email); err != nil {
+		t.Fatalf("first delete failed: %v", err)
+	}
+	if err := s.DeleteDiscovered(email); err != nil {
+		t.Fatalf("second delete (idempotent) should return nil, got %v", err)
+	}
+
+	// Invalid email checks
+	if err := s.DeleteDiscovered(""); !errors.Is(err, ErrInvalidEmail) {
+		t.Errorf("expected ErrInvalidEmail for empty email, got %v", err)
+	}
+	if err := s.DeleteDiscovered("   "); !errors.Is(err, ErrInvalidEmail) {
+		t.Errorf("expected ErrInvalidEmail for whitespace email, got %v", err)
+	}
+}
+
+func TestDiscoveredStore_HasDiscovered(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "has_discovered_store")
+	s, err := NewDiscoveredStore(dir)
+	if err != nil {
+		t.Fatalf("failed creating store: %v", err)
+	}
+
+	email := "check.exist@example.com"
+	if s.HasDiscovered(email) {
+		t.Errorf("HasDiscovered should return false before save")
+	}
+
+	if err := s.SaveDiscovered(email); err != nil {
+		t.Fatal(err)
+	}
+
+	if !s.HasDiscovered(email) {
+		t.Errorf("HasDiscovered should return true after save")
+	}
+
+	// Case and whitespace insensitive
+	if !s.HasDiscovered("  CHECK.EXIST@EXAMPLE.COM  ") {
+		t.Errorf("HasDiscovered should be case and whitespace insensitive")
+	}
+
+	// Invalid input
+	if s.HasDiscovered("") {
+		t.Errorf("HasDiscovered should return false for empty email")
+	}
+	if s.HasDiscovered("   ") {
+		t.Errorf("HasDiscovered should return false for whitespace email")
+	}
+
+	// Directory with same name is not a file
+	dirCollision := filepath.Join(dir, "dircollision@example.com.json")
+	if err := os.Mkdir(dirCollision, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if s.HasDiscovered("dircollision@example.com") {
+		t.Errorf("HasDiscovered should return false when path is directory")
+	}
+}
+
