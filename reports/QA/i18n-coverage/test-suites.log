@@ -1,0 +1,12 @@
+ok  	antigravity-switch/internal/automation	(cached)
+ok  	antigravity-switch/internal/connector	(cached)
+ok  	antigravity-switch/internal/i18n	(cached)
+ok  	antigravity-switch/internal/manager	(cached)
+ok  	antigravity-switch/internal/model	(cached)
+ok  	antigravity-switch/internal/reloader	(cached)
+ok  	antigravity-switch/internal/scanner	(cached)
+ok  	antigravity-switch/internal/store	9.690s
+ok  	antigravity-switch/internal/telemetry	(cached)
+ok  	antigravity-switch/internal/ui	26.859s
+ok  	antigravity-switch/internal/version	(cached)
+ok  	antigravity-switch/internal/wincred	(cached)

@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-10-24T16:08:00+07:00",
+  "feature": "Chuẩn Hóa Toàn Diện Đa Ngôn Ngữ i18n Bằng Cặp File JSON Song Song & Xóa Bỏ Triệt Để Chuỗi Cứng Trên Toàn Bộ Giao Diện",
+  "tested_commit": "17a7043",
+  "verdict": "PASS",
+  "summary": "100% Core Invariants verified successfully. Zero hybrid strings, 53 parallel JSON keys verified 1:1, full live in-place switching without canvas flicker, pure English & pure Vietnamese across Header, Toolbar, Quota Matrix, Account Cards, Footer Bar, Add Modal, Delete Confirmations, and System Tray Menu.",
+  "invariants_status": {
+    "1_dual_json_parity": "PASS",
+    "2_live_in_place_switching": "PASS",
+    "3_toolbar_states_en_no_reversion": "PASS",
+    "4_quota_matrix_bilingual": "PASS",
+    "5_footer_and_status_bar": "PASS",
+    "6_modals_and_popups": "PASS",
+    "7_system_tray_menu": "PASS"
+  },
+  "build_and_test": {
+    "scripts_build_windows": "PASS",
+    "binary_size_bytes": 29266432,
+    "binary_version": "1.0.3.0",
+    "pe_icon_verified": true,
+    "go_test_internal": "PASS (12/12 packages passed)",
+    "qa_render_tests": "PASS (8/8 tests passed)"
+  },
+  "evidence": {
+    "build_log": "reports/QA/i18n-coverage/build.log",
+    "test_suites_log": "reports/QA/i18n-coverage/test-suites.log",
+    "render_test_source": "reports/QA/i18n-coverage/render_test.go",
+    "screenshots": [
+      "reports/QA/i18n-coverage/screenshots/01_ui_vietnamese_default.png",
+      "reports/QA/i18n-coverage/screenshots/02_ui_english_live_switch.png",
+      "reports/QA/i18n-coverage/screenshots/03_toolbar_loading_states_en.png",
+      "reports/QA/i18n-coverage/screenshots/04_quota_matrix_bilingual.png",
+      "reports/QA/i18n-coverage/screenshots/05_modal_add_account_vi.png",
+      "reports/QA/i18n-coverage/screenshots/06_modal_add_account_en.png",
+      "reports/QA/i18n-coverage/screenshots/07_confirm_delete_popup_vi.png",
+      "reports/QA/i18n-coverage/screenshots/08_confirm_delete_popup_en.png",
+      "reports/QA/i18n-coverage/screenshots/09_footer_bar_and_status_en.png"
+    ]
+  }
+}
