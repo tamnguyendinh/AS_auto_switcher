@@ -2,6 +2,9 @@ package connector
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"sync"
 	"testing"
@@ -292,4 +295,74 @@ func TestApiClient_ReactiveCacheEvictionOnConnectionRefused(t *testing.T) {
 	}
 
 	InvalidateDiscoveryCache(0, "")
+}
+
+// TestCheckProcessLiveness validates fast Win32 process liveness detection.
+func TestCheckProcessLiveness(t *testing.T) {
+	// 1. Invalid PIDs <= 0
+	if CheckProcessLiveness(0) {
+		t.Errorf("expected CheckProcessLiveness(0) to be false")
+	}
+	if CheckProcessLiveness(-1) {
+		t.Errorf("expected CheckProcessLiveness(-1) to be false")
+	}
+
+	// 2. Current active process must be alive
+	currentPID := int(windows.GetCurrentProcessId())
+	if !CheckProcessLiveness(currentPID) {
+		t.Errorf("expected CheckProcessLiveness(currentPID=%d) to be true", currentPID)
+	}
+
+	// 3. Non-existent PID
+	if CheckProcessLiveness(99999999) {
+		t.Errorf("expected CheckProcessLiveness(99999999) to be false")
+	}
+
+	// 4. Terminated process
+	cmd := exec.Command("cmd.exe", "/c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed starting short-lived cmd: %v", err)
+	}
+	deadPID := cmd.Process.Pid
+	_ = cmd.Wait()
+
+	if CheckProcessLiveness(deadPID) {
+		t.Errorf("expected CheckProcessLiveness(deadPID=%d) to be false after exit", deadPID)
+	}
+}
+
+// TestCheckServerLiveness validates both process liveness and loopback HTTP probing.
+func TestCheckServerLiveness(t *testing.T) {
+	// 1. Nil or invalid info
+	if CheckServerLiveness(nil) {
+		t.Errorf("expected CheckServerLiveness(nil) to be false")
+	}
+	if CheckServerLiveness(&ServerInfo{PID: 0, Port: 8080}) {
+		t.Errorf("expected CheckServerLiveness with PID 0 to be false")
+	}
+	if CheckServerLiveness(&ServerInfo{PID: 1234, Port: 0}) {
+		t.Errorf("expected CheckServerLiveness with Port 0 to be false")
+	}
+
+	// 2. Dead process with open test server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+	port := ts.Listener.Addr().(*net.TCPAddr).Port
+
+	if CheckServerLiveness(&ServerInfo{PID: 99999999, Port: port}) {
+		t.Errorf("expected CheckServerLiveness with dead PID to be false even if port is open")
+	}
+
+	// 3. Live process with closed port
+	currentPID := int(windows.GetCurrentProcessId())
+	if CheckServerLiveness(&ServerInfo{PID: currentPID, Port: 59997}) {
+		t.Errorf("expected CheckServerLiveness with closed port 59997 to be false")
+	}
+
+	// 4. Live process with responsive HTTP server
+	if !CheckServerLiveness(&ServerInfo{PID: currentPID, Port: port}) {
+		t.Errorf("expected CheckServerLiveness with currentPID and open HTTP port to be true")
+	}
 }

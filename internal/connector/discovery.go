@@ -308,6 +308,38 @@ func DiscoverListeningPort(pid int) (int, error) {
 	return ports[len(ports)-1], nil
 }
 
+// CheckProcessLiveness kiểm tra nhanh tính sống sót của PID bằng Win32 API thuần (< 0.02ms).
+// Sử dụng PROCESS_QUERY_LIMITED_INFORMATION và GetExitCodeProcess.
+func CheckProcessLiveness(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(hProcess)
+
+	var exitCode uint32
+	if err := windows.GetExitCodeProcess(hProcess, &exitCode); err != nil {
+		return false
+	}
+	// STILL_ACTIVE = 259 trong Win32 API
+	return exitCode == 259
+}
+
+// CheckServerLiveness xác minh toàn diện cả tiến trình OS lẫn tính sẵn sàng của cổng HTTP loopback.
+func CheckServerLiveness(info *ServerInfo) bool {
+	if info == nil || info.PID <= 0 || info.Port <= 0 {
+		return false
+	}
+	if !CheckProcessLiveness(info.PID) {
+		return false
+	}
+	// Thăm dò nhanh cổng HTTP (timeout 200ms)
+	return ProbeHTTPPort(info.Port, 200*time.Millisecond)
+}
+
 type serverDiscoveryCache struct {
 	mu           sync.RWMutex
 	info         *ServerInfo

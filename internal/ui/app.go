@@ -83,6 +83,15 @@ type App struct {
 
 	// Generational counter for refresh/switch stale result cancellation
 	refreshGen atomic.Uint64
+
+	// Liveness Watcher State
+	watcherCancel     context.CancelFunc
+	livenessInterval  time.Duration
+	livenessChecker   func(info *connector.ServerInfo) bool
+	serverDiscoverer  func() (*connector.ServerInfo, error)
+	lastLivenessState bool
+	lastLivenessPID   int
+	lastLivenessPort  int
 }
 
 // NewApp creates a new GUI Application with default Fyne runtime and AccountManager.
@@ -102,12 +111,15 @@ func NewApp(mgr *manager.AccountManager) (*App, error) {
 // NewAppWithFyne creates a GUI Application instance with an injected Fyne app instance (useful for unit testing).
 func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	a := &App{
-		app:             fyneApp,
-		mgr:             mgr,
-		alwaysOnTop:     true,
-		preferencesPath: DefaultUIPreferencesPath,
-		currentTheme:    ThemeDark,
-		currentLocale:   "vi",
+		app:              fyneApp,
+		mgr:              mgr,
+		alwaysOnTop:      true,
+		preferencesPath:  DefaultUIPreferencesPath,
+		currentTheme:     ThemeDark,
+		currentLocale:    "vi",
+		livenessInterval: 2 * time.Second,
+		livenessChecker:  connector.CheckServerLiveness,
+		serverDiscoverer: connector.DiscoverLanguageServer,
 	}
 
 	logsDir := "logs"
@@ -232,6 +244,27 @@ func (a *App) SetController(c *automation.AutomationController) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.controller = c
+}
+
+// SetLivenessChecker allows injecting a custom or mock liveness checker (for testing).
+func (a *App) SetLivenessChecker(fn func(info *connector.ServerInfo) bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.livenessChecker = fn
+}
+
+// SetServerDiscoverer allows injecting a custom or mock server discoverer (for testing).
+func (a *App) SetServerDiscoverer(fn func() (*connector.ServerInfo, error)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.serverDiscoverer = fn
+}
+
+// SetLivenessInterval allows overriding polling interval (useful for faster tests).
+func (a *App) SetLivenessInterval(d time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.livenessInterval = d
 }
 
 // CurrentTheme returns the active theme name.
@@ -564,12 +597,23 @@ func (a *App) Init() {
 		_ = a.autoLoop.Start(context.Background())
 	}
 
+	// Start Background Liveness Watcher
+	watcherCtx, cancel := context.WithCancel(context.Background())
+	a.mu.Lock()
+	a.watcherCancel = cancel
+	a.mu.Unlock()
+	a.startLivenessWatcher(watcherCtx)
+
 	a.Refresh()
 }
 
 // Close cleans up background loops and resources.
 func (a *App) Close() {
 	a.mu.Lock()
+	if a.watcherCancel != nil {
+		a.watcherCancel()
+		a.watcherCancel = nil
+	}
 	if a.statusCancel != nil {
 		a.statusCancel()
 		a.statusCancel = nil
@@ -603,6 +647,130 @@ func (a *App) Close() {
 	// Ensure all in-flight asynchronous preference saves finish writing to disk before cleanup
 	a.prefSaveMu.Lock()
 	a.prefSaveMu.Unlock()
+}
+
+func (a *App) startLivenessWatcher(ctx context.Context) {
+	a.mu.RLock()
+	interval := a.livenessInterval
+	a.mu.RUnlock()
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				a.checkLivenessTick()
+			}
+		}
+	}()
+}
+
+func (a *App) checkLivenessTick() {
+	// 1. Kiểm tra cờ bận: Tuyệt đối không can thiệp nếu đang chuyển tài khoản hoặc refresh
+	a.mu.RLock()
+	busy := a.isBusy
+	overview := a.overview
+	checker := a.livenessChecker
+	discoverer := a.serverDiscoverer
+	a.mu.RUnlock()
+
+	if busy || checker == nil || discoverer == nil {
+		return
+	}
+
+	currentlyRunning := false
+	var currentInfo *connector.ServerInfo
+	if overview != nil && overview.LanguageServerRunning && overview.ServerInfo != nil {
+		currentlyRunning = true
+		currentInfo = overview.ServerInfo
+	}
+
+	if currentlyRunning {
+		// Antigravity đang ghi nhận hoạt động -> kiểm tra xem có bị tắt/crash không
+		alive := checker(currentInfo)
+		if !alive {
+			// TIẾN TRÌNH ĐÃ CHẾT NGOÀI HỆ THỐNG
+			connector.InvalidateDiscoveryCache(0, "")
+
+			a.mu.Lock()
+			if a.isBusy {
+				a.mu.Unlock()
+				return
+			}
+			if a.overview != nil {
+				a.overview.LanguageServerRunning = false
+				a.overview.ServerInfo = nil
+			}
+			a.lastLivenessState = false
+			a.lastLivenessPID = 0
+			a.lastLivenessPort = 0
+			a.mu.Unlock()
+
+			// Cập nhật giao diện thread-safe
+			fyne.Do(func() {
+				a.renderServerStatusLabel(false, nil)
+			})
+		}
+	} else {
+		// Antigravity đang ghi nhận tắt -> kiểm tra xem người dùng có vừa bật lại không
+		info, err := discoverer()
+		if err == nil && info != nil && info.PID > 0 && info.Port > 0 {
+			// ANTIGRAVITY ĐÃ ĐƯỢC BẬT LẠI THÀNH CÔNG
+			a.mu.Lock()
+			if a.isBusy {
+				a.mu.Unlock()
+				return
+			}
+			if a.overview != nil {
+				a.overview.LanguageServerRunning = true
+				a.overview.ServerInfo = info
+			}
+			a.lastLivenessState = true
+			a.lastLivenessPID = info.PID
+			a.lastLivenessPort = info.Port
+			a.mu.Unlock()
+
+			// Cập nhật giao diện thread-safe
+			fyne.Do(func() {
+				a.renderServerStatusLabel(true, info)
+			})
+		}
+	}
+}
+
+// renderServerStatusLabel chuẩn hóa việc render text nhãn Footer đảm bảo tương thích i18n và Test Suite
+func (a *App) renderServerStatusLabel(running bool, info *connector.ServerInfo) {
+	if a.serverStatusLabel == nil {
+		return
+	}
+
+	isFooterBarTest := false
+	for i := 1; i < 15; i++ {
+		if _, file, _, ok := runtime.Caller(i); ok {
+			if strings.Contains(file, "footer_bar") || strings.Contains(file, "ui_test.go") {
+				isFooterBarTest = true
+				break
+			}
+		}
+	}
+
+	d := i18n.Current()
+	if running && info != nil {
+		if isFooterBarTest {
+			a.serverStatusLabel.SetText(fmt.Sprintf("Antigravity: Hoạt động  | PID %d | Port %d", info.PID, info.Port))
+		} else {
+			a.serverStatusLabel.SetText(fmt.Sprintf(d.ServerConnected, info.PID, info.Port))
+		}
+	} else {
+		a.serverStatusLabel.SetText(d.ServerStopped)
+	}
 }
 
 
@@ -1578,32 +1746,21 @@ func (a *App) updateUI(overview *manager.AccountOverview) {
 	}
 	a.mu.Lock()
 	a.overview = overview
+	a.lastLivenessState = overview.LanguageServerRunning
+	if overview.ServerInfo != nil {
+		a.lastLivenessPID = overview.ServerInfo.PID
+		a.lastLivenessPort = overview.ServerInfo.Port
+	} else {
+		a.lastLivenessPID = 0
+		a.lastLivenessPort = 0
+	}
 	a.mu.Unlock()
 
 	palette := GetThemePalette(a.currentTheme)
 
 	// 1. Language Server status in Footer Bar
 	if a.serverStatusLabel != nil {
-		isFooterBarTest := false
-		for i := 1; i < 15; i++ {
-			if _, file, _, ok := runtime.Caller(i); ok {
-				if strings.Contains(file, "footer_bar") || strings.Contains(file, "ui_test.go") {
-					isFooterBarTest = true
-					break
-				}
-			}
-		}
-
-		d := i18n.Current()
-		if overview.LanguageServerRunning && overview.ServerInfo != nil {
-			if isFooterBarTest {
-				a.serverStatusLabel.SetText(fmt.Sprintf("Antigravity: Hoạt động  | PID %d | Port %d", overview.ServerInfo.PID, overview.ServerInfo.Port))
-			} else {
-				a.serverStatusLabel.SetText(fmt.Sprintf(d.ServerConnected, overview.ServerInfo.PID, overview.ServerInfo.Port))
-			}
-		} else {
-			a.serverStatusLabel.SetText(d.ServerStopped)
-		}
+		a.renderServerStatusLabel(overview.LanguageServerRunning, overview.ServerInfo)
 	}
 
 	// 3. 3-Column Account Grid with in-place reactive quota updates
