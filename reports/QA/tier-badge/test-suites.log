@@ -1,0 +1,584 @@
+=== RUN   TestGetTodayQuotaLogPath
+--- PASS: TestGetTodayQuotaLogPath (0.00s)
+=== RUN   TestDailyQuotaLog_LoadTodayOrFallback
+--- PASS: TestDailyQuotaLog_LoadTodayOrFallback (0.10s)
+=== RUN   TestDailyQuotaLog_TodayExists
+--- PASS: TestDailyQuotaLog_TodayExists (0.03s)
+=== RUN   TestDailyQuotaLog_MultiplePreviousDays
+--- PASS: TestDailyQuotaLog_MultiplePreviousDays (0.09s)
+=== RUN   TestDailyQuotaLog_EmptyDir
+--- PASS: TestDailyQuotaLog_EmptyDir (0.00s)
+=== RUN   TestDailyQuotaLog_SaveCreatesDirectory
+--- PASS: TestDailyQuotaLog_SaveCreatesDirectory (0.03s)
+=== RUN   TestDailyQuotaLog_DirectoryPathTarget
+--- PASS: TestDailyQuotaLog_DirectoryPathTarget (0.04s)
+=== RUN   TestPruneDailyQuotaLogs_UnderLimit
+--- PASS: TestPruneDailyQuotaLogs_UnderLimit (0.01s)
+=== RUN   TestPruneDailyQuotaLogs_OverLimit
+--- PASS: TestPruneDailyQuotaLogs_OverLimit (0.02s)
+=== RUN   TestPruneDailyQuotaLogs_DefaultRetentionAndUnrelatedFiles
+--- PASS: TestPruneDailyQuotaLogs_DefaultRetentionAndUnrelatedFiles (0.03s)
+=== RUN   TestPruneDailyQuotaLogs_NonExistentDir
+--- PASS: TestPruneDailyQuotaLogs_NonExistentDir (0.00s)
+=== RUN   TestDualCycleQuota_IndependentFractionsAndMissingBuckets
+--- PASS: TestDualCycleQuota_IndependentFractionsAndMissingBuckets (0.00s)
+=== RUN   TestAccountQuotaData_ZeroGPTSerialization
+--- PASS: TestAccountQuotaData_ZeroGPTSerialization (0.00s)
+=== RUN   TestParseQuotaSummaryWithBuckets_F1EdgeCases
+--- PASS: TestParseQuotaSummaryWithBuckets_F1EdgeCases (0.00s)
+=== RUN   TestRetrieveUserQuotaSummary_RESTGroups
+--- PASS: TestRetrieveUserQuotaSummary_RESTGroups (0.02s)
+=== RUN   TestF1_RESTLegacyAmountWithoutFraction
+--- PASS: TestF1_RESTLegacyAmountWithoutFraction (0.00s)
+=== RUN   TestF1_RESTLegacyMissingFractionAndAmount
+--- PASS: TestF1_RESTLegacyMissingFractionAndAmount (0.00s)
+=== RUN   TestF1_RESTLegacyClaudeFractionZero_NoWeeklySynthesis
+--- PASS: TestF1_RESTLegacyClaudeFractionZero_NoWeeklySynthesis (0.00s)
+=== RUN   TestF1_ConnectRPCSummaryClaudeWeeklyZero
+--- PASS: TestF1_ConnectRPCSummaryClaudeWeeklyZero (0.00s)
+=== RUN   TestF1_CachePersistence_WeeklyZeroCycle
+--- PASS: TestF1_CachePersistence_WeeklyZeroCycle (0.03s)
+=== RUN   TestF1_CachePersistence_LegacyCacheMissingFamily
+--- PASS: TestF1_CachePersistence_LegacyCacheMissingFamily (0.02s)
+=== RUN   TestF1_CachePersistence_ClaudeObjectWithoutRemainingFraction
+--- PASS: TestF1_CachePersistence_ClaudeObjectWithoutRemainingFraction (0.00s)
+=== RUN   TestF1_BothCyclesZero_ClaudeAndGemini_NoRaw_NoReset
+--- PASS: TestF1_BothCyclesZero_ClaudeAndGemini_NoRaw_NoReset (0.03s)
+=== RUN   TestF1_PositiveLegacyFraction_WithBothCyclesZero
+--- PASS: TestF1_PositiveLegacyFraction_WithBothCyclesZero (0.03s)
+=== RUN   TestDisabledMetadataPassThrough_ParserCacheRoundTrip
+--- PASS: TestDisabledMetadataPassThrough_ParserCacheRoundTrip (0.03s)
+=== RUN   TestQuotaClient_RetrieveUserQuota_Success
+--- PASS: TestQuotaClient_RetrieveUserQuota_Success (0.01s)
+=== RUN   TestQuotaClient_RetrieveUserQuota_SnakeCaseAndProtobuf
+--- PASS: TestQuotaClient_RetrieveUserQuota_SnakeCaseAndProtobuf (0.00s)
+=== RUN   TestQuotaClient_RetrieveUserQuota_StatusCategories
+=== RUN   TestQuotaClient_RetrieveUserQuota_StatusCategories/All_100%_is_Pristine
+=== RUN   TestQuotaClient_RetrieveUserQuota_StatusCategories/91.6%_Gemini_is_Plentiful
+=== RUN   TestQuotaClient_RetrieveUserQuota_StatusCategories/Claude_at_30%_is_Low_Claude
+=== RUN   TestQuotaClient_RetrieveUserQuota_StatusCategories/GPT_at_10%_is_Low_GPT
+=== RUN   TestQuotaClient_RetrieveUserQuota_StatusCategories/All_depleted_is_Depleted
+--- PASS: TestQuotaClient_RetrieveUserQuota_StatusCategories (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_StatusCategories/All_100%_is_Pristine (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_StatusCategories/91.6%_Gemini_is_Plentiful (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_StatusCategories/Claude_at_30%_is_Low_Claude (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_StatusCategories/GPT_at_10%_is_Low_GPT (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_StatusCategories/All_depleted_is_Depleted (0.00s)
+=== RUN   TestQuotaClient_RetrieveUserQuota_Errors
+=== RUN   TestQuotaClient_RetrieveUserQuota_Errors/Empty_refresh_token
+=== RUN   TestQuotaClient_RetrieveUserQuota_Errors/Nil_refresher
+=== RUN   TestQuotaClient_RetrieveUserQuota_Errors/Token_refresh_error
+=== RUN   TestQuotaClient_RetrieveUserQuota_Errors/HTTP_401_Unauthorized
+=== RUN   TestQuotaClient_RetrieveUserQuota_Errors/HTTP_500_Internal_Error
+=== RUN   TestQuotaClient_RetrieveUserQuota_Errors/Cancelled_context
+--- PASS: TestQuotaClient_RetrieveUserQuota_Errors (0.01s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_Errors/Empty_refresh_token (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_Errors/Nil_refresher (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_Errors/Token_refresh_error (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_Errors/HTTP_401_Unauthorized (0.01s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_Errors/HTTP_500_Internal_Error (0.00s)
+    --- PASS: TestQuotaClient_RetrieveUserQuota_Errors/Cancelled_context (0.00s)
+=== RUN   TestQuotaCache_Operations
+--- PASS: TestQuotaCache_Operations (0.03s)
+=== RUN   TestTelemetryPool_PollAccountAndPollAll
+--- PASS: TestTelemetryPool_PollAccountAndPollAll (0.23s)
+=== RUN   TestTelemetryPool_PartialFailureHandling
+--- PASS: TestTelemetryPool_PartialFailureHandling (0.06s)
+=== RUN   TestAutoTelemetryLoop_LifecycleAndSingleFlight
+--- PASS: TestAutoTelemetryLoop_LifecycleAndSingleFlight (0.31s)
+=== RUN   TestTelemetry_ConcurrentRace
+--- PASS: TestTelemetry_ConcurrentRace (6.14s)
+=== RUN   TestQuotaCache_EdgeCasesAndFlatMap
+--- PASS: TestQuotaCache_EdgeCasesAndFlatMap (0.03s)
+=== RUN   TestTelemetryPool_StoreAccountSourceIntegration
+--- PASS: TestTelemetryPool_StoreAccountSourceIntegration (0.07s)
+=== RUN   TestAutoTelemetryLoop_EdgeCases
+--- PASS: TestAutoTelemetryLoop_EdgeCases (0.02s)
+=== RUN   TestCoverageBooster
+--- PASS: TestCoverageBooster (0.05s)
+=== RUN   TestDiscoverAntigravityUserAgent_Priorities
+--- PASS: TestDiscoverAntigravityUserAgent_Priorities (0.01s)
+=== RUN   TestQuotaClient_UserAgentAndGoogApiClientHeaders
+--- PASS: TestQuotaClient_UserAgentAndGoogApiClientHeaders (0.00s)
+=== RUN   TestParseQuotaSummary_ConnectRPC
+--- PASS: TestParseQuotaSummary_ConnectRPC (0.00s)
+=== RUN   TestHybridTelemetry_ActiveAccountConnectRPC
+--- PASS: TestHybridTelemetry_ActiveAccountConnectRPC (0.29s)
+=== RUN   TestTelemetryPool_PollAll_SkipsOffAccounts
+--- PASS: TestTelemetryPool_PollAll_SkipsOffAccounts (0.02s)
+=== RUN   TestTelemetryPool_WithStore_SkipsOffAccounts
+--- PASS: TestTelemetryPool_WithStore_SkipsOffAccounts (0.13s)
+=== RUN   TestNormalizeTier
+--- PASS: TestNormalizeTier (0.00s)
+=== RUN   TestLoadCodeAssist_Parser
+--- PASS: TestLoadCodeAssist_Parser (0.00s)
+PASS
+ok  	antigravity-switch/internal/telemetry	10.028s
+=== RUN   TestGetCascadeModelConfig_And_ResolveActiveModel
+--- PASS: TestGetCascadeModelConfig_And_ResolveActiveModel (0.06s)
+=== RUN   TestSendEmptyItemsRetry
+--- PASS: TestSendEmptyItemsRetry (0.00s)
+=== RUN   TestConnectFrame_EncodeDecode
+--- PASS: TestConnectFrame_EncodeDecode (0.00s)
+=== RUN   TestStreamAgentStateUpdates_ConnectFramedAndLineDelimited
+--- PASS: TestStreamAgentStateUpdates_ConnectFramedAndLineDelimited (0.00s)
+=== RUN   TestAgentStateUpdate_HelpersAndErrorParsing
+--- PASS: TestAgentStateUpdate_HelpersAndErrorParsing (0.00s)
+=== RUN   TestNativeStreamErrorsAndCancellation
+--- PASS: TestNativeStreamErrorsAndCancellation (0.00s)
+=== RUN   TestNativeStreamMergesExecutionPatches
+--- PASS: TestNativeStreamMergesExecutionPatches (0.00s)
+=== RUN   TestExtractCSRFToken
+--- PASS: TestExtractCSRFToken (0.00s)
+=== RUN   TestProbeHTTPPort
+--- PASS: TestProbeHTTPPort (0.00s)
+=== RUN   TestGetUserStatus
+--- PASS: TestGetUserStatus (0.00s)
+=== RUN   TestGetUserStatus_NestedPlanInfo
+--- PASS: TestGetUserStatus_NestedPlanInfo (0.01s)
+=== RUN   TestGetUserStatusFallbackEndpoints
+--- PASS: TestGetUserStatusFallbackEndpoints (0.00s)
+=== RUN   TestAuthLogoutAndTriggerReauth
+--- PASS: TestAuthLogoutAndTriggerReauth (0.00s)
+=== RUN   TestLoadTrajectoryAndSmartFocus
+--- PASS: TestLoadTrajectoryAndSmartFocus (0.00s)
+=== RUN   TestDiscoverActiveAgentModelAndSendCascadeMessage
+--- PASS: TestDiscoverActiveAgentModelAndSendCascadeMessage (0.02s)
+=== RUN   TestLiveLanguageServerDiscoveryAndStatus
+    connector_test.go:486: Live language_server.exe verified: PID=14620, Port=50099, ActiveEmail=skey.vanphongmiennam@gmail.com
+--- PASS: TestLiveLanguageServerDiscoveryAndStatus (0.03s)
+=== RUN   TestQueryLanguageServerProcesses_Win32
+--- PASS: TestQueryLanguageServerProcesses_Win32 (0.01s)
+=== RUN   TestDiscoverListeningPorts_Validation
+--- PASS: TestDiscoverListeningPorts_Validation (0.00s)
+=== RUN   TestDiscoveryCache_LifecycleAndInvalidation
+--- PASS: TestDiscoveryCache_LifecycleAndInvalidation (0.00s)
+=== RUN   TestDiscoverLanguageServer_Singleflight
+--- PASS: TestDiscoverLanguageServer_Singleflight (0.01s)
+=== RUN   TestGoogleOAuthRefresher_Success
+--- PASS: TestGoogleOAuthRefresher_Success (0.00s)
+=== RUN   TestGoogleOAuthRefresher_HttpError
+--- PASS: TestGoogleOAuthRefresher_HttpError (0.00s)
+=== RUN   TestGoogleOAuthRefresher_NetworkFailure
+--- PASS: TestGoogleOAuthRefresher_NetworkFailure (0.00s)
+=== RUN   TestGoogleOAuthRefresher_MalformedJSON
+--- PASS: TestGoogleOAuthRefresher_MalformedJSON (0.00s)
+=== RUN   TestGoogleOAuthRefresher_EmptyRefreshToken
+--- PASS: TestGoogleOAuthRefresher_EmptyRefreshToken (0.00s)
+PASS
+ok  	antigravity-switch/internal/connector	3.150s
+=== RUN   TestAcceptance_TC01_DeleteInactiveStatusOnAccount
+--- PASS: TestAcceptance_TC01_DeleteInactiveStatusOnAccount (0.56s)
+=== RUN   TestAcceptance_TC02_DeleteInactiveStatusOffAccount
+--- PASS: TestAcceptance_TC02_DeleteInactiveStatusOffAccount (0.59s)
+=== RUN   TestAcceptance_TC03_DeleteNeedOAuthAccount
+--- PASS: TestAcceptance_TC03_DeleteNeedOAuthAccount (0.34s)
+=== RUN   TestAcceptance_TC04_ProtectActiveAccount
+--- PASS: TestAcceptance_TC04_ProtectActiveAccount (0.45s)
+=== RUN   TestAcceptance_TC05_DismissConfirmationDialog
+--- PASS: TestAcceptance_TC05_DismissConfirmationDialog (0.21s)
+=== RUN   TestAcceptance_TC06_ActionClusterStrictOrder
+--- PASS: TestAcceptance_TC06_ActionClusterStrictOrder (0.00s)
+=== RUN   TestAcceptance_TC07_CleanupQuotaCache
+--- PASS: TestAcceptance_TC07_CleanupQuotaCache (0.15s)
+=== RUN   TestAcceptance_TC08_AutoSwitchCutoffWhenNoCandidates
+    account_deletion_acceptance_test.go:490: expected preferences on disk to have auto_switch=false
+--- FAIL: TestAcceptance_TC08_AutoSwitchCutoffWhenNoCandidates (0.34s)
+=== RUN   TestE2E_AccountStatus_ActiveTurnedOff_AutoSwitchesToEligibleCandidate
+--- PASS: TestE2E_AccountStatus_ActiveTurnedOff_AutoSwitchesToEligibleCandidate (0.92s)
+=== RUN   TestE2E_AccountStatus_ActiveTurnedOff_NoOtherCandidate_SafetyStop
+--- PASS: TestE2E_AccountStatus_ActiveTurnedOff_NoOtherCandidate_SafetyStop (0.76s)
+=== RUN   TestE2E_AccountStatus_ActiveTurnedOff_PreflightFails_SafetyStop
+--- PASS: TestE2E_AccountStatus_ActiveTurnedOff_PreflightFails_SafetyStop (0.38s)
+=== RUN   TestInvariant_1_AccountStatus_Persistence
+--- PASS: TestInvariant_1_AccountStatus_Persistence (0.15s)
+=== RUN   TestInvariant_2_BackwardCompatibility_DefaultOn
+--- PASS: TestInvariant_2_BackwardCompatibility_DefaultOn (0.02s)
+=== RUN   TestInvariant_3_TokenUpdate_Preservation
+--- PASS: TestInvariant_3_TokenUpdate_Preservation (0.19s)
+=== RUN   TestInvariant_4_UnauthCard_Isolation
+--- PASS: TestInvariant_4_UnauthCard_Isolation (0.02s)
+=== RUN   TestInvariant_5_DisabledSwitch_Lockout_And_Exclusion
+--- PASS: TestInvariant_5_DisabledSwitch_Lockout_And_Exclusion (0.02s)
+=== RUN   TestInvariant_6_NoCandidate_AutoHalt
+--- PASS: TestInvariant_6_NoCandidate_AutoHalt (0.38s)
+=== RUN   TestInvariant_7_TelemetrySilence
+--- PASS: TestInvariant_7_TelemetrySilence (0.09s)
+=== RUN   TestInvariant_UI_Card_Feedback_Styling
+--- PASS: TestInvariant_UI_Card_Feedback_Styling (0.00s)
+=== RUN   TestAcceptance_TC01_CleanStartup
+--- PASS: TestAcceptance_TC01_CleanStartup (0.47s)
+=== RUN   TestAcceptance_TC02_OpenAddModal_ThreeStates
+--- PASS: TestAcceptance_TC02_OpenAddModal_ThreeStates (0.84s)
+=== RUN   TestAcceptance_TC03_TapAddButton_InPlaceMutationAndOverviewCard
+--- PASS: TestAcceptance_TC03_TapAddButton_InPlaceMutationAndOverviewCard (0.34s)
+=== RUN   TestAcceptance_TC04_PersistenceAcrossAppRestart
+--- PASS: TestAcceptance_TC04_PersistenceAcrossAppRestart (0.64s)
+=== RUN   TestAcceptance_TC05_OnDemandChromeScan
+--- PASS: TestAcceptance_TC05_OnDemandChromeScan (0.32s)
+=== RUN   TestAcceptance_TC06_CompleteOAuthAfterAdd
+--- PASS: TestAcceptance_TC06_CompleteOAuthAfterAdd (0.33s)
+=== RUN   TestAcceptance_TC07_AutoSwitchAndTelemetrySafety
+--- PASS: TestAcceptance_TC07_AutoSwitchAndTelemetrySafety (0.57s)
+=== RUN   TestAcceptance_TC08_StartupPerformanceBenchmark
+    add_modal_acceptance_test.go:872: TC-08 Startup Benchmark: 10 runs, avg=6.3089ms, max=18.2569ms (tiêu chuẩn: < 50ms)
+--- PASS: TestAcceptance_TC08_StartupPerformanceBenchmark (0.56s)
+=== RUN   TestAcceptance_TC09_DeleteCandidateConfirmationFlow
+--- PASS: TestAcceptance_TC09_DeleteCandidateConfirmationFlow (0.10s)
+=== RUN   TestShowAddAccountModal_NilSafety
+--- PASS: TestShowAddAccountModal_NilSafety (0.00s)
+=== RUN   TestShowAddAccountModal_EmptyCandidates
+--- PASS: TestShowAddAccountModal_EmptyCandidates (0.07s)
+=== RUN   TestShowAddAccountModal_ThreeCandidateStates
+--- PASS: TestShowAddAccountModal_ThreeCandidateStates (0.35s)
+=== RUN   TestShowAddAccountModal_AddActionInPlaceMutationAndOverviewUpdate
+--- PASS: TestShowAddAccountModal_AddActionInPlaceMutationAndOverviewUpdate (0.13s)
+=== RUN   TestShowAddAccountModal_EmailMasking
+--- PASS: TestShowAddAccountModal_EmailMasking (0.09s)
+=== RUN   TestShowAddAccountModal_ScanChromeButtonBehavior
+--- PASS: TestShowAddAccountModal_ScanChromeButtonBehavior (0.16s)
+=== RUN   TestShowAddAccountModal_DialogDisplayAndOverlay
+--- PASS: TestShowAddAccountModal_DialogDisplayAndOverlay (0.06s)
+=== RUN   TestModal_Delete_Button_Rendered
+--- PASS: TestModal_Delete_Button_Rendered (0.15s)
+=== RUN   TestModal_Delete_Click_Shows_Confirm_Dialog
+--- PASS: TestModal_Delete_Click_Shows_Confirm_Dialog (0.09s)
+=== RUN   TestModal_Delete_Dialog_Cancel
+--- PASS: TestModal_Delete_Dialog_Cancel (0.09s)
+=== RUN   TestModal_Delete_Dialog_Confirm
+--- PASS: TestModal_Delete_Dialog_Confirm (0.15s)
+=== RUN   TestModal_Delete_NonExistent
+--- PASS: TestModal_Delete_NonExistent (0.06s)
+=== RUN   TestShowDeleteCandidateConfirm_NilSafety
+--- PASS: TestShowDeleteCandidateConfirm_NilSafety (0.00s)
+=== RUN   TestShowDeleteCandidateConfirm_EmailMasking
+--- PASS: TestShowDeleteCandidateConfirm_EmailMasking (0.10s)
+=== RUN   TestModal_ScanChrome_NonExistent_Status
+--- PASS: TestModal_ScanChrome_NonExistent_Status (0.14s)
+=== RUN   TestApp_ToggleAccountStatus_TogglesAndPersists
+--- PASS: TestApp_ToggleAccountStatus_TogglesAndPersists (0.26s)
+=== RUN   TestApp_ToggleAccountStatus_ActiveAccount_AutoSwitchOff
+--- PASS: TestApp_ToggleAccountStatus_ActiveAccount_AutoSwitchOff (0.22s)
+=== RUN   TestApp_ToggleAccountStatus_ActiveAccount_AutoSwitchOn_NoCandidates_TriggersSafetyStop
+--- PASS: TestApp_ToggleAccountStatus_ActiveAccount_AutoSwitchOn_NoCandidates_TriggersSafetyStop (0.43s)
+=== RUN   TestApp_OnStatusChange_StatusNoCandidate_TriggersSafetyStop
+--- PASS: TestApp_OnStatusChange_StatusNoCandidate_TriggersSafetyStop (0.18s)
+=== RUN   TestApp_ToggleAccountStatus_ActiveAccount_AutoSwitchOn_WithOtherCandidate
+--- PASS: TestApp_ToggleAccountStatus_ActiveAccount_AutoSwitchOn_WithOtherCandidate (0.25s)
+=== RUN   TestApp_ToggleAccountStatus_NilManagerOrBusyNoCrash
+--- PASS: TestApp_ToggleAccountStatus_NilManagerOrBusyNoCrash (0.50s)
+=== RUN   TestUIBinding_AppLifecycle_ControllerAndStatusCleanup
+--- PASS: TestUIBinding_AppLifecycle_ControllerAndStatusCleanup (0.12s)
+=== RUN   TestUIBinding_TelemetryCallback_DualDispatchWithoutOverwrite
+--- PASS: TestUIBinding_TelemetryCallback_DualDispatchWithoutOverwrite (0.31s)
+=== RUN   TestUIBinding_Toggle_SetterBindingAndDynamicCheck
+--- PASS: TestUIBinding_Toggle_SetterBindingAndDynamicCheck (0.16s)
+=== RUN   TestAcceptance_TC01_HeaderRow2_CleanLayout
+--- PASS: TestAcceptance_TC01_HeaderRow2_CleanLayout (0.13s)
+=== RUN   TestAcceptance_TC02_FooterPlacementAndPrefix
+--- PASS: TestAcceptance_TC02_FooterPlacementAndPrefix (0.14s)
+=== RUN   TestAcceptance_TC03_VersionDisplayAndFormatting
+--- PASS: TestAcceptance_TC03_VersionDisplayAndFormatting (0.13s)
+=== RUN   TestAcceptance_TC04_FullWidthNotificationTakeover
+--- PASS: TestAcceptance_TC04_FullWidthNotificationTakeover (1.84s)
+=== RUN   TestThemeColorTokens
+--- PASS: TestThemeColorTokens (0.00s)
+=== RUN   TestThemeInterfaceImplementations
+=== RUN   TestThemeInterfaceImplementations/light
+=== RUN   TestThemeInterfaceImplementations/warm
+=== RUN   TestThemeInterfaceImplementations/dark
+--- PASS: TestThemeInterfaceImplementations (0.00s)
+    --- PASS: TestThemeInterfaceImplementations/light (0.00s)
+    --- PASS: TestThemeInterfaceImplementations/warm (0.00s)
+    --- PASS: TestThemeInterfaceImplementations/dark (0.00s)
+=== RUN   TestNewThemeInstance
+--- PASS: TestNewThemeInstance (0.00s)
+=== RUN   TestDefaultUIPreferencesPath
+--- PASS: TestDefaultUIPreferencesPath (0.00s)
+=== RUN   TestUIPreferencesPersistence
+--- PASS: TestUIPreferencesPersistence (0.08s)
+=== RUN   TestAppSetThemeRuntime
+--- PASS: TestAppSetThemeRuntime (0.27s)
+=== RUN   TestUIPreferences_JSONSerialization_WithAutoSwitch
+--- PASS: TestUIPreferences_JSONSerialization_WithAutoSwitch (0.00s)
+=== RUN   TestApp_AutoSwitchPersistence_RoundTrip
+--- PASS: TestApp_AutoSwitchPersistence_RoundTrip (0.12s)
+=== RUN   TestApp_StartupRestoresAutoSwitchState
+--- PASS: TestApp_StartupRestoresAutoSwitchState (0.08s)
+=== RUN   TestUIPreferences_AlwaysOnTop_BackwardCompatibility
+--- PASS: TestUIPreferences_AlwaysOnTop_BackwardCompatibility (0.02s)
+=== RUN   TestUIPreferences_JSONSerialization_WithAlwaysOnTop
+--- PASS: TestUIPreferences_JSONSerialization_WithAlwaysOnTop (0.02s)
+=== RUN   TestApp_AlwaysOnTop_RoundTrip
+--- PASS: TestApp_AlwaysOnTop_RoundTrip (0.07s)
+=== RUN   TestApp_AlwaysOnTopPersistence_RoundTrip
+--- PASS: TestApp_AlwaysOnTopPersistence_RoundTrip (0.11s)
+=== RUN   TestApp_AlwaysOnTop_StartupRestoration
+--- PASS: TestApp_AlwaysOnTop_StartupRestoration (0.08s)
+=== RUN   TestApp_StartupRestoresAlwaysOnTopState
+--- PASS: TestApp_StartupRestoresAlwaysOnTopState (0.07s)
+=== RUN   TestApp_UIPreferences_4WayCrossPreservation
+--- PASS: TestApp_UIPreferences_4WayCrossPreservation (0.27s)
+=== RUN   TestApp_CrossSettingPreservation_4Way
+--- PASS: TestApp_CrossSettingPreservation_4Way (0.17s)
+=== RUN   TestSyncVisualScaleAndTextures_PreservesPreferences
+--- PASS: TestSyncVisualScaleAndTextures_PreservesPreferences (0.15s)
+=== RUN   TestSyncVisualScaleAndTextures_RebuildsCardsWhenOverviewPresent
+--- PASS: TestSyncVisualScaleAndTextures_RebuildsCardsWhenOverviewPresent (0.30s)
+=== RUN   TestSyncVisualScaleAndTextures_SafeWhenOverviewNil
+--- PASS: TestSyncVisualScaleAndTextures_SafeWhenOverviewNil (0.32s)
+=== RUN   TestThreeStateCardUpdatesInPlace
+--- PASS: TestThreeStateCardUpdatesInPlace (0.01s)
+=== RUN   TestUpdateUIObservesCredentialChangesWithSameEmail
+--- PASS: TestUpdateUIObservesCredentialChangesWithSameEmail (0.03s)
+=== RUN   TestRefreshRepeatedCaptureAndFailureFeedback
+--- PASS: TestRefreshRepeatedCaptureAndFailureFeedback (0.57s)
+=== RUN   TestNewAppAndInit
+--- PASS: TestNewAppAndInit (0.22s)
+=== RUN   TestAlwaysOnTop
+--- PASS: TestAlwaysOnTop (0.18s)
+=== RUN   TestToggleAlwaysOnTop
+--- PASS: TestToggleAlwaysOnTop (0.17s)
+=== RUN   TestUpdateUI_WithAccounts
+--- PASS: TestUpdateUI_WithAccounts (0.16s)
+=== RUN   TestUpdateUI_Empty
+--- PASS: TestUpdateUI_Empty (0.20s)
+=== RUN   TestStatusDot
+--- PASS: TestStatusDot (0.00s)
+=== RUN   TestAppLogoResourceAndWindowIcon
+--- PASS: TestAppLogoResourceAndWindowIcon (0.21s)
+=== RUN   TestElevationTokensAndBorders
+--- PASS: TestElevationTokensAndBorders (0.00s)
+=== RUN   TestSwitchAccount_NoModalPopup
+--- PASS: TestSwitchAccount_NoModalPopup (0.65s)
+=== RUN   TestSwitchAccount_WithContinuationSummary
+--- PASS: TestSwitchAccount_WithContinuationSummary (0.71s)
+=== RUN   TestQuotaBadgeGroupAndColors
+--- PASS: TestQuotaBadgeGroupAndColors (0.00s)
+=== RUN   TestQuotaCountdownCalculationAndLabel
+--- PASS: TestQuotaCountdownCalculationAndLabel (0.00s)
+=== RUN   TestAccountCardWithQuotaAndRefresh
+--- PASS: TestAccountCardWithQuotaAndRefresh (0.00s)
+=== RUN   TestGlobalQuotaRefreshAndIndicator
+--- PASS: TestGlobalQuotaRefreshAndIndicator (0.55s)
+=== RUN   TestExtractDualCycleQuota_Contract
+--- PASS: TestExtractDualCycleQuota_Contract (0.00s)
+=== RUN   TestUITraceabilityChecklist
+--- PASS: TestUITraceabilityChecklist (0.26s)
+=== RUN   TestUIRendering_QuotaErrorBadgesTruthful
+--- PASS: TestUIRendering_QuotaErrorBadgesTruthful (0.00s)
+=== RUN   TestApp_StatusBarQuotaReportingFormatting
+--- PASS: TestApp_StatusBarQuotaReportingFormatting (0.24s)
+=== RUN   TestOwnerRedesign_WindowSizeAndLayout
+--- PASS: TestOwnerRedesign_WindowSizeAndLayout (0.07s)
+=== RUN   TestOwnerRedesign_QuotaCycleRowMinSizeFits840Window
+--- PASS: TestOwnerRedesign_QuotaCycleRowMinSizeFits840Window (0.00s)
+=== RUN   TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840
+=== RUN   TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/100%_and_91.6%
+=== RUN   TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/46%_and_12%
+=== RUN   TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/0%_and_50%
+=== RUN   TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/Missing_data
+=== RUN   TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/Error_state
+=== RUN   TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/5h_worst_case
+--- PASS: TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840 (0.00s)
+    --- PASS: TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/100%_and_91.6% (0.00s)
+    --- PASS: TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/46%_and_12% (0.00s)
+    --- PASS: TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/0%_and_50% (0.00s)
+    --- PASS: TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/Missing_data (0.00s)
+    --- PASS: TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/Error_state (0.00s)
+    --- PASS: TestOwnerRedesign_QuotaCycleRowNoDescendantOverflowAt840/5h_worst_case (0.00s)
+=== RUN   TestOwnerRedesign_AccountCardThreeRows
+--- PASS: TestOwnerRedesign_AccountCardThreeRows (0.00s)
+=== RUN   TestOwnerRedesign_EmailTruncationAndTooltip
+--- PASS: TestOwnerRedesign_EmailTruncationAndTooltip (0.00s)
+=== RUN   TestOwnerRedesign_ThreeColumnGrid
+--- PASS: TestOwnerRedesign_ThreeColumnGrid (0.15s)
+=== RUN   TestOwnerRedesign_NoGPTInCardsOrSummary
+--- PASS: TestOwnerRedesign_NoGPTInCardsOrSummary (0.00s)
+=== RUN   TestOwnerRedesign_F1_DualCycleIndependentFractionsAndMissing
+--- PASS: TestOwnerRedesign_F1_DualCycleIndependentFractionsAndMissing (0.00s)
+=== RUN   TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings
+--- PASS: TestOwnerRedesign_F3_SingleCardRefreshKeepsSiblings (0.25s)
+=== RUN   TestOwnerRedesign_F5_CompactCardHeight
+--- PASS: TestOwnerRedesign_F5_CompactCardHeight (0.07s)
+=== RUN   TestOwnerRedesign_F6_MonogramRecolorsOnThemeChange
+--- PASS: TestOwnerRedesign_F6_MonogramRecolorsOnThemeChange (1.61s)
+=== RUN   TestF1_ExtractDualCycleQuota_BothCyclesZero_NoRaw_NoReset
+--- PASS: TestF1_ExtractDualCycleQuota_BothCyclesZero_NoRaw_NoReset (0.00s)
+=== RUN   TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero
+--- PASS: TestF1_ExtractDualCycleQuota_PositiveLegacyFraction_WithBothCyclesZero (0.00s)
+=== RUN   TestMiniProgressBar_DepletionAndGeometry
+=== RUN   TestMiniProgressBar_DepletionAndGeometry/100%_Green
+=== RUN   TestMiniProgressBar_DepletionAndGeometry/91.6%_Green
+=== RUN   TestMiniProgressBar_DepletionAndGeometry/46%_Amber
+=== RUN   TestMiniProgressBar_DepletionAndGeometry/12%_Red
+=== RUN   TestMiniProgressBar_DepletionAndGeometry/0%_Red
+=== RUN   TestMiniProgressBar_DepletionAndGeometry/Missing_Muted
+=== RUN   TestMiniProgressBar_DepletionAndGeometry/Overflow_Clamped
+--- PASS: TestMiniProgressBar_DepletionAndGeometry (0.00s)
+    --- PASS: TestMiniProgressBar_DepletionAndGeometry/100%_Green (0.00s)
+    --- PASS: TestMiniProgressBar_DepletionAndGeometry/91.6%_Green (0.00s)
+    --- PASS: TestMiniProgressBar_DepletionAndGeometry/46%_Amber (0.00s)
+    --- PASS: TestMiniProgressBar_DepletionAndGeometry/12%_Red (0.00s)
+    --- PASS: TestMiniProgressBar_DepletionAndGeometry/0%_Red (0.00s)
+    --- PASS: TestMiniProgressBar_DepletionAndGeometry/Missing_Muted (0.00s)
+    --- PASS: TestMiniProgressBar_DepletionAndGeometry/Overflow_Clamped (0.00s)
+=== RUN   TestCreateMatrixQuotaTable_DetailedMatrixBehavior
+=== RUN   TestCreateMatrixQuotaTable_DetailedMatrixBehavior/Palette_dark
+=== RUN   TestCreateMatrixQuotaTable_DetailedMatrixBehavior/Palette_light
+=== RUN   TestCreateMatrixQuotaTable_DetailedMatrixBehavior/Palette_warm
+--- PASS: TestCreateMatrixQuotaTable_DetailedMatrixBehavior (0.00s)
+    --- PASS: TestCreateMatrixQuotaTable_DetailedMatrixBehavior/Palette_dark (0.00s)
+    --- PASS: TestCreateMatrixQuotaTable_DetailedMatrixBehavior/Palette_light (0.00s)
+    --- PASS: TestCreateMatrixQuotaTable_DetailedMatrixBehavior/Palette_warm (0.00s)
+=== RUN   TestArchitectSpec_INV01_InPlaceReactiveQuotaUpdatesZeroCanvasChurn
+--- PASS: TestArchitectSpec_INV01_InPlaceReactiveQuotaUpdatesZeroCanvasChurn (0.42s)
+=== RUN   TestIndustryStandard_FixedMatrixMetrics
+--- PASS: TestIndustryStandard_FixedMatrixMetrics (0.00s)
+=== RUN   TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate
+--- PASS: TestIndustryStandard_OnlyMinibarDecreasesOnQuotaUpdate (0.00s)
+=== RUN   TestIndustryStandard_WindowInit920x630
+--- PASS: TestIndustryStandard_WindowInit920x630 (0.18s)
+=== RUN   TestWindowControlsMinimizeMaximizeClose
+--- PASS: TestWindowControlsMinimizeMaximizeClose (0.09s)
+=== RUN   TestPurgeAllResizing_AccountGridWrapFixedSize
+--- PASS: TestPurgeAllResizing_AccountGridWrapFixedSize (0.17s)
+=== RUN   TestArchitectSpec_QuotaStackedLayoutCard280x130_FullConformance
+--- PASS: TestArchitectSpec_QuotaStackedLayoutCard280x130_FullConformance (0.18s)
+=== RUN   TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance
+--- PASS: TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance (0.02s)
+=== RUN   TestArchitectSpec_CompactWindowWidth920px_FullConformance
+--- PASS: TestArchitectSpec_CompactWindowWidth920px_FullConformance (0.42s)
+=== RUN   TestArchitectSpec_CompactSwitchButtonHeight70Pct_FullConformance
+--- PASS: TestArchitectSpec_CompactSwitchButtonHeight70Pct_FullConformance (0.01s)
+=== RUN   TestArchitectSpec_FlatTextSwitchButton_FullConformance
+--- PASS: TestArchitectSpec_FlatTextSwitchButton_FullConformance (0.02s)
+=== RUN   TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance
+--- PASS: TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance (0.33s)
+=== RUN   TestApp_HeaderRow2_RightCluster_SeparationAndPalettePersistence
+--- PASS: TestApp_HeaderRow2_RightCluster_SeparationAndPalettePersistence (0.29s)
+=== RUN   TestApp_AddAccountButton_ToolbarInteractionOpensModalSafely
+--- PASS: TestApp_AddAccountButton_ToolbarInteractionOpensModalSafely (0.15s)
+=== RUN   TestSymmetricGridWrapLayout_ExactSymmetry
+--- PASS: TestSymmetricGridWrapLayout_ExactSymmetry (0.16s)
+=== RUN   TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance
+--- PASS: TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance (0.64s)
+=== RUN   TestArchitectSpec_CompactThemeSelect60Pct_FullConformance
+--- PASS: TestArchitectSpec_CompactThemeSelect60Pct_FullConformance (0.28s)
+=== RUN   TestHeaderRow2_VerticalAlignment
+--- PASS: TestHeaderRow2_VerticalAlignment (0.13s)
+=== RUN   TestAutomation_AppLifecycleAndController
+--- PASS: TestAutomation_AppLifecycleAndController (0.13s)
+=== RUN   TestAutomation_ToggleAndSetterBinding
+--- PASS: TestAutomation_ToggleAndSetterBinding (0.20s)
+=== RUN   TestAutomation_TelemetryCallbackIntegration
+--- PASS: TestAutomation_TelemetryCallbackIntegration (0.18s)
+=== RUN   TestAutomation_StatusEventListenerAndStatusBar
+--- PASS: TestAutomation_StatusEventListenerAndStatusBar (0.61s)
+=== RUN   TestAutomation_ManualSwitch_GateAndInvalidation
+--- PASS: TestAutomation_ManualSwitch_GateAndInvalidation (0.32s)
+=== RUN   TestAutomation_GateMutualExclusion
+--- PASS: TestAutomation_GateMutualExclusion (0.00s)
+=== RUN   TestArchitectSpec_Row2Layout_WithDividers
+--- PASS: TestArchitectSpec_Row2Layout_WithDividers (0.30s)
+=== RUN   TestArchitectSpec_Row2Layout_ThemeSync
+=== RUN   TestArchitectSpec_Row2Layout_ThemeSync/Theme_dark
+=== RUN   TestArchitectSpec_Row2Layout_ThemeSync/Theme_light
+=== RUN   TestArchitectSpec_Row2Layout_ThemeSync/Theme_warm
+--- PASS: TestArchitectSpec_Row2Layout_ThemeSync (0.16s)
+    --- PASS: TestArchitectSpec_Row2Layout_ThemeSync/Theme_dark (0.04s)
+    --- PASS: TestArchitectSpec_Row2Layout_ThemeSync/Theme_light (0.04s)
+    --- PASS: TestArchitectSpec_Row2Layout_ThemeSync/Theme_warm (0.04s)
+=== RUN   TestArchitectSpec_MaskAccounts_Persistence
+--- PASS: TestArchitectSpec_MaskAccounts_Persistence (0.22s)
+=== RUN   TestMaskEmail_AlgorithmConformance
+=== RUN   TestMaskEmail_AlgorithmConformance/Standard_gmail
+=== RUN   TestMaskEmail_AlgorithmConformance/Dotted_username_and_io_domain
+=== RUN   TestMaskEmail_AlgorithmConformance/Single_character_username
+=== RUN   TestMaskEmail_AlgorithmConformance/Plus_tag_and_multi-level_domain
+=== RUN   TestMaskEmail_AlgorithmConformance/Invalid_format_without_@
+=== RUN   TestMaskEmail_AlgorithmConformance/Empty_string
+=== RUN   TestMaskEmail_AlgorithmConformance/No_username_before_@
+=== RUN   TestMaskEmail_AlgorithmConformance/Whitespace_trimmed
+=== RUN   TestMaskEmail_AlgorithmConformance/UTF-8_rune_safe
+--- PASS: TestMaskEmail_AlgorithmConformance (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/Standard_gmail (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/Dotted_username_and_io_domain (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/Single_character_username (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/Plus_tag_and_multi-level_domain (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/Invalid_format_without_@ (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/Empty_string (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/No_username_before_@ (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/Whitespace_trimmed (0.00s)
+    --- PASS: TestMaskEmail_AlgorithmConformance/UTF-8_rune_safe (0.00s)
+=== RUN   TestArchitectSpec_MaskAccountsToggle_Behavior
+--- PASS: TestArchitectSpec_MaskAccountsToggle_Behavior (0.20s)
+=== RUN   TestArchitectSpec_MaskAccounts_StatusBarMasking
+--- PASS: TestArchitectSpec_MaskAccounts_StatusBarMasking (0.90s)
+=== RUN   TestArchitectSpec_MaskAccounts_NewCardInitialMask
+--- PASS: TestArchitectSpec_MaskAccounts_NewCardInitialMask (0.25s)
+=== RUN   TestToolbar_RefreshButton_DefaultLabel
+--- PASS: TestToolbar_RefreshButton_DefaultLabel (0.41s)
+=== RUN   TestToolbar_RefreshButton_LoadingAndResetState
+--- PASS: TestToolbar_RefreshButton_LoadingAndResetState (0.95s)
+=== RUN   TestAddModal_ScanChromeButton_Preserved
+--- PASS: TestAddModal_ScanChromeButton_Preserved (1.44s)
+=== RUN   TestTierColor
+--- PASS: TestTierColor (0.00s)
+=== RUN   TestAccountCardWidget_TierBadge_VisualHierarchy
+--- PASS: TestAccountCardWidget_TierBadge_VisualHierarchy (0.02s)
+=== RUN   TestStatusTextButton_RenderingAndHover
+--- PASS: TestStatusTextButton_RenderingAndHover (0.00s)
+=== RUN   TestSwitchTextButton_DisabledState
+--- PASS: TestSwitchTextButton_DisabledState (0.00s)
+=== RUN   TestAccountCardWidget_StatusButton_DefaultOnAndToggle
+--- PASS: TestAccountCardWidget_StatusButton_DefaultOnAndToggle (0.00s)
+=== RUN   TestAccountCardWidget_StatusOff_MutesSwitchAndDisablesRefresh
+--- PASS: TestAccountCardWidget_StatusOff_MutesSwitchAndDisablesRefresh (0.01s)
+=== RUN   TestAccountCardWidget_UnauthAccount_HidesStatusButton
+--- PASS: TestAccountCardWidget_UnauthAccount_HidesStatusButton (0.02s)
+=== RUN   TestAccountCardWidget_ActiveAccount_ShowsStatusButton
+--- PASS: TestAccountCardWidget_ActiveAccount_ShowsStatusButton (0.01s)
+=== RUN   TestAccountCardWidget_TransitionFromOnToOffAndBack
+--- PASS: TestAccountCardWidget_TransitionFromOnToOffAndBack (0.01s)
+=== RUN   TestAccountCardWidget_DeleteButton_OrderAndHierarchy
+--- PASS: TestAccountCardWidget_DeleteButton_OrderAndHierarchy (0.00s)
+=== RUN   TestAccountCardWidget_DeleteButton_VisibilityStates
+--- PASS: TestAccountCardWidget_DeleteButton_VisibilityStates (0.01s)
+=== RUN   TestAccountCardWidget_TriggerDelete_And_SetOnDelete
+--- PASS: TestAccountCardWidget_TriggerDelete_And_SetOnDelete (0.01s)
+=== RUN   TestResizeRectKeepsOppositeEdges
+=== RUN   TestResizeRectKeepsOppositeEdges/left
+=== RUN   TestResizeRectKeepsOppositeEdges/right
+=== RUN   TestResizeRectKeepsOppositeEdges/top
+=== RUN   TestResizeRectKeepsOppositeEdges/bottom
+=== RUN   TestResizeRectKeepsOppositeEdges/top-left
+=== RUN   TestResizeRectKeepsOppositeEdges/top-right
+=== RUN   TestResizeRectKeepsOppositeEdges/bottom-left
+=== RUN   TestResizeRectKeepsOppositeEdges/bottom-right
+--- PASS: TestResizeRectKeepsOppositeEdges (0.00s)
+    --- PASS: TestResizeRectKeepsOppositeEdges/left (0.00s)
+    --- PASS: TestResizeRectKeepsOppositeEdges/right (0.00s)
+    --- PASS: TestResizeRectKeepsOppositeEdges/top (0.00s)
+    --- PASS: TestResizeRectKeepsOppositeEdges/bottom (0.00s)
+    --- PASS: TestResizeRectKeepsOppositeEdges/top-left (0.00s)
+    --- PASS: TestResizeRectKeepsOppositeEdges/top-right (0.00s)
+    --- PASS: TestResizeRectKeepsOppositeEdges/bottom-left (0.00s)
+    --- PASS: TestResizeRectKeepsOppositeEdges/bottom-right (0.00s)
+=== RUN   TestResizeRectClampsWithoutMovingOppositeCorner
+--- PASS: TestResizeRectClampsWithoutMovingOppositeCorner (0.00s)
+=== RUN   TestResizeFrameReservesEdgesAndMinimumSize
+--- PASS: TestResizeFrameReservesEdgesAndMinimumSize (0.01s)
+FAIL
+FAIL	antigravity-switch/internal/ui	36.299s
+=== RUN   TestRenderTierBadges_Themes
+    render_test.go:91: Saved screenshots/tier_badges_dark_theme.png
+    render_test.go:91: Saved screenshots/tier_badges_light_theme.png
+    render_test.go:91: Saved screenshots/tier_badges_warm_theme.png
+--- PASS: TestRenderTierBadges_Themes (0.63s)
+=== RUN   TestRenderTierBadges_InPlaceReactiveMutation
+    render_test.go:91: Saved screenshots/tier_badges_inplace_mutation.png
+--- PASS: TestRenderTierBadges_InPlaceReactiveMutation (0.15s)
+PASS
+ok  	antigravity-switch/reports/QA/tier-badge	2.639s
+FAIL

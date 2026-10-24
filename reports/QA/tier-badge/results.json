@@ -1,0 +1,72 @@
+{
+  "test_run": "QA_Runtime_Review_Tier_Badge",
+  "timestamp": "2026-10-24T13:19:00+07:00",
+  "commit_under_test": "265c104b7dee9f9e109974fa0c48c5600109c41d",
+  "coder_report": "reports/coder/rp_coder_261024_tier_badge.md",
+  "architect_spec": "reports/system-architect/rp_system-architect_261024_123500_by_antigravity_tier_badge_auto_detection_and_visual_hierarchy.md",
+  "verdict": "PASS",
+  "ready_for_supervisor": true,
+  "build": {
+    "command": "scripts/build_windows.ps1 -SkipTests",
+    "target": "bin/antigravity-switch.exe",
+    "exit_code": 0,
+    "size_bytes": 29215232,
+    "pe_icon_verified": true,
+    "log_path": "reports/QA/tier-badge/build.log"
+  },
+  "test_suites": {
+    "total_packages": 12,
+    "all_passed": true,
+    "log_path": "reports/QA/tier-badge/test-suites.log",
+    "feature_tests": [
+      {"name": "TestGetUserStatus", "package": "internal/connector", "status": "PASS"},
+      {"name": "TestGetUserStatus_NestedPlanInfo", "package": "internal/connector", "status": "PASS"},
+      {"name": "TestNormalizeTier", "package": "internal/telemetry", "status": "PASS"},
+      {"name": "TestLoadCodeAssist_Parser", "package": "internal/telemetry", "status": "PASS"},
+      {"name": "TestTierColor", "package": "internal/ui", "status": "PASS"},
+      {"name": "TestAccountCardWidget_TierBadge_VisualHierarchy", "package": "internal/ui", "status": "PASS"},
+      {"name": "TestCreateMatrixQuotaTable_DetailedMatrixBehavior", "package": "internal/ui", "status": "PASS"},
+      {"name": "TestRenderTierBadges_Themes", "package": "reports/QA/tier-badge", "status": "PASS"},
+      {"name": "TestRenderTierBadges_InPlaceReactiveMutation", "package": "reports/QA/tier-badge", "status": "PASS"}
+    ]
+  },
+  "visual_hierarchy_evidence": {
+    "screenshots": [
+      {
+        "id": "EV-01",
+        "file": "reports/QA/tier-badge/screenshots/tier_badges_5_states.png",
+        "description": "5-Tier visual hierarchy matrix in Dark theme (ULTRA, PRO, BIZ, FREE, --)"
+      },
+      {
+        "id": "EV-02",
+        "file": "reports/QA/tier-badge/screenshots/tier_badges_dark_theme.png",
+        "description": "Dark Theme full cards preview"
+      },
+      {
+        "id": "EV-03",
+        "file": "reports/QA/tier-badge/screenshots/tier_badges_light_theme.png",
+        "description": "Light Theme full cards preview"
+      },
+      {
+        "id": "EV-04",
+        "file": "reports/QA/tier-badge/screenshots/tier_badges_warm_theme.png",
+        "description": "Warm Theme full cards preview"
+      },
+      {
+        "id": "EV-05",
+        "file": "reports/QA/tier-badge/screenshots/tier_badges_inplace_mutation.png",
+        "description": "In-place reactive mutation verification without layout shifting"
+      }
+    ],
+    "spatial_invariant": {
+      "col1W": 48.0,
+      "colGap": 8.0,
+      "max_tier_chars": 5,
+      "overflow_detected": false
+    },
+    "no_flicker_invariant": {
+      "in_place_refresh": true,
+      "container_rebuilt": false
+    }
+  }
+}

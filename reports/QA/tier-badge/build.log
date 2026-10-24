@@ -1,0 +1,24 @@
+================================================================================
+⚡ Antigravity Multi-Account Switcher - Windows Build System
+   OutDir: bin | SkipTests: True | Clean: False | SyncOnly: False
+================================================================================
+[0/4] Checking and synchronizing application version...
+  -> Single Source of Truth detected: Version 1.0.3.0 (from internal\version\version.go)
+  [OK] README.md version is already in sync (1.0.3.0)
+  [OK] README_VN.md version is already in sync (1.0.3.0)
+  [OK] README_EN.md version is already in sync (1.0.3.0)
+  [OK] cmd\switcher\app.rc is already in sync (1.0.3.0)
+[2/4] Skipping tests (-SkipTests specified).
+[3/4] Compiling target binaries...
+  -> Checking Windows application icon and resource...
+  -> Compiling resource with windres: cmd\switcher\app.rc -> cmd\switcher\rsrc_windows_amd64.syso
+  [SUCCESS] Compiled PE resource object: cmd\switcher\rsrc_windows_amd64.syso (13490 bytes)
+  -> Building Standalone GUI Binary (Fyne, CGO_ENABLED=1)...
+  [SUCCESS] Created: bin\antigravity-switch.exe
+  Compile Duration: 11623 ms | Size: 27.86 MB (29215232 bytes)
+[4/4] Executing quick verification...
+  [PASS] Embedded PE application icon verified on bin\antigravity-switch.exe (32x32)
+  [INFO] GUI binary built at bin\antigravity-switch.exe.
+================================================================================
+⚡ BUILD SUCCESSFUL
+================================================================================
