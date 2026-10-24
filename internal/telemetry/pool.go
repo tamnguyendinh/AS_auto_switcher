@@ -250,8 +250,15 @@ func (p *TelemetryPool) pollFromLanguageServer(ctx context.Context, email string
 		return nil, err
 	}
 
+	rawTier := userStatus.PlanName
+	if rawTier == "" {
+		rawTier = userStatus.TeamsTier
+	}
+	tier := NormalizeTier(rawTier)
+
 	return &AccountQuotaData{
 		Email:       email,
+		Tier:        tier,
 		Claude:      claude,
 		Gemini:      gemini,
 		RawBuckets:  rawBuckets,
@@ -278,6 +285,7 @@ func (p *TelemetryPool) pollAccountWithToken(ctx context.Context, email, refresh
 		err := fmt.Errorf("no refresh token available for account %s", cleanEmail)
 		errData := &AccountQuotaData{
 			Email:        cleanEmail,
+			Tier:         "--",
 			Status:       StatusError,
 			ErrorMessage: err.Error(),
 			LastUpdated:  time.Now().UTC(),
@@ -290,6 +298,7 @@ func (p *TelemetryPool) pollAccountWithToken(ctx context.Context, email, refresh
 	if err != nil {
 		errData := &AccountQuotaData{
 			Email:        cleanEmail,
+			Tier:         "--",
 			Status:       StatusError,
 			ErrorMessage: err.Error(),
 			LastUpdated:  time.Now().UTC(),
@@ -299,6 +308,9 @@ func (p *TelemetryPool) pollAccountWithToken(ctx context.Context, email, refresh
 	}
 
 	data.Email = cleanEmail
+	if data.Tier == "" {
+		data.Tier = "--"
+	}
 	p.cache.Update(data)
 	return data, nil
 }

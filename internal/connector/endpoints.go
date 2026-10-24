@@ -43,6 +43,8 @@ type UserStatus struct {
 	Name        string                 `json:"name,omitempty"`
 	DisplayName string                 `json:"display_name,omitempty"`
 	Status      string                 `json:"status,omitempty"`
+	PlanName    string                 `json:"plan_name,omitempty"`  // "Pro", "Ultra"...
+	TeamsTier   string                 `json:"teams_tier,omitempty"` // "TEAMS_TIER_PRO"...
 	Raw         map[string]interface{} `json:"raw,omitempty"`
 }
 

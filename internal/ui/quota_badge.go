@@ -22,7 +22,29 @@ var (
 
 	// ColorQuotaTrack defines the subtle background track color for mini progress bars per architect spec.
 	ColorQuotaTrack = color.NRGBA{R: 0x44, G: 0x44, B: 0x55, A: 0x66}
+
+	// ColorTierUltra: Vàng Amber nổi bật rực rỡ (#f59e0b)
+	ColorTierUltra = color.NRGBA{R: 0xf5, G: 0x9e, B: 0x0b, A: 0xff}
+
+	// ColorTierBiz: Xanh lục doanh nghiệp (#10b981)
+	ColorTierBiz = color.NRGBA{R: 0x10, G: 0xb9, B: 0x81, A: 0xff}
 )
+
+// TierColor determines the visual hierarchy color for a given account tier code.
+func TierColor(tier string, palette ThemePalette) color.Color {
+	switch strings.ToUpper(strings.TrimSpace(tier)) {
+	case "ULTRA":
+		return ColorTierUltra
+	case "PRO":
+		return palette.Primary
+	case "BIZ":
+		return ColorTierBiz
+	case "FREE":
+		return palette.TextMuted
+	default:
+		return palette.TextMuted
+	}
+}
 
 // DefaultMiniBarWidth defines the standard 50px width for quota mini progress bars.
 const DefaultMiniBarWidth float32 = 50.0
@@ -773,11 +795,16 @@ func (l *matrixTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	}
 }
 
-func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (fyne.CanvasObject, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell) {
-	// Col 1: Model Labels
-	txtQuota := canvas.NewText("Quota", palette.TextMuted)
-	txtQuota.TextSize = BodyTextSize
-	txtQuota.TextStyle = fyne.TextStyle{Bold: true}
+func createMatrixQuotaTableWithCells(
+	dq DualCycleQuota,
+	tier string,
+	palette ThemePalette,
+) (fyne.CanvasObject, *canvas.Text, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell, *matrixQuotaCell) {
+	// Col 1: Tier Label & Model Labels
+	displayTier := telemetry.NormalizeTier(tier)
+	txtTier := canvas.NewText(displayTier, TierColor(displayTier, palette))
+	txtTier.TextSize = BodyTextSize
+	txtTier.TextStyle = fyne.TextStyle{Bold: true}
 
 	txtGemini := canvas.NewText("Gemini", palette.Text)
 	txtGemini.TextSize = BodyTextSize
@@ -790,7 +817,8 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 	cellGeminiModel := container.New(&matrixStackedModelCellLayout{}, txtGemini)
 	cellClaudeModel := container.New(&matrixStackedModelCellLayout{}, txtClaude)
 
-	colModel := container.New(&matrixColumnLayout{}, txtQuota, cellGeminiModel, cellClaudeModel)
+	// Col 1: Thay txtQuota bằng txtTier
+	colModel := container.New(&matrixColumnLayout{}, txtTier, cellGeminiModel, cellClaudeModel)
 
 	// Col 2: 5h Cycle
 	txt5h := canvas.NewText("5h", palette.TextMuted)
@@ -822,14 +850,22 @@ func createMatrixQuotaTableWithCells(dq DualCycleQuota, palette ThemePalette) (f
 	hSep := canvas.NewRectangle(palette.BorderSubtle)
 
 	table := container.New(&matrixTableLayout{}, colModel, col5h, colWeek, hSep)
-	return table, cellGemini5h, cellGeminiWeek, cellClaude5h, cellClaudeWeek
+	return table, txtTier, cellGemini5h, cellGeminiWeek, cellClaude5h, cellClaudeWeek
+}
+
+// CreateMatrixQuotaTableWithTier builds a 3x3 matrix table for model quota and tier display:
+// Row 0: <Tier> | 5h           | Week
+// Row 1: Gemini | [bar] <pct>% | [bar] <pct>%
+// Row 2: Claude | [bar] <pct>% | [bar] <pct>%
+func CreateMatrixQuotaTableWithTier(dq DualCycleQuota, tier string, palette ThemePalette) fyne.CanvasObject {
+	table, _, _, _, _, _ := createMatrixQuotaTableWithCells(dq, tier, palette)
+	return table
 }
 
 // CreateMatrixQuotaTable builds a 3x3 matrix table for model quota display per architect spec:
-// Row 0: Quota  | 5h           | Week
+// Row 0: <Tier> | 5h           | Week
 // Row 1: Gemini | [bar] <pct>% | [bar] <pct>%
 // Row 2: Claude | [bar] <pct>% | [bar] <pct>%
 func CreateMatrixQuotaTable(dq DualCycleQuota, palette ThemePalette) fyne.CanvasObject {
-	table, _, _, _, _ := createMatrixQuotaTableWithCells(dq, palette)
-	return table
+	return CreateMatrixQuotaTableWithTier(dq, "", palette)
 }

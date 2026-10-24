@@ -17,6 +17,7 @@ import (
 	"antigravity-switch/internal/reloader"
 	"antigravity-switch/internal/scanner"
 	"antigravity-switch/internal/store"
+	"antigravity-switch/internal/telemetry"
 	"antigravity-switch/internal/wincred"
 )
 
@@ -40,6 +41,7 @@ type AccountDisplayItem struct {
 	IsActive     bool               `json:"is_active"`
 	HasToken     bool               `json:"has_token"`
 	DisplayBadge string             `json:"display_badge"`
+	Tier         string             `json:"tier,omitempty"` // "PRO", "ULTRA", "FREE", "BIZ", "--"
 }
 
 // AccountOverview encapsulates the current state of all accounts and language server status.
@@ -421,7 +423,13 @@ func (m *AccountManager) GetAccountStates(ctx context.Context) (*AccountOverview
 		item.Status = "on"
 		if item.HasToken {
 			item.Status = m.GetAccountStatus(item.Email)
+			if m.store != nil {
+				if env, err := m.store.GetAccountEnvelope(item.Email); err == nil && env != nil {
+					item.Tier = env.Tier
+				}
+			}
 		}
+		item.Tier = telemetry.NormalizeTier(item.Tier)
 		switch {
 		case item.IsActive:
 			item.State, item.DisplayBadge = model.StateActive, "[✔ Dùng]"

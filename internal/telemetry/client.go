@@ -26,6 +26,9 @@ const (
 	// DefaultGoogleQuotaURL is the authoritative Google Cloud Code quota endpoint.
 	DefaultGoogleQuotaURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
 
+	// DefaultGoogleCodeAssistURL is the authoritative Google Cloud Code assist tier endpoint.
+	DefaultGoogleCodeAssistURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+
 	// DefaultUserAgent is the default fallback User-Agent when discovery is inactive.
 	DefaultUserAgent = "antigravity/2.24.0"
 
@@ -331,9 +334,22 @@ func (a *AccountQuotaData) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// rawCodeAssistResponse captures current tier and paid tier structures from Google Cloud Code.
+type rawCodeAssistResponse struct {
+	CurrentTier struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"currentTier"`
+	PaidTier struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"paidTier"`
+}
+
 // AccountQuotaData encapsulates the parsed quota telemetry across model families for one account.
 type AccountQuotaData struct {
 	Email        string             `json:"email"`
+	Tier         string             `json:"tier,omitempty"` // "PRO", "ULTRA", "FREE", "BIZ", "--"
 	Claude       ModelQuotaBucket   `json:"claude"`
 	Gemini       ModelQuotaBucket   `json:"gemini"`
 	RawBuckets   []ModelQuotaBucket `json:"raw_buckets,omitempty"`
@@ -345,10 +361,11 @@ type AccountQuotaData struct {
 
 // QuotaClient communicates with Google Cloud Code internal quota endpoints.
 type QuotaClient struct {
-	refresher  connector.OAuthRefresher
-	endpoint   string
-	httpClient *http.Client
-	userAgent  string
+	refresher          connector.OAuthRefresher
+	endpoint           string
+	codeAssistEndpoint string
+	httpClient         *http.Client
+	userAgent          string
 }
 
 // NewQuotaClient creates a QuotaClient with default Google Cloud Code endpoint.
@@ -371,6 +388,78 @@ func NewQuotaClientWithEndpoint(refresher connector.OAuthRefresher, endpoint str
 		endpoint:   endpoint,
 		httpClient: httpClient,
 	}
+}
+
+// SetCodeAssistEndpoint overrides the default loadCodeAssist endpoint (ideal for tests).
+func (c *QuotaClient) SetCodeAssistEndpoint(endpoint string) {
+	c.codeAssistEndpoint = endpoint
+}
+
+// CodeAssistEndpoint returns the configured or inferred loadCodeAssist endpoint.
+func (c *QuotaClient) CodeAssistEndpoint() string {
+	if c.codeAssistEndpoint != "" {
+		return c.codeAssistEndpoint
+	}
+	if c.endpoint == DefaultGoogleQuotaURL {
+		return DefaultGoogleCodeAssistURL
+	}
+	if strings.Contains(c.endpoint, "retrieveUserQuotaSummary") {
+		return strings.Replace(c.endpoint, "retrieveUserQuotaSummary", "loadCodeAssist", 1)
+	}
+	if strings.Contains(c.endpoint, "retrieveUserQuota") {
+		return strings.Replace(c.endpoint, "retrieveUserQuota", "loadCodeAssist", 1)
+	}
+	return c.endpoint + "/loadCodeAssist"
+}
+
+// ParseCodeAssistTier parses the loadCodeAssist response payload and normalizes the tier.
+func ParseCodeAssistTier(caBytes []byte) string {
+	var caResp rawCodeAssistResponse
+	if err := json.Unmarshal(caBytes, &caResp); err == nil {
+		rawTier := caResp.CurrentTier.ID
+		if (rawTier == "" || rawTier == "free-tier") && caResp.PaidTier.ID != "" {
+			rawTier = caResp.PaidTier.ID
+		}
+		if rawTier == "" {
+			rawTier = caResp.CurrentTier.Name
+		}
+		return NormalizeTier(rawTier)
+	}
+	return "--"
+}
+
+// FetchTier queries loadCodeAssist with the given accessToken and returns the normalized tier.
+func (c *QuotaClient) FetchTier(ctx context.Context, accessToken string) string {
+	caURL := c.CodeAssistEndpoint()
+	if caURL == "" {
+		return "--"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, caURL, bytes.NewBufferString("{}"))
+	if err != nil {
+		return "--"
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.UserAgent())
+	req.Header.Set("X-Goog-Api-Client", DefaultGoogApiClient)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "--"
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "--"
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "--"
+	}
+
+	return ParseCodeAssistTier(bodyBytes)
 }
 
 // SetUserAgent sets a custom User-Agent for this client instance (useful for testing).
@@ -616,6 +705,12 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 		return nil, fmt.Errorf("%w: failed to refresh access token: %v", ErrQuotaFetchFailed, err)
 	}
 
+	// 1b. Fetch Tier via loadCodeAssist (best effort with 3s timeout)
+	tier := "--"
+	caCtx, caCancel := context.WithTimeout(ctx, 3*time.Second)
+	tier = c.FetchTier(caCtx, tokenResult.AccessToken)
+	caCancel()
+
 	// 2. Build HTTP request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewBufferString("{}"))
 	if err != nil {
@@ -649,6 +744,7 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 		var checkResp rawQuotaSummaryResponse
 		if json.Unmarshal(bodyBytes, &checkResp) == nil && (checkResp.Response.Groups != nil || checkResp.Groups != nil) {
 			return &AccountQuotaData{
+				Tier:        tier,
 				Claude:      claude,
 				Gemini:      gemini,
 				RawBuckets:  rawBuckets,
@@ -674,6 +770,7 @@ func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string
 	claude, gemini, _, resetTime, status = AggregateBuckets(rawBuckets)
 
 	return &AccountQuotaData{
+		Tier:        tier,
 		Claude:      claude,
 		Gemini:      gemini,
 		RawBuckets:  rawBuckets,

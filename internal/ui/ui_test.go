@@ -1215,9 +1215,9 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 		t.Fatalf("expected at least 4 objects in matrix table (3 cols + hSep), got %d", len(line2.Objects))
 	}
 
-	// Verify required labels: Quota, Gemini, Claude, 5h, Week
+	// Verify required labels: Tier badge (-- or Quota), Gemini, Claude, 5h, Week
 	matrixTexts := extractAllTexts(line2)
-	requiredLabels := []string{"Quota", "Gemini", "Claude", "5h", "Week"}
+	requiredLabels := []string{"Gemini", "Claude", "5h", "Week"}
 	for _, req := range requiredLabels {
 		found := false
 		for _, txt := range matrixTexts {
@@ -1229,6 +1229,16 @@ func TestOwnerRedesign_AccountCardThreeRows(t *testing.T) {
 		if !found {
 			t.Errorf("expected label '%s' in matrix quota table, got texts: %v", req, matrixTexts)
 		}
+	}
+	tierFound := false
+	for _, txt := range matrixTexts {
+		if txt == "--" || txt == "Quota" || txt == "PRO" || txt == "ULTRA" || txt == "FREE" || txt == "BIZ" {
+			tierFound = true
+			break
+		}
+	}
+	if !tierFound {
+		t.Errorf("expected tier label or 'Quota' in matrix quota table, got texts: %v", matrixTexts)
 	}
 
 	// Verify horizontal separator between Gemini and Claude has BorderSubtle color
@@ -1994,7 +2004,7 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 			assertColorMatches(t, palette.Name, "hSep", hSep.FillColor, palette.BorderSubtle)
 			// Verify labels and percentages
 			texts := extractAllTexts(matrix)
-			expectedTexts := []string{"Quota", "Gemini", "Claude", "5h", "88%", "100%", "Week", "12%", "46%"}
+			expectedTexts := []string{"Gemini", "Claude", "5h", "88%", "100%", "Week", "12%", "46%"}
 			for _, exp := range expectedTexts {
 				found := false
 				for _, txt := range texts {
@@ -2006,6 +2016,16 @@ func TestCreateMatrixQuotaTable_DetailedMatrixBehavior(t *testing.T) {
 				if !found {
 					t.Errorf("missing expected text '%s' in matrix, got %v", exp, texts)
 				}
+			}
+			tierFound := false
+			for _, txt := range texts {
+				if txt == "--" || txt == "Quota" || txt == "PRO" || txt == "ULTRA" || txt == "FREE" || txt == "BIZ" {
+					tierFound = true
+					break
+				}
+			}
+			if !tierFound {
+				t.Errorf("expected tier label in matrix, got %v", texts)
 			}
 		})
 	}
@@ -2371,7 +2391,7 @@ func TestArchitectSpec_QuotaStackedLayoutCard280x130_FullConformance(t *testing.
 		HasData:         true,
 	}
 
-	table, cG5, cGW, cC5, cCW := createMatrixQuotaTableWithCells(dq, palette)
+	table, _, cG5, cGW, cC5, cCW := createMatrixQuotaTableWithCells(dq, "", palette)
 	cont, ok := table.(*fyne.Container)
 	if !ok || len(cont.Objects) < 4 {
 		t.Fatalf("expected matrix table container with at least 4 objects")
@@ -2437,7 +2457,7 @@ func TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance(t *te
 		HasData:         true,
 	}
 
-	table, cG5, cGW, cC5, cCW := createMatrixQuotaTableWithCells(dq, palette)
+	table, _, cG5, cGW, cC5, cCW := createMatrixQuotaTableWithCells(dq, "", palette)
 	cont, ok := table.(*fyne.Container)
 	if !ok {
 		t.Fatalf("expected matrix table container")
@@ -4363,5 +4383,97 @@ func TestAddModal_ScanChromeButton_Preserved(t *testing.T) {
 
 	if !restored {
 		t.Errorf("expected modal scanBtn text to restore to 'Quét Chrome', got '%s'", scanBtn.Text)
+	}
+}
+
+func TestTierColor(t *testing.T) {
+	palette := DarkPalette
+
+	if c := TierColor("ULTRA", palette); c != ColorTierUltra {
+		t.Errorf("expected ColorTierUltra for ULTRA, got %v", c)
+	}
+	if c := TierColor("ultra", palette); c != ColorTierUltra {
+		t.Errorf("expected ColorTierUltra for lowercase ultra, got %v", c)
+	}
+	if c := TierColor("PRO", palette); c != palette.Primary {
+		t.Errorf("expected palette.Primary for PRO, got %v", c)
+	}
+	if c := TierColor("BIZ", palette); c != ColorTierBiz {
+		t.Errorf("expected ColorTierBiz for BIZ, got %v", c)
+	}
+	if c := TierColor("FREE", palette); c != palette.TextMuted {
+		t.Errorf("expected palette.TextMuted for FREE, got %v", c)
+	}
+	if c := TierColor("--", palette); c != palette.TextMuted {
+		t.Errorf("expected palette.TextMuted for --, got %v", c)
+	}
+	if c := TierColor("unknown", palette); c != palette.TextMuted {
+		t.Errorf("expected palette.TextMuted for unknown, got %v", c)
+	}
+}
+
+func TestAccountCardWidget_TierBadge_VisualHierarchy(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	palette := DarkPalette
+	item := manager.AccountDisplayItem{
+		Email:    "test@example.com",
+		Tier:     "FREE",
+		HasToken: true,
+	}
+
+	card := NewAccountCardWidgetWithQuota(item, nil, palette, nil, nil)
+	if card.TierText() == nil {
+		t.Fatal("expected card.TierText() to be non-nil")
+	}
+
+	// 1. Initial FREE tier check
+	if card.TierText().Text != "FREE" {
+		t.Errorf("expected tier 'FREE', got %q", card.TierText().Text)
+	}
+	if card.TierText().Color != palette.TextMuted {
+		t.Errorf("expected TextMuted color for FREE, got %v", card.TierText().Color)
+	}
+
+	// 2. In-place update to ULTRA
+	card.UpdateTier("ULTRA", palette)
+	if card.TierText().Text != "ULTRA" {
+		t.Errorf("expected tier 'ULTRA', got %q", card.TierText().Text)
+	}
+	if card.TierText().Color != ColorTierUltra {
+		t.Errorf("expected ColorTierUltra for ULTRA, got %v", card.TierText().Color)
+	}
+
+	// 3. In-place update to PRO
+	card.UpdateTier("PRO", palette)
+	if card.TierText().Text != "PRO" {
+		t.Errorf("expected tier 'PRO', got %q", card.TierText().Text)
+	}
+	if card.TierText().Color != palette.Primary {
+		t.Errorf("expected palette.Primary for PRO, got %v", card.TierText().Color)
+	}
+
+	// 4. Update via UpdateQuota
+	quota := &telemetry.AccountQuotaData{
+		Email: "test@example.com",
+		Tier:  "BIZ",
+	}
+	card.UpdateQuota(quota, palette)
+	if card.TierText().Text != "BIZ" {
+		t.Errorf("expected tier 'BIZ' from UpdateQuota, got %q", card.TierText().Text)
+	}
+	if card.TierText().Color != ColorTierBiz {
+		t.Errorf("expected ColorTierBiz for BIZ, got %v", card.TierText().Color)
+	}
+
+	// 5. Update via UpdateState
+	itemUpdate := manager.AccountDisplayItem{
+		Email: "test@example.com",
+		Tier:  "ULTRA",
+	}
+	card.UpdateState(itemUpdate, palette)
+	if card.TierText().Text != "ULTRA" {
+		t.Errorf("expected tier 'ULTRA' from UpdateState, got %q", card.TierText().Text)
 	}
 }

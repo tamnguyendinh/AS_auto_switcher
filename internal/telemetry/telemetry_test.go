@@ -1268,3 +1268,74 @@ func TestTelemetryPool_WithStore_SkipsOffAccounts(t *testing.T) {
 		t.Errorf("expected 0 calls to Google API for disabled account, got %d", client.callCount.Load())
 	}
 }
+
+func TestNormalizeTier(t *testing.T) {
+	testCases := []struct {
+		raw      string
+		expected string
+	}{
+		{"TEAMS_TIER_PRO_ULTIMATE", "ULTRA"},
+		{"ultra-tier", "ULTRA"},
+		{"g1-ultra-tier", "ULTRA"},
+		{"Ultra", "ULTRA"},
+		{"ultra", "ULTRA"},
+		{"TEAMS_TIER_PRO", "PRO"},
+		{"pro-tier", "PRO"},
+		{"g1-pro-tier", "PRO"},
+		{"Pro", "PRO"},
+		{"pro", "PRO"},
+		{"PLAN_PRO", "PRO"},
+		{"Google AI Pro", "PRO"},
+		{"free-tier", "FREE"},
+		{"Free", "FREE"},
+		{"free", "FREE"},
+		{"PLAN_FREE", "FREE"},
+		{"TEAMS_TIER_ENTERPRISE_PLUS", "BIZ"},
+		{"standard-tier", "BIZ"},
+		{"Enterprise", "BIZ"},
+		{"Teams", "BIZ"},
+		{"BIZ", "BIZ"},
+		{"biz", "BIZ"},
+		{"", "--"},
+		{"   ", "--"},
+		{"unknown", "--"},
+		{"[Cần OAuth]", "--"},
+	}
+
+	for _, tc := range testCases {
+		got := NormalizeTier(tc.raw)
+		if got != tc.expected {
+			t.Errorf("NormalizeTier(%q) = %q, expected %q", tc.raw, got, tc.expected)
+		}
+	}
+}
+
+func TestLoadCodeAssist_Parser(t *testing.T) {
+	// Free tier with no paid tier
+	freePayload := []byte(`{"currentTier": {"id": "free-tier", "name": "Free Tier"}}`)
+	if got := ParseCodeAssistTier(freePayload); got != "FREE" {
+		t.Errorf("expected FREE, got %s", got)
+	}
+
+	// Free tier with paid tier (Pro)
+	paidProPayload := []byte(`{
+		"currentTier": {"id": "free-tier", "name": "Free Tier"},
+		"paidTier": {"id": "pro-tier", "name": "Pro Tier"}
+	}`)
+	if got := ParseCodeAssistTier(paidProPayload); got != "PRO" {
+		t.Errorf("expected PRO, got %s", got)
+	}
+
+	// Paid tier Ultra
+	paidUltraPayload := []byte(`{
+		"currentTier": {"id": "ultra-tier", "name": "Ultra Tier"}
+	}`)
+	if got := ParseCodeAssistTier(paidUltraPayload); got != "ULTRA" {
+		t.Errorf("expected ULTRA, got %s", got)
+	}
+
+	// Invalid JSON returns "--"
+	if got := ParseCodeAssistTier([]byte("not-json")); got != "--" {
+		t.Errorf("expected --, got %s", got)
+	}
+}

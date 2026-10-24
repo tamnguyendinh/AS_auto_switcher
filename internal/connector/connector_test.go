@@ -152,6 +152,74 @@ func TestGetUserStatus(t *testing.T) {
 	if status.Status != "PLAN_PRO" {
 		t.Errorf("Expected status 'PLAN_PRO', got %q", status.Status)
 	}
+	if status.PlanName != "PLAN_PRO" {
+		t.Errorf("Expected PlanName 'PLAN_PRO', got %q", status.PlanName)
+	}
+	if status.TeamsTier != "PLAN_PRO" {
+		t.Errorf("Expected TeamsTier 'PLAN_PRO', got %q", status.TeamsTier)
+	}
+}
+
+func TestGetUserStatus_NestedPlanInfo(t *testing.T) {
+	const expectedCSRF = "test-csrf-token-nested"
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Csrf-Token") != expectedCSRF {
+			http.Error(w, "missing csrf", http.StatusForbidden)
+			return
+		}
+		if r.URL.Path == EndpointGetUserStatus {
+			resp := map[string]interface{}{
+				"userStatus": map[string]interface{}{
+					"name":  "Ultra User",
+					"email": "ultra@example.com",
+					"planStatus": map[string]interface{}{
+						"planInfo": map[string]interface{}{
+							"planName":  "Ultra",
+							"teamsTier": "TEAMS_TIER_PRO_ULTIMATE",
+						},
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	u, _ := url.Parse(ts.URL)
+	port, _ := strconv.Atoi(u.Port())
+
+	client := NewClientWithHTTP(&ServerInfo{
+		PID:       1234,
+		CSRFToken: expectedCSRF,
+		Port:      port,
+	}, ts.Client())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	status, err := client.GetUserStatus(ctx)
+	if err != nil {
+		t.Fatalf("GetUserStatus failed: %v", err)
+	}
+
+	if status.Email != "ultra@example.com" {
+		t.Errorf("Expected email 'ultra@example.com', got %q", status.Email)
+	}
+	if status.PlanName != "Ultra" {
+		t.Errorf("Expected PlanName 'Ultra', got %q", status.PlanName)
+	}
+	if status.TeamsTier != "TEAMS_TIER_PRO_ULTIMATE" {
+		t.Errorf("Expected TeamsTier 'TEAMS_TIER_PRO_ULTIMATE', got %q", status.TeamsTier)
+	}
+	if status.Status != "Ultra" {
+		t.Errorf("Expected status 'Ultra', got %q", status.Status)
+	}
 }
 
 func TestGetUserStatusFallbackEndpoints(t *testing.T) {

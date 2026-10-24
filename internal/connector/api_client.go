@@ -157,7 +157,27 @@ func (c *Client) GetUserStatus(ctx context.Context) (*UserStatus, error) {
 			name, _ = rawData["display_name"].(string)
 		}
 
-		status, _ := userObj["planStatus"].(string)
+		var planName string
+		var teamsTier string
+
+		// 1. Phân tích nếu planStatus là Map lồng nhau (Antigravity 2.x chuẩn mới)
+		if planMap, ok := userObj["planStatus"].(map[string]interface{}); ok {
+			if info, ok := planMap["planInfo"].(map[string]interface{}); ok {
+				if pn, ok := info["planName"].(string); ok {
+					planName = pn
+				}
+				if tt, ok := info["teamsTier"].(string); ok {
+					teamsTier = tt
+				}
+			}
+		} else if planStr, ok := userObj["planStatus"].(string); ok {
+			// 2. Tương thích ngược nếu là string đơn giản ("PLAN_PRO")
+			planName = planStr
+			teamsTier = planStr
+		}
+
+		// Fallback status text
+		status := planName
 		if status == "" {
 			status, _ = userObj["status"].(string)
 		}
@@ -173,6 +193,8 @@ func (c *Client) GetUserStatus(ctx context.Context) (*UserStatus, error) {
 			Name:        name,
 			DisplayName: name,
 			Status:      status,
+			PlanName:    planName,
+			TeamsTier:   teamsTier,
 			Raw:         rawData,
 		}, nil
 	}

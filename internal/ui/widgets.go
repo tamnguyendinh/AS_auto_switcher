@@ -433,6 +433,7 @@ type AccountCardWidget struct {
 	onToggleStatus  func(string)
 	onDelete        func(string)
 
+	tierText       *canvas.Text
 	gemini5hPct    *canvas.Text
 	gemini5hBar    *canvas.Rectangle
 	gemini5hTime   *canvas.Text
@@ -490,6 +491,29 @@ func (w *AccountCardWidget) ActionCluster() *fyne.Container {
 		return nil
 	}
 	return w.actionCluster
+}
+
+// TierText returns the tier text canvas object for inspection.
+func (w *AccountCardWidget) TierText() *canvas.Text {
+	if w == nil {
+		return nil
+	}
+	return w.tierText
+}
+
+// UpdateTier performs an in-place reactive update of the tier badge without re-layout or flicker.
+func (w *AccountCardWidget) UpdateTier(tier string, palette ThemePalette) {
+	if w == nil || w.tierText == nil {
+		return
+	}
+	norm := telemetry.NormalizeTier(tier)
+	targetColor := TierColor(norm, palette)
+	if w.tierText.Text == norm && w.tierText.Color == targetColor {
+		return
+	}
+	w.tierText.Text = norm
+	w.tierText.Color = targetColor
+	w.tierText.Refresh()
 }
 
 // TriggerDelete invokes the onDelete callback directly (used in tests).
@@ -577,6 +601,10 @@ func (w *AccountCardWidget) UpdateQuota(quota *telemetry.AccountQuotaData, palet
 	if w.claudeWeekCell != nil {
 		w.claudeWeekCell.update(dq.ClaudeWeek, dq.ClaudeWeekReset, hasClaudeWeek)
 	}
+
+	if quota != nil && quota.Tier != "" {
+		w.UpdateTier(quota.Tier, palette)
+	}
 }
 
 // UpdateState updates the existing card's actions without replacing its quota
@@ -584,6 +612,9 @@ func (w *AccountCardWidget) UpdateQuota(quota *telemetry.AccountQuotaData, palet
 func (w *AccountCardWidget) UpdateState(item manager.AccountDisplayItem, palette ThemePalette) {
 	if w == nil || w.actionSlot == nil {
 		return
+	}
+	if item.Tier != "" {
+		w.UpdateTier(item.Tier, palette)
 	}
 	normStatus := strings.ToLower(strings.TrimSpace(item.Status))
 	if normStatus != "off" {
@@ -740,13 +771,18 @@ func NewAccountCardWidgetWithQuota(
 	topRow := container.NewBorder(nil, nil, nil, actionCluster, emailLabel)
 
 	dq := ExtractDualCycleQuota(quota)
-	matrixTable, cGemini5h, cGeminiWeek, cClaude5h, cClaudeWeek := createMatrixQuotaTableWithCells(dq, palette)
+	initialTier := item.Tier
+	if initialTier == "" && quota != nil && quota.Tier != "" {
+		initialTier = quota.Tier
+	}
+	matrixTable, txtTier, cGemini5h, cGeminiWeek, cClaude5h, cClaudeWeek := createMatrixQuotaTableWithCells(dq, initialTier, palette)
 	cardVBox := container.NewVBox(topRow, matrixTable)
 	cardBg := canvas.NewRectangle(palette.Card)
 	cardBg.CornerRadius = 8
 	root := container.NewStack(cardBg, container.NewPadded(cardVBox))
 
 	w.Root, w.cardBg, w.emailLabel = root, cardBg, emailLabel
+	w.tierText = txtTier
 	w.actionCluster, w.actionSlot, w.refreshButton, w.statusButton = actionCluster, actionSlot, refreshBtn, statusBtn
 	w.deleteButton, w.deleteContainer = deleteBtn, deleteWrapper
 	w.gemini5hCell, w.geminiWeekCell = cGemini5h, cGeminiWeek

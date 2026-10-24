@@ -27,6 +27,7 @@ var (
 // { "email": "...", "status": "on", "saved_at": 1792056078.91, "token_data": { ... } }
 type StoredAccountEnvelope struct {
 	Email     string           `json:"email"`
+	Tier      string           `json:"tier,omitempty"`
 	Status    string           `json:"status,omitempty"` // "on" or "off", defaults to "on" if empty
 	SavedAt   float64          `json:"saved_at"`
 	TokenData *model.TokenData `json:"token_data"`
@@ -90,19 +91,22 @@ func (s *AccountStore) SaveAccount(email string, token *model.TokenData) error {
 
 	normEmail := strings.ToLower(strings.TrimSpace(email))
 
-	// Invariant-Token-Update-Preservation: preserve "off" status if already present on disk
+	// Invariant-Token-Update-Preservation: preserve "off" status and tier if already present on disk
 	status := "on"
+	var existingTier string
 	if existingData, readErr := os.ReadFile(targetPath); readErr == nil {
 		var existingEnv StoredAccountEnvelope
 		if jsonErr := json.Unmarshal(existingData, &existingEnv); jsonErr == nil {
 			if strings.EqualFold(strings.TrimSpace(existingEnv.Status), "off") {
 				status = "off"
 			}
+			existingTier = existingEnv.Tier
 		}
 	}
 
 	envelope := StoredAccountEnvelope{
 		Email:     normEmail,
+		Tier:      existingTier,
 		Status:    status,
 		SavedAt:   float64(time.Now().UnixNano()) / 1e9,
 		TokenData: token,
@@ -224,6 +228,73 @@ func (s *AccountStore) SetAccountStatus(email string, status string) error {
 	return nil
 }
 
+// UpdateAccountTier atomically updates the tier field of an existing account file.
+func (s *AccountStore) UpdateAccountTier(email string, tier string) error {
+	if strings.TrimSpace(email) == "" {
+		return ErrInvalidEmail
+	}
+	targetPath, err := SafeAccountPath(s.storeDir, email)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrAccountNotFound
+		}
+		return fmt.Errorf("failed to read account file: %w", err)
+	}
+
+	var env StoredAccountEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return ErrCorruptedStoreFile
+	}
+
+	env.Tier = tier
+
+	tmpFile, err := os.CreateTemp(s.storeDir, "acc_tmp_*.json")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file for atomic write: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	encoder := json.NewEncoder(tmpFile)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(env); err != nil {
+		return fmt.Errorf("failed to encode account envelope: %w", err)
+	}
+
+	if err := tmpFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync temp file to disk: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		_ = os.Remove(targetPath)
+		if retryErr := os.Rename(tmpPath, targetPath); retryErr != nil {
+			return fmt.Errorf("failed to rename temp file to target %s: %w", targetPath, retryErr)
+		}
+	}
+
+	success = true
+	return nil
+}
+
 // GetAccountStatus returns the current status ("on" or "off") of an account in the store.
 // If the account does not exist, it returns ErrAccountNotFound.
 // If the status field is missing or empty (legacy accounts), it returns "on", nil for backward compatibility.
@@ -291,6 +362,36 @@ func (s *AccountStore) GetAccount(email string) (*model.TokenData, error) {
 	}
 
 	return envelope.TokenData, nil
+}
+
+// GetAccountEnvelope reads and parses the full StoredAccountEnvelope for an email from its JSON file.
+func (s *AccountStore) GetAccountEnvelope(email string) (*StoredAccountEnvelope, error) {
+	if strings.TrimSpace(email) == "" {
+		return nil, ErrInvalidEmail
+	}
+
+	targetPath, err := SafeAccountPath(s.storeDir, email)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrAccountNotFound
+		}
+		return nil, fmt.Errorf("failed to read account file: %w", err)
+	}
+
+	var envelope StoredAccountEnvelope
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, ErrCorruptedStoreFile
+	}
+
+	return &envelope, nil
 }
 
 // HasAccount checks whether a valid, parseable JSON account file exists for the email.

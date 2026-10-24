@@ -237,7 +237,7 @@ func TestAcceptance_TC03_VersionDisplayAndFormatting(t *testing.T) {
 		t.Errorf("TC-03 VIOLATION: expected versionLabel.Alignment == fyne.TextAlignTrailing, got %v", app.versionLabel.Alignment)
 	}
 
-	expectedVersion := "Version: 1.0.2.0"
+	expectedVersion := "Version: 1.0.3.0"
 	if app.versionLabel.Text != expectedVersion {
 		t.Errorf("TC-03 VIOLATION: expected versionLabel text '%s', got '%s'", expectedVersion, app.versionLabel.Text)
 	}
