@@ -6,7 +6,7 @@ If you have a personal account, a work account, and a freelance/side-project acc
 
 ### **When accounts switch automatically, all active work continues smoothly without interruption or manual intervention.**
 
-### **100% safe and compliant with Google-approved account switching mechanisms. No modification to Antigravity source code, no API wrapping.**
+### **Safe and compliant with Google-approved account switching mechanisms. No modification to Antigravity source code, no API wrapping.**
 
 A native Windows application written in **Go** that lets you manage multiple Google accounts, monitor quotas in real time, and switch active sessions in Antigravity 2.x smoothly and securely. Built with a modern, intuitive **Fyne** desktop GUI, it provides a seamless Zero-Console experience packaged into a single standalone executable `antigravity-switch.exe`.
 
