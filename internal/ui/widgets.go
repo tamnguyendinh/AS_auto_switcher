@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"antigravity-switch/internal/i18n"
 	"antigravity-switch/internal/manager"
 	"antigravity-switch/internal/telemetry"
 )
@@ -65,14 +66,15 @@ var (
 )
 
 func newSwitchTextButton(onTapped func(), palette ThemePalette) *switchTextButton {
+	badgeText := i18n.Current().BadgeSwitch
 	b := &switchTextButton{
-		Text:     "[Chuyển]",
+		Text:     badgeText,
 		OnTapped: onTapped,
 		palette:  palette,
 	}
 	b.bg = canvas.NewRectangle(color.Transparent)
 	b.bg.CornerRadius = 3
-	b.text = canvas.NewText("[Chuyển]", palette.Primary)
+	b.text = canvas.NewText(badgeText, palette.Primary)
 	b.text.TextSize = 10
 	b.text.TextStyle = fyne.TextStyle{Bold: true}
 	b.text.Alignment = fyne.TextAlignCenter
@@ -81,19 +83,29 @@ func newSwitchTextButton(onTapped func(), palette ThemePalette) *switchTextButto
 }
 
 func newDisabledSwitchTextButton(palette ThemePalette) *switchTextButton {
+	badgeText := i18n.Current().BadgeSwitch
 	b := &switchTextButton{
-		Text:     "[Chuyển]",
+		Text:     badgeText,
 		palette:  palette,
 		disabled: true,
 	}
 	b.bg = canvas.NewRectangle(color.Transparent)
 	b.bg.CornerRadius = 3
-	b.text = canvas.NewText("[Chuyển]", palette.TextMuted)
+	b.text = canvas.NewText(badgeText, palette.TextMuted)
 	b.text.TextSize = 10
 	b.text.TextStyle = fyne.TextStyle{Bold: true}
 	b.text.Alignment = fyne.TextAlignCenter
 	b.ExtendBaseWidget(b)
 	return b
+}
+
+func (b *switchTextButton) SetText(text string) {
+	b.Text = text
+	if b.text != nil {
+		b.text.Text = text
+		b.text.Refresh()
+	}
+	b.Refresh()
 }
 
 func (b *switchTextButton) CreateRenderer() fyne.WidgetRenderer {
@@ -516,6 +528,32 @@ func (w *AccountCardWidget) UpdateTier(tier string, palette ThemePalette) {
 	w.tierText.Refresh()
 }
 
+// UpdateLanguage performs an in-place reactive update of the action slot badge and buttons according to current locale.
+func (w *AccountCardWidget) UpdateLanguage(palette ThemePalette) {
+	if w == nil || w.actionSlot == nil {
+		return
+	}
+	d := i18n.Current()
+	if w.IsActive || !w.HasToken {
+		text, tint := d.BadgeNeedOAuth, palette.Warning
+		if w.IsActive {
+			text, tint = d.BadgeActive, palette.Primary
+		}
+		badge := canvas.NewText(text, tint)
+		badge.TextSize = BodyTextSize
+		badge.TextStyle = fyne.TextStyle{Bold: true}
+		badge.Alignment = fyne.TextAlignTrailing
+		w.actionSlot.Objects = []fyne.CanvasObject{container.NewCenter(badge)}
+		w.actionSlot.Refresh()
+	} else {
+		if len(w.actionSlot.Objects) > 0 {
+			if btn, ok := w.actionSlot.Objects[0].(*switchTextButton); ok {
+				btn.SetText(d.BadgeSwitch)
+			}
+		}
+	}
+}
+
 // TriggerDelete invokes the onDelete callback directly (used in tests).
 func (w *AccountCardWidget) TriggerDelete() {
 	if w != nil && !w.IsActive && w.onDelete != nil {
@@ -657,10 +695,11 @@ func (w *AccountCardWidget) UpdateState(item manager.AccountDisplayItem, palette
 	}
 
 	var action fyne.CanvasObject
+	d := i18n.Current()
 	if w.IsActive || !w.HasToken {
-		text, tint := "[Cần OAuth]", palette.Warning
+		text, tint := d.BadgeNeedOAuth, palette.Warning
 		if w.IsActive {
-			text, tint = "[✔ Dùng]", palette.Primary
+			text, tint = d.BadgeActive, palette.Primary
 		}
 		badge := canvas.NewText(text, tint)
 		badge.TextSize = BodyTextSize

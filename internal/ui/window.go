@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"antigravity-switch/internal/i18n"
 	"antigravity-switch/internal/version"
 
 	"golang.org/x/sys/windows"
@@ -94,7 +95,21 @@ func (a *App) setupLayout() {
 	})
 	titleLeft := container.NewHBox(monogramWrap, titleLabel)
 
-	// Standard window controls: minimize, maximize/restore, close.
+	// Standard window controls: [Dropdown VN/EN] -> [— Thu nhỏ] -> [□ Phóng to] -> [✕ Đóng]
+	a.langSelect = widget.NewSelect([]string{"VN", "EN"}, func(selected string) {
+		targetLocale := "vi"
+		if selected == "EN" {
+			targetLocale = "en"
+		}
+		a.SetLanguage(targetLocale)
+	})
+	if a.currentLocale == "en" {
+		a.langSelect.SetSelected("EN")
+	} else {
+		a.langSelect.SetSelected("VN")
+	}
+	langSelectWrap := container.NewGridWrap(fyne.NewSize(54, 22), a.langSelect)
+
 	btnMin := container.NewGridWrap(fyne.NewSize(32, 26), newCustomTitleBtn("—", func() {
 		MinimizeNativeWindow()
 	}))
@@ -110,7 +125,7 @@ func (a *App) setupLayout() {
 		a.Close()
 		a.app.Quit()
 	}))
-	windowControls := container.NewHBox(btnMin, btnMax, btnClose)
+	windowControls := container.NewHBox(langSelectWrap, btnMin, btnMax, btnClose)
 
 	dragArea := &windowDragArea{}
 	dragArea.ExtendBaseWidget(dragArea)
@@ -120,17 +135,18 @@ func (a *App) setupLayout() {
 	// -------------------------------------------------------------------------
 	// TopSection Row 2 (Combined): Toolbar Buttons (trái) + Theme Select (phải)
 	// -------------------------------------------------------------------------
+	d := i18n.Current()
 	a.serverStatusLabel = widget.NewLabelWithStyle("Antigravity: Hoạt động  | Đang kết nối...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
-	a.addAccountBtn = widget.NewButtonWithIcon("Thêm", theme.ContentAddIcon(), func() {
+	a.addAccountBtn = widget.NewButtonWithIcon(d.BtnAddAccount, theme.ContentAddIcon(), func() {
 		a.ShowAddAccountModal()
 	})
 
-	a.refreshBtn = widget.NewButton("Làm mới danh sách", func() {
+	a.refreshBtn = widget.NewButton(d.BtnRefreshList, func() {
 		a.Refresh()
 	})
 
-	a.quotaRefreshAllBtn = widget.NewButton("Làm mới Quota", func() {
+	a.quotaRefreshAllBtn = widget.NewButton(d.BtnRefreshQuota, func() {
 		a.RefreshAllQuota()
 	})
 	a.quotaRefreshAllBtn.Importance = widget.HighImportance
@@ -181,7 +197,7 @@ func (a *App) setupLayout() {
 	// -------------------------------------------------------------------------
 	// Khối 1: Label & Capsule Toggle Ẩn tài khoản (SPEC-ARCH-20261020-ACCOUNT-PRIVACY-MASKING-TOOLBAR)
 	// -------------------------------------------------------------------------
-	lblMask := widget.NewLabelWithStyle("Ẩn tài khoản:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	lblMask := widget.NewLabelWithStyle(d.LblMaskAccounts, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	headerRow2MaskLabel = lblMask
 
 	a.maskAccountsToggle = newCapsuleToggle(a.maskAccounts, func(isOn bool) {
@@ -197,7 +213,7 @@ func (a *App) setupLayout() {
 	// SPEC-ARCH-20261020-ALIGN-HEADER-ROW2-VERTICAL-BASELINE: widget.Label with Bold style
 	// ĐÃ CÓ - GIỮ NGUYÊN HOÀN TOÀN KHÔNG ĐỤNG VÀO NÚT GẠT TỰ ĐỘNG
 	// -------------------------------------------------------------------------
-	lblAuto := widget.NewLabelWithStyle("Tự động:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	lblAuto := widget.NewLabelWithStyle(d.LblAutoSwitch, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	headerRow2AutoLabel = lblAuto
 
 	a.autoSwitchToggle = newAutoSwitchToggle(a.autoSwitchEnabled, func(isOn bool) {

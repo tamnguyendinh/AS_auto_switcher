@@ -2294,18 +2294,18 @@ func TestWindowControlsMinimizeMaximizeClose(t *testing.T) {
 	}
 	var windowControls *fyne.Container
 	for _, obj := range row1Header.Objects {
-		if c, ok := obj.(*fyne.Container); ok && len(c.Objects) == 3 {
+		if c, ok := obj.(*fyne.Container); ok && len(c.Objects) == 4 {
 			windowControls = c
 			break
 		}
 	}
 	if windowControls == nil {
-		t.Fatalf("expected to find windowControls container with 3 buttons in row1Header")
+		t.Fatalf("expected to find windowControls container with 4 controls in row1Header")
 	}
-	if len(windowControls.Objects) != 3 {
-		t.Errorf("expected minimize, maximize/restore, close; got %d controls", len(windowControls.Objects))
+	if len(windowControls.Objects) != 4 {
+		t.Errorf("expected dropdown, minimize, maximize/restore, close; got %d controls", len(windowControls.Objects))
 	}
-	maximize := windowControls.Objects[1].(*fyne.Container).Objects[0].(*customTitleBtn)
+	maximize := windowControls.Objects[2].(*fyne.Container).Objects[0].(*customTitleBtn)
 	if maximize.stateLabel == nil || maximize.onTapped == nil {
 		t.Fatal("middle window control must expose the maximize/restore action and state")
 	}

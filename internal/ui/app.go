@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"antigravity-switch/internal/automation"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -18,20 +17,23 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
+	"antigravity-switch/internal/automation"
 	"antigravity-switch/internal/connector"
+	"antigravity-switch/internal/i18n"
 	"antigravity-switch/internal/manager"
 	"antigravity-switch/internal/telemetry"
 )
 
 // App manages the Fyne GUI runtime lifecycle, state, telemetry, and UI bindings.
 type App struct {
-	mu          sync.RWMutex
-	app         fyne.App
-	win         fyne.Window
-	mgr         *manager.AccountManager
-	overview    *manager.AccountOverview
-	alwaysOnTop bool
-	isBusy      bool
+	mu            sync.RWMutex
+	app           fyne.App
+	win           fyne.Window
+	mgr           *manager.AccountManager
+	overview      *manager.AccountOverview
+	alwaysOnTop   bool
+	isBusy        bool
+	currentLocale string
 
 	// Telemetry & Themes (Phase 6A)
 	quotaCache        *telemetry.QuotaCache
@@ -53,6 +55,7 @@ type App struct {
 	quotaRefreshAllBtn   *widget.Button
 	alwaysOnTopBtn       *widget.Button
 	themeSelect          *widget.Select
+	langSelect           *widget.Select
 	autoSwitchToggle     *AutoSwitchToggle
 	autoSwitchCheck      *widget.Check
 	autoSwitchLabel      *canvas.Text
@@ -103,6 +106,7 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 		alwaysOnTop:     true,
 		preferencesPath: DefaultUIPreferencesPath,
 		currentTheme:    ThemeDark,
+		currentLocale:   "vi",
 	}
 
 	logsDir := "logs"
@@ -117,7 +121,7 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 	a.quotaCache = telemetry.NewQuotaCache(cachePath)
 	_ = a.quotaCache.LoadFromDisk()
 
-	// 2. Load UI Preferences (Theme, Masking, Auto-Switch & Always-on-Top)
+	// 2. Load UI Preferences (Theme, Masking, Auto-Switch, Always-on-Top & Language)
 	if prefs, err := LoadUIPreferences(a.preferencesPath); err == nil && prefs != nil {
 		if prefs.Theme != "" {
 			a.currentTheme = prefs.Theme
@@ -127,7 +131,11 @@ func NewAppWithFyne(fyneApp fyne.App, mgr *manager.AccountManager) *App {
 		if prefs.AlwaysOnTop != nil {
 			a.alwaysOnTop = *prefs.AlwaysOnTop
 		}
+		if prefs.Language == "en" || prefs.Language == "vi" {
+			a.currentLocale = prefs.Language
+		}
 	}
+	i18n.SetCurrentLocale(i18n.Locale(a.currentLocale))
 
 	// 3. Initialize Telemetry Pool & Auto-Loop if manager and store exist
 	if mgr != nil && mgr.Store() != nil {
@@ -310,6 +318,101 @@ func (a *App) SetTheme(themeName string) {
 	if overview != nil {
 		a.forceRebuildCards(overview)
 	}
+}
+
+// SetLanguage switches the active locale, updates UI widgets in-place, and persists the preference.
+func (a *App) SetLanguage(locale string) {
+	if locale != "en" && locale != "vi" {
+		locale = "vi"
+	}
+
+	a.mu.Lock()
+	if a.currentLocale == locale {
+		a.mu.Unlock()
+		return
+	}
+	a.currentLocale = locale
+	themeName := a.currentTheme
+	mask := a.maskAccounts
+	auto := a.autoSwitchEnabled
+	top := a.alwaysOnTop
+	path := a.preferencesPath
+	a.mu.Unlock()
+
+	// 1. Update global i18n state
+	i18n.SetCurrentLocale(i18n.Locale(locale))
+	d := i18n.Current()
+
+	// 2. In-place update on Canvas UI (Main Thread)
+	fyne.Do(func() {
+		if a.addAccountBtn != nil {
+			a.addAccountBtn.SetText(d.BtnAddAccount)
+		}
+		if a.refreshBtn != nil {
+			a.refreshBtn.SetText(d.BtnRefreshList)
+		}
+		if a.quotaRefreshAllBtn != nil {
+			a.quotaRefreshAllBtn.SetText(d.BtnRefreshQuota)
+		}
+		if headerRow2MaskLabel != nil {
+			headerRow2MaskLabel.SetText(d.LblMaskAccounts)
+		}
+		if headerRow2AutoLabel != nil {
+			headerRow2AutoLabel.SetText(d.LblAutoSwitch)
+		}
+		if a.langSelect != nil {
+			expected := "VN"
+			if locale == "en" {
+				expected = "EN"
+			}
+			if a.langSelect.Selected != expected {
+				a.langSelect.SetSelected(expected)
+			}
+		}
+		// In-place refresh account cards language
+		a.refreshAccountCardsLanguage()
+	})
+
+	// 3. Asynchronously write to ui_preferences.json
+	go func() {
+		a.prefSaveMu.Lock()
+		defer a.prefSaveMu.Unlock()
+
+		pref, err := LoadUIPreferences(path)
+		if err != nil || pref == nil {
+			pref = &UIPreferences{
+				Theme:        themeName,
+				MaskAccounts: mask,
+				AutoSwitch:   auto,
+				AlwaysOnTop:  &top,
+				Language:     locale,
+			}
+		} else {
+			pref.Language = locale
+		}
+		_ = SaveUIPreferences(path, pref)
+	}()
+}
+
+func (a *App) refreshAccountCardsLanguage() {
+	a.mu.RLock()
+	cards := append([]*AccountCardWidget(nil), a.accountCards...)
+	themeName := a.currentTheme
+	a.mu.RUnlock()
+
+	palette := GetThemePalette(themeName)
+	for _, card := range cards {
+		if card != nil {
+			card.UpdateLanguage(palette)
+		}
+	}
+}
+
+// CurrentLocale returns the currently configured locale string.
+func (a *App) CurrentLocale() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.currentLocale
 }
 
 // SyncVisualScaleAndTextures purges initial unscaled font textures and synchronizes
