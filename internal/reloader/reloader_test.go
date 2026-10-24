@@ -13,6 +13,7 @@ import (
 
 	"antigravity-switch/internal/connector"
 
+	"golang.org/x/sys/windows"
 )
 
 func TestFindAntigravityPIDs(t *testing.T) {
@@ -578,4 +579,64 @@ func TestRecycleLanguageServer_DefaultProcessKillerDelegation(t *testing.T) {
 	if !taskKillCalled.Load() {
 		t.Fatal("Expected osTaskKill to be called via DefaultKillLanguageServer fallback")
 	}
+}
+
+func TestRecycleLanguageServer_InvalidatesDiscoveryCache(t *testing.T) {
+	// 1. Populate synthetic discovery cache entry
+	connector.SetDiscoveryCacheForTesting(&connector.ServerInfo{
+		PID:       9999,
+		Port:      54316,
+		CSRFToken: "fake-csrf-token",
+	}, windows.Filetime{})
+
+	if connector.GetCachedServerInfo() == nil {
+		t.Fatal("Expected discovery cache to be populated before RecycleLanguageServer")
+	}
+
+	rel := NewSessionReloader()
+	var killed atomic.Bool
+	var cacheWasClearedDuringSleep atomic.Bool
+
+	rel.ProcessKiller = func(ctx context.Context) error {
+		killed.Store(true)
+		return nil
+	}
+
+	rel.Sleeper = func(ctx context.Context, d time.Duration) error {
+		// Verify discovery cache was invalidated immediately upon kill before sleep
+		if connector.GetCachedServerInfo() == nil {
+			cacheWasClearedDuringSleep.Store(true)
+		}
+		return nil
+	}
+
+	rel.ServerDiscoverer = func() (*connector.ServerInfo, error) {
+		return &connector.ServerInfo{
+			PID:       10001,
+			Port:      55763,
+			CSRFToken: "new-csrf-token",
+		}, nil
+	}
+
+	ctx := context.Background()
+	err := rel.RecycleLanguageServer(ctx, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("RecycleLanguageServer failed: %v", err)
+	}
+
+	if !killed.Load() {
+		t.Error("Expected ProcessKiller to be invoked")
+	}
+	if !cacheWasClearedDuringSleep.Load() {
+		t.Error("Expected discovery cache to be invalidated BEFORE sleeper")
+	}
+
+	// Stale port 54316 must be gone
+	cached := connector.GetCachedServerInfo()
+	if cached != nil && cached.Port == 54316 {
+		t.Errorf("Expected old cache to be purged, got: %+v", cached)
+	}
+
+	// Clean up after test
+	connector.InvalidateDiscoveryCache(0, "")
 }

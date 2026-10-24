@@ -109,6 +109,8 @@ func (c *Client) GetUserStatus(ctx context.Context) (*UserStatus, error) {
 		resp, err := c.postJSON(ctx, endpoint, emptyPayload)
 		if err != nil {
 			lastErr = err
+			// Nếu không kết nối được tới cổng (dial refused / network error), lập tức xóa cache cổng này
+			InvalidateDiscoveryCache(c.info.Port, c.info.CSRFToken)
 			continue
 		}
 
@@ -218,6 +220,8 @@ func (c *Client) AuthLogout(ctx context.Context) error {
 		resp, err := c.postJSON(ctx, endpoint, emptyPayload)
 		if err != nil {
 			lastErr = err
+			// Nếu không kết nối được tới cổng (dial refused / network error), lập tức xóa cache cổng này
+			InvalidateDiscoveryCache(c.info.Port, c.info.CSRFToken)
 			continue
 		}
 		_ = resp.Body.Close()
@@ -251,6 +255,8 @@ func (c *Client) TriggerReauth(ctx context.Context) error {
 		resp, err := c.postJSON(ctx, endpoint, emptyPayload)
 		if err != nil {
 			lastErr = err
+			// Nếu không kết nối được tới cổng (dial refused / network error), lập tức xóa cache cổng này
+			InvalidateDiscoveryCache(c.info.Port, c.info.CSRFToken)
 			continue
 		}
 		_ = resp.Body.Close()

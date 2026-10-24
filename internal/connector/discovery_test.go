@@ -1,6 +1,8 @@
 package connector
 
 import (
+	"context"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
@@ -164,4 +166,130 @@ func TestDiscoverLanguageServer_Singleflight(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestDiscoverLanguageServer_RejectsDeadProcessInCache tests that DiscoverLanguageServer rejects dead PID in cache.
+func TestDiscoverLanguageServer_RejectsDeadProcessInCache(t *testing.T) {
+	InvalidateDiscoveryCache(0, "")
+
+	// 1. Spawn a short-lived process that exits immediately
+	cmd := exec.Command("cmd.exe", "/c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed starting short-lived cmd process: %v", err)
+	}
+	deadPID := cmd.Process.Pid
+
+	// Capture creation time if possible
+	var ct windows.Filetime
+	if hProc, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(deadPID)); err == nil {
+		var et, kt, ut windows.Filetime
+		_ = windows.GetProcessTimes(hProc, &ct, &et, &kt, &ut)
+		_ = windows.CloseHandle(hProc)
+	}
+
+	_ = cmd.Wait() // Ensure process has fully exited
+
+	// 2. Populate dead process info into discCache
+	deadInfo := &ServerInfo{
+		PID:       deadPID,
+		Port:      54316,
+		CSRFToken: "dead-token",
+	}
+	discCache.mu.Lock()
+	discCache.info = deadInfo
+	discCache.creationTime = ct
+	discCache.cachedAt = time.Now()
+	discCache.mu.Unlock()
+
+	// 3. Call DiscoverLanguageServer()
+	// Must reject dead process cache, purge it, and attempt fresh scan
+	info, err := DiscoverLanguageServer()
+
+	// 4. Assert that the returned info (if language_server is running on machine) is NOT the dead process
+	if err == nil && info != nil {
+		if info.PID == deadPID {
+			t.Fatalf("DiscoverLanguageServer returned dead process PID %d from cache!", deadPID)
+		}
+		if info.Port == 54316 && info.CSRFToken == "dead-token" {
+			t.Fatalf("DiscoverLanguageServer returned dead cache info: %+v", info)
+		}
+	}
+
+	// 5. Assert dead process is purged from discCache
+	discCache.mu.RLock()
+	remaining := discCache.info
+	discCache.mu.RUnlock()
+	if remaining != nil && remaining.PID == deadPID {
+		t.Fatalf("dead process PID %d remained in discCache!", deadPID)
+	}
+
+	InvalidateDiscoveryCache(0, "")
+}
+
+// TestApiClient_ReactiveCacheEvictionOnConnectionRefused tests reactive cache eviction when API call encounters network error.
+func TestApiClient_ReactiveCacheEvictionOnConnectionRefused(t *testing.T) {
+	InvalidateDiscoveryCache(0, "")
+
+	deadPort := 59998
+	deadToken := "refused-csrf-token"
+
+	// 1. Populate discCache with dead port
+	discCache.mu.Lock()
+	discCache.info = &ServerInfo{
+		PID:       12345,
+		Port:      deadPort,
+		CSRFToken: deadToken,
+	}
+	discCache.cachedAt = time.Now()
+	discCache.mu.Unlock()
+
+	// 2. Create client pointing to the dead port (no listener active)
+	client := NewClient(&ServerInfo{
+		PID:       12345,
+		Port:      deadPort,
+		CSRFToken: deadToken,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// 3. Call GetUserStatus -> must fail with connection refused and trigger reactive eviction
+	_, err := client.GetUserStatus(ctx)
+	if err == nil {
+		t.Fatal("Expected GetUserStatus to fail on closed port, got nil")
+	}
+
+	// 4. Verify discCache was invalidated
+	discCache.mu.RLock()
+	cached := discCache.info
+	discCache.mu.RUnlock()
+
+	if cached != nil && cached.Port == deadPort {
+		t.Fatalf("Expected discCache for port %d to be evicted after connection refusal, but was still present", deadPort)
+	}
+
+	// 5. Test AuthLogout reactive eviction as well
+	discCache.mu.Lock()
+	discCache.info = &ServerInfo{
+		PID:       12345,
+		Port:      deadPort,
+		CSRFToken: deadToken,
+	}
+	discCache.cachedAt = time.Now()
+	discCache.mu.Unlock()
+
+	err = client.AuthLogout(ctx)
+	if err == nil {
+		t.Fatal("Expected AuthLogout to fail on closed port, got nil")
+	}
+
+	discCache.mu.RLock()
+	cachedAfterLogout := discCache.info
+	discCache.mu.RUnlock()
+
+	if cachedAfterLogout != nil && cachedAfterLogout.Port == deadPort {
+		t.Fatalf("Expected discCache for port %d to be evicted after AuthLogout connection refusal", deadPort)
+	}
+
+	InvalidateDiscoveryCache(0, "")
 }

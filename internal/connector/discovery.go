@@ -333,41 +333,58 @@ func InvalidateDiscoveryCache(failedPort int, failedCSRF string) {
 	}
 }
 
+// GetCachedServerInfo returns the current cached ServerInfo (or nil if cache is empty).
+func GetCachedServerInfo() *ServerInfo {
+	discCache.mu.RLock()
+	defer discCache.mu.RUnlock()
+	return discCache.info
+}
+
+// SetDiscoveryCacheForTesting sets the discovery cache for unit test validation.
+func SetDiscoveryCacheForTesting(info *ServerInfo, creationTime windows.Filetime) {
+	discCache.mu.Lock()
+	defer discCache.mu.Unlock()
+	discCache.info = info
+	discCache.creationTime = creationTime
+	discCache.cachedAt = time.Now()
+}
+
 // DiscoverLanguageServer quét tiến trình language_server.exe với bộ nhớ đệm 10s và singleflight gom luồng
 func DiscoverLanguageServer() (*ServerInfo, error) {
 	// 1. Kiểm tra cache còn hạn (TTL 10s)
-	discCache.mu.RLock()
+	discCache.mu.Lock()
 	cached := discCache.info
 	cachedTime := discCache.cachedAt
 	cachedCreation := discCache.creationTime
-	discCache.mu.RUnlock()
-
 	if cached != nil && time.Since(cachedTime) <= 10*time.Second {
-		// Kiểm tra tiến trình còn sống và đúng CreationTime không
+		isAlive := false
 		if hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(cached.PID)); err == nil {
 			var ct, et, kt, ut windows.Filetime
+			var exitCode uint32
 			if err := windows.GetProcessTimes(hProcess, &ct, &et, &kt, &ut); err == nil {
-				_ = windows.CloseHandle(hProcess)
-				if ct == cachedCreation {
-					return cached, nil
+				if errExit := windows.GetExitCodeProcess(hProcess, &exitCode); errExit == nil {
+					// STILL_ACTIVE = 259 trong Win32 API
+					if exitCode == 259 && et.LowDateTime == 0 && et.HighDateTime == 0 && ct == cachedCreation {
+						isAlive = true
+					}
 				}
-			} else {
-				_ = windows.CloseHandle(hProcess)
 			}
+			_ = windows.CloseHandle(hProcess)
 		}
+
+		if isAlive && ProbeHTTPPort(cached.Port, 300*time.Millisecond) {
+			discCache.mu.Unlock()
+			return cached, nil
+		}
+
+		// Tiến trình đã chết hoặc cổng không còn phản hồi -> dọn dẹp cache
+		discCache.info = nil
+		discCache.cachedAt = time.Time{}
 	}
+	discCache.mu.Unlock()
 
 	// 2. Gom nhiều cuộc gọi đồng thời qua singleflight
 	res, err, _ := discFlight.Do("discover_language_server", func() (any, error) {
-		// Re-check cache bên trong flight
-		discCache.mu.RLock()
-		if discCache.info != nil && time.Since(discCache.cachedAt) <= 10*time.Second {
-			info := discCache.info
-			discCache.mu.RUnlock()
-			return info, nil
-		}
-		discCache.mu.RUnlock()
-
 		procs, err := QueryLanguageServerProcesses()
 		if err != nil {
 			return nil, fmt.Errorf("failed querying processes: %w", err)

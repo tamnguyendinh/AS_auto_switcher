@@ -137,8 +137,13 @@ func (r *SessionReloader) RecycleLanguageServer(ctx context.Context, waitDuratio
 	}
 
 	// 1. Terminate language_server.exe
-	if err := killer(ctx); err != nil {
-		return fmt.Errorf("failed executing taskkill for language_server.exe: %w", err)
+	killErr := killer(ctx)
+
+	// BẢO VỆ BỘ NHỚ ĐỆM: Xóa sạch cache discovery ngay khi tiêu diệt tiến trình (Proactive Invalidation)
+	connector.InvalidateDiscoveryCache(0, "")
+
+	if killErr != nil {
+		return fmt.Errorf("failed executing taskkill for language_server.exe: %w", killErr)
 	}
 
 	// 2. Wait for Antigravity parent (monitorLsCrashInternal) to respawn fresh instance
