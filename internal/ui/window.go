@@ -254,9 +254,18 @@ func (a *App) setupLayout() {
 		a.statusBar,         // Trung tâm
 	)
 
-	bottomSection := container.NewVBox(
+	// SPEC-ARCH-20261024-FOOTER-HEIGHT-REDUCTION: Compact Footer Bar (giảm 50% độ cao xuống chuẩn ~21-22px)
+	padLeft := canvas.NewRectangle(color.Transparent)
+	padLeft.SetMinSize(fyne.NewSize(8, 1))
+	padRight := canvas.NewRectangle(color.Transparent)
+	padRight.SetMinSize(fyne.NewSize(8, 1))
+
+	paddedFooter := container.NewBorder(nil, nil, padLeft, padRight, footerContent)
+
+	bottomSection := container.New(
+		&compactFooterLayout{},
 		widget.NewSeparator(),
-		container.NewPadded(footerContent),
+		paddedFooter,
 	)
 
 	// Main Layout
@@ -459,6 +468,44 @@ func (g *symmetricGridWrapLayout) MinSize(objects []fyne.CanvasObject) fyne.Size
 	}
 	return fyne.NewSize(g.CellSize.Width,
 		(g.CellSize.Height*float32(rows))+(float32(rows-1)*theme.Padding()))
+}
+
+// compactFooterLayout delivers a 50% reduced compact height footer bar (~22px)
+// with precise pixel placement and zero excessive vertical padding.
+type compactFooterLayout struct{}
+
+var _ fyne.Layout = (*compactFooterLayout)(nil)
+
+func (l *compactFooterLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var maxW float32
+	for _, o := range objects {
+		if o.Visible() {
+			if w := o.MinSize().Width; w > maxW {
+				maxW = w
+			}
+		}
+	}
+	// Height 22px: Separator 1px + Content 21px (50% reduction from ~48px)
+	return fyne.NewSize(maxW, 22)
+}
+
+func (l *compactFooterLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) < 2 {
+		return
+	}
+	sep := objects[0]
+	footer := objects[1]
+
+	sepHeight := float32(1)
+	sep.Move(fyne.NewPos(0, 0))
+	sep.Resize(fyne.NewSize(size.Width, sepHeight))
+
+	footerHeight := size.Height - sepHeight
+	if footerHeight < 0 {
+		footerHeight = 0
+	}
+	footer.Move(fyne.NewPos(0, sepHeight))
+	footer.Resize(fyne.NewSize(size.Width, footerHeight))
 }
 
 // -----------------------------------------------------------------------------

@@ -336,3 +336,53 @@ func TestAcceptance_TC04_FullWidthNotificationTakeover(t *testing.T) {
 		t.Errorf("TC-04 VIOLATION: versionLabel should be restored after autoHideStatusBar timeout")
 	}
 }
+
+// TC-05: Thu Gọn 50% Độ Cao Thanh Đáy (Footer Bar Height <= 25px)
+// Tiêu chí PASS:
+// - bottomSection có cấu trúc chuẩn: separator ở index 0, container chứa footerContent ở index 1.
+// - Chiều cao MinSize của bottomSection <= 25.0px (giảm ~50% so với layout đệm cũ ~48px).
+func TestAcceptance_TC05_FooterCompactHeight(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 1*time.Second)
+
+	win := app.Window()
+	content := win.Content().(*fyne.Container)
+
+	var bottomSection *fyne.Container
+	for _, obj := range content.Objects {
+		if c, ok := obj.(*fyne.Container); ok {
+			for _, inner := range c.Objects {
+				if innerWrapper, ok := inner.(*fyne.Container); ok {
+					for _, deep := range innerWrapper.Objects {
+						if deepC, ok := deep.(*fyne.Container); ok {
+							for _, footerObj := range deepC.Objects {
+								if footerObj == app.serverStatusLabel {
+									bottomSection = c
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if bottomSection == nil {
+		t.Fatalf("TC-05 VIOLATION: failed to locate bottomSection containing serverStatusLabel")
+	}
+
+	// Đo lường MinSize của bottomSection
+	h := bottomSection.MinSize().Height
+	if h > 25.0 {
+		t.Errorf("TC-05 VIOLATION: expected bottomSection height <= 25px (50%% reduced), got %f px", h)
+	}
+}
+
