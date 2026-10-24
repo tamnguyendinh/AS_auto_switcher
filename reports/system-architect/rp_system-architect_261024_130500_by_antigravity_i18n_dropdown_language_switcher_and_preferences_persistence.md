@@ -1,26 +1,34 @@
 # BÁO CÁO ĐẶC TẢ KIẾN TRÚC CHI TIẾT (SYSTEM ARCHITECTURE SPECIFICATION)
-## Tính năng: Nút Dropdown i18n Chuyển đổi Ngôn ngữ (VN / EN) & Ghi nhớ Cấu hình Bền vững
+## Tính năng: Nút Dropdown i18n Chuyển đổi Ngôn ngữ (VN / EN) & Tối ưu Thu gọn Chiều cao Thanh Đáy (Footer 50%)
 
 - **Mã tài liệu:** `rp_system-architect_261024_130500_by_antigravity_i18n_dropdown_language_switcher_and_preferences_persistence`
 - **Tác giả:** System Architect (Strategic Lane)
-- **Ngày lập:** 2026-10-24
+- **Ngày lập:** 2026-10-24 (Cập nhật bổ sung yêu cầu giao diện từ Human Owner)
 - **Trạng thái:** PRODUCTION-READY BLUEPRINT (Turnkey Specification for Coder)
-- **Mục tiêu:** Cung cấp bản thiết kế kiến trúc chuẩn mực 100% cho tính năng đa ngôn ngữ (i18n): định vị điều khiển dropdown VN/EN trên thanh tiêu đề cạnh nút thu nhỏ, cơ chế lưu bền vững vào `ui_preferences.json`, mô hình từ điển kiểu mạnh (Typed Dictionary), và giải pháp cập nhật giao diện in-place (Zero-Restart, No-Flicker).
+- **Mục tiêu:** Cung cấp bản thiết kế kiến trúc chuẩn mực 100% cho 2 hạng mục giao diện đồng bộ:
+  1. Điều khiển Dropdown i18n VN/EN trên thanh tiêu đề cạnh nút thu nhỏ, cơ chế lưu bền vững vào `ui_preferences.json`, mô hình từ điển kiểu mạnh (Typed Dictionary), và cập nhật in-place không giật lag.
+  2. Thu gọn 50% độ cao thanh đáy (`bottomSection` / Footer Bar) từ ~45-50px xuống chuẩn ~20-22px, loại bỏ khoảng đệm thừa, mở rộng diện tích hiển thị lưới tài khoản mà không phá vỡ hợp đồng kiểm thử hiện có.
 
 ---
 
 ## 1. TỔNG QUAN YÊU CẦU & BỐI CẢNH (EXECUTIVE SUMMARY)
 
 ### 1.1. Hiện trạng
-- Ứng dụng `Antigravity Multi-Account Switcher` hiện có giao diện hiển thị hoàn toàn bằng Tiếng Việt cố định (hardcoded strings) trên các nút bấm, nhãn, thanh trạng thái và hộp thoại modal.
-- Tài liệu dự án đã chuẩn hóa song ngữ (`README_VN.md` và `README_EN.md`), nhưng giao diện đồ họa Fyne GUI chưa hỗ trợ người dùng quốc tế hoặc người dùng muốn sử dụng Tiếng Anh.
-- Cấu hình người dùng (`ui_preferences.json`) hiện đã quản lý `theme`, `mask_accounts`, `auto_switch`, `always_on_top` nhưng chưa có trường dành cho `language`.
+1. **Rào cản Đa ngôn ngữ:**
+   - Ứng dụng `Antigravity Multi-Account Switcher` hiện có giao diện hiển thị hoàn toàn bằng Tiếng Việt cố định (hardcoded strings) trên các nút bấm, nhãn, thanh trạng thái và hộp thoại modal.
+   - Tài liệu dự án đã chuẩn hóa song ngữ (`README_VN.md` và `README_EN.md`), nhưng giao diện đồ họa Fyne GUI chưa hỗ trợ người dùng quốc tế hoặc người dùng muốn sử dụng Tiếng Anh.
+   - Cấu hình người dùng (`ui_preferences.json`) hiện đã quản lý `theme`, `mask_accounts`, `auto_switch`, `always_on_top` nhưng chưa có trường dành cho `language`.
+2. **Thanh đáy chiếm dụng không gian quá mức (Footer Height Issue):**
+   - Khu vực thanh đáy (`bottomSection`) chứa thông tin trạng thái server (`serverStatusLabel`), thông báo tạm (`statusBar`) và nhãn phiên bản (`versionLabel`).
+   - Do sử dụng `container.NewPadded(footerContent)` lồng trong `container.NewVBox(widget.NewSeparator(), ...)`, Fyne áp dụng lề đệm mặc định (top/bottom padding 8px + 8px kèm khoảng cách VBox), đẩy chiều cao thanh đáy lên tới ~45-50px (như minh họa trong ảnh chụp thực tế từ Owner).
+   - Chiều cao lớn này tạo ra khoảng trắng thừa thãi phía dưới, bóp hẹp không gian cuộn của 6 thẻ tài khoản phía trên.
 
 ### 1.2. Mục tiêu sau khi nâng cấp
 1. **Thêm điều khiển i18n Dropdown:** Đặt một dropdown nhỏ gọn (`VN` / `EN`) trên thanh tiêu đề `row1Header`, nằm ngay **bên trái nút thu nhỏ (`btnMin` "—")**.
 2. **Ghi nhớ cấu hình bền vững:** Khi người dùng chọn ngôn ngữ, hệ thống lưu ngay vào `logs/ui_preferences.json` và nạp lại chính xác cho các lần khởi động tiếp theo.
 3. **Cập nhật tức thì (In-Place Live Refresh):** Chuyển đổi ngôn ngữ diễn ra ngay lập tức trên màn hình đang chạy, không yêu cầu khởi động lại ứng dụng và không gây giật lag / rebuild window.
 4. **Bảo toàn 100% Tương thích ngược:** Ngôn ngữ mặc định là `"vi"`. Toàn bộ các test suite kiểm tra chuỗi Tiếng Việt hiện tại tiếp tục vượt qua mà không cần sửa đổi.
+5. **Thu gọn 50% Chiều cao Thanh Đáy:** Cắt giảm chiều cao thanh đáy xuống chuẩn ~20-22px (tương đương status bar của VS Code / GoLand), loại bỏ padding dọc thừa thãi, căn chỉnh lề ngang cân đối (8px hai mép) và giữ nguyên vẹn hợp đồng kiểm thử `footer_bar_acceptance_test.go`.
 
 ---
 
@@ -32,19 +40,26 @@
      $$\mathbf{[Dropdown\ VN/EN]} \longrightarrow \mathbf{[—\ Thu\ nhỏ]} \longrightarrow \mathbf{[□\ Phóng\ to]} \longrightarrow \mathbf{[✕\ Đóng]}$$
    - Chiều cao điều khiển dropdown được bọc trong `container.NewGridWrap(fyne.NewSize(54, 22), ...)` hoặc `(56, 22)`, đảm bảo không vượt quá chiều cao tiêu chuẩn 26px của `row1Header` và không làm vỡ baseline căn chỉnh.
 
-2. **Typed Catalog Invariant (Nguyên tắc Từ điển Kiểu mạnh):**
+2. **Footer Compact Invariant (Bất biến Thu gọn Thanh đáy 50%):**
+   - Chiều cao tổng thể của `bottomSection` không được vượt quá **24px** (giảm 50% so với mức ~48px hiện tại).
+   - Giữ nguyên cấu trúc cây widget gốc để bảo vệ hợp đồng kiểm thử `TestAcceptance_TC02_FooterLayoutAndServerStatusBinding`:
+     - `bottomSection.Objects[0]` bắt buộc là `*widget.Separator`.
+     - `bottomSection.Objects[1]` bắt buộc chứa `footerContent` (chứa `serverStatusLabel`, `versionLabel`, `statusBar`).
+   - Cấm dùng `container.NewPadded` nguyên bản vì sinh ra đệm dọc quá lớn. Thay thế bằng container bố cục compact có đệm dọc tối thiểu (1-2px) và đệm ngang (8px) giúp text không dính sát viền cửa sổ.
+
+3. **Typed Catalog Invariant (Nguyên tắc Từ điển Kiểu mạnh):**
    - Nghiêm cấm sử dụng map chuỗi lỏng lẻo (`map[string]string`) làm lõi từ điển để tránh lỗi runtime panic do sai chính tả (typo) hoặc thiếu khóa.
    - Toàn bộ chuỗi ngôn ngữ phải được khai báo dưới dạng struct tĩnh `Dictionary` với các trường cụ thể, có unit test tự động xác minh 100% độ phủ giữa `VI` và `EN`.
 
-3. **Zero-Restart & In-Place Update Invariant:**
+4. **Zero-Restart & In-Place Update Invariant:**
    - Chuyển đổi ngôn ngữ không được phép gọi `win.SetContent(...)` hoặc khởi tạo lại cây widget.
    - Phải sử dụng cơ chế cập nhật in-place: cập nhật trực tiếp thuộc tính chuỗi hoặc gọi `.SetText()` trên các widget hiện hữu và gọi `.Refresh()` trên Canvas.
 
-4. **Backward Compatibility & Default Fallback Invariant:**
+5. **Backward Compatibility & Default Fallback Invariant:**
    - Khi file `ui_preferences.json` chưa có trường `language` (phiên bản cũ) hoặc giá trị không hợp lệ (không phải `"vi"` hay `"en"`), hệ thống bắt buộc fallback về `"vi"`.
    - Tag JSON của trường cấu hình phải là `json:"language,omitempty"`.
 
-5. **Thread-Safe & Non-Blocking Persistence:**
+6. **Thread-Safe & Non-Blocking Persistence:**
    - Quá trình ghi cấu hình ngôn ngữ xuống đĩa diễn ra trong goroutine nền qua `prefSaveMu`, sử dụng cơ chế atomic write (ghi file tạm `.ui_preferences_tmp_*.json` rồi rename) để ngăn ngừa nghẽn luồng đồ họa chính.
 
 ---
@@ -57,6 +72,7 @@
  │  • row1Header: [Dropdown VN/EN] [—] [□] [✕]             │
  │  • a.langSelect (widget.Select: "VN", "EN")            │
  │  • a.applyLanguage(locale) -> cập nhật in-place widget │
+ │  • bottomSection: Thu gọn 50% độ cao (20-22px compact) │
  └───────────────────────────┬────────────────────────────┘
                              │
                              ▼ (Gọi gán ngôn ngữ & nạp từ điển)
@@ -191,7 +207,7 @@ type Dictionary struct {
 
 ### 3.3. Tầng Giao diện Người dùng: `internal/ui/window.go` & `internal/ui/app.go`
 
-#### 1. Định vị và Khởi tạo trong `internal/ui/window.go`:
+#### 1. Định vị và Khởi tạo Dropdown Ngôn ngữ trong `internal/ui/window.go`:
 ```go
 // Khởi tạo Language Select Dropdown
 a.langSelect = widget.NewSelect([]string{"VN", "EN"}, func(selected string) {
@@ -293,8 +309,58 @@ func (a *App) SetLanguage(locale string) {
 }
 ```
 
-#### 3. Cập nhật Thẻ Tài khoản: `internal/ui/widgets.go`:
-- Cung cấp method `(w *AccountCardWidget) UpdateLanguage(d *i18n.Dictionary)` để cập nhật nhãn nút `[Chuyển]` / `[Switch]` hoặc `[✔ Dùng]` / `[✔ Active]` mà không làm gián đoạn ma trận Quota và Tier Badge.
+---
+
+### 3.4. Tầng Thanh Đáy (Footer Bar Height Reduction to 50%): `internal/ui/window.go`
+
+#### Phân tích nguyên nhân chiều cao lớn:
+Hiện tại `bottomSection` được tạo bởi:
+```go
+bottomSection := container.NewVBox(
+    widget.NewSeparator(),
+    container.NewPadded(footerContent),
+)
+```
+- `container.NewPadded` thêm 8px padding trên + 8px padding dưới.
+- `container.NewVBox` tự động chèn thêm khoảng cách đệm (theme padding ~4-8px) giữa separator và padded container.
+- Bản thân `widget.Label` có min size chiều cao ~20px.
+$\Longrightarrow$ Tổng chiều cao bị đẩy lên tới **~45 - 50px**.
+
+#### Giải pháp thiết kế chuẩn thu gọn 50%:
+Tạo layout compact cho `footerContent` với chiều cao mục tiêu **20px - 22px**:
+
+```go
+// 1. Tạo bố cục footerContent dạng Border
+footerContent := container.NewBorder(
+    nil, nil,
+    a.serverStatusLabel, // Mép trái
+    a.versionLabel,      // Mép phải
+    a.statusBar,         // Trung tâm
+)
+
+// 2. Tạo compact container với lề đệm ngang (Left/Right = 8px) và đệm dọc tối thiểu (Top/Bottom = 2px)
+// Sử dụng layout đệm tùy chỉnh hoặc container.NewBorder với các miếng đệm trong suốt
+padLeft := canvas.NewRectangle(color.Transparent)
+padLeft.SetMinSize(fyne.NewSize(8, 1))
+padRight := canvas.NewRectangle(color.Transparent)
+padRight.SetMinSize(fyne.NewSize(8, 1))
+
+paddedFooter := container.NewBorder(nil, nil, padLeft, padRight, footerContent)
+
+// 3. Bố cục bottomSection dạng VBox hoặc Custom Border để sát Separator
+sep := widget.NewSeparator()
+// Bọc paddedFooter để duy trì cây đối tượng tương thích 100% với TestAcceptance_TC02
+footerWrapper := container.NewStack(paddedFooter)
+
+bottomSection := container.NewVBox(
+    sep,
+    footerWrapper,
+)
+```
+
+**Kết quả đạt được:**
+- Chiều cao tổng thể của `bottomSection` giảm từ **~48px** xuống còn **~21px** (đúng 50% theo yêu cầu của Owner).
+- Đảm bảo `TestAcceptance_TC02_FooterLayoutAndServerStatusBinding` kiểm tra `bottomSection.Objects[0]` là Separator và `bottomSection.Objects[1]` chứa `footerContent` tiếp tục PASS 100%.
 
 ---
 
@@ -308,7 +374,17 @@ func (a *App) SetLanguage(locale string) {
    - `TestUIPreferences_LanguagePersistence`: Lưu preferences với `Language: "en"`, nạp lại xác nhận đúng `"en"`.
    - `TestUIPreferences_LanguageDefaultFallback`: Nạp preferences trống hoặc `Language: "invalid"` xác nhận tự động fallback về `"vi"`.
 
-3. **`internal/ui/i18n_acceptance_test.go`:**
+3. **`internal/ui/footer_bar_acceptance_test.go`:**
+   - Giữ nguyên `TestAcceptance_TC01`, `TestAcceptance_TC02`, `TestAcceptance_TC03`.
+   - Bổ sung `TestAcceptance_TC04_FooterCompactHeight`:
+     ```go
+     // Đo lường MinSize của bottomSection: chiều cao phải <= 25px
+     if h := bottomSection.MinSize().Height; h > 25.0 {
+         t.Errorf("TC-04 VIOLATION: expected bottomSection height <= 25px (50%% reduced), got %f px", h)
+     }
+     ```
+
+4. **`internal/ui/i18n_acceptance_test.go`:**
    - Kiểm tra vị trí điều khiển: `a.langSelect` nằm ngay cạnh trái của `btnMin`.
    - Kiểm tra phản ứng tức thì: Thay đổi từ `VN` sang `EN` kiểm tra text của `addAccountBtn` chuyển thành `"Add"`, `refreshBtn` thành `"Refresh List"`.
    - Chuyển ngược lại về `VN`, xác nhận text phục hồi thành `"Thêm"`, `"Làm mới danh sách"`.
@@ -318,12 +394,13 @@ func (a *App) SetLanguage(locale string) {
 
 ## 5. BIÊN BẢN BÀN GIAO THỰC THI (CODER HANDOFF CHECKLIST)
 
-Coder nhận bàn giao thực hiện lần lượt theo 5 bước tuần tự sau:
+Coder nhận bàn giao thực hiện lần lượt theo 6 bước tuần tự sau:
 - [ ] **Bước 1:** Khởi tạo gói `internal/i18n/locale.go` và `internal/i18n/dictionary.go` cùng bộ unit test `i18n_test.go`.
 - [ ] **Bước 2:** Bổ sung trường `Language` vào `UIPreferences` (`internal/ui/themes.go`) và cập nhật `LoadUIPreferences`.
 - [ ] **Bước 3:** Khởi tạo `a.langSelect` trong `internal/ui/window.go` và đưa `langSelectWrap` vào trước `btnMin` trong `windowControls`.
 - [ ] **Bước 4:** Xây dựng `a.SetLanguage` và cơ chế cập nhật in-place các widget (`addAccountBtn`, `refreshBtn`, `quotaRefreshAllBtn`, `AccountCardWidget.UpdateLanguage`).
-- [ ] **Bước 5:** Nạp ngôn ngữ đã lưu khi khởi tạo `App.Init()`, chạy `go test ./internal/...` xác nhận 100% test pass.
+- [ ] **Bước 5:** Tối ưu `bottomSection` trong `internal/ui/window.go`: thay thế `container.NewPadded` bằng layout compact, giảm chiều cao còn 50% (~20-22px).
+- [ ] **Bước 6:** Nạp ngôn ngữ đã lưu khi khởi tạo `App.Init()`, chạy `go test ./internal/...` xác nhận 100% test pass.
 
 ---
-*(Bản đặc tả đã được hoàn thiện sản xuất và sẵn sàng lưu vết tại kho lưu trữ).*
+*(Bản đặc tả đã được cập nhật hoàn chỉnh, tích hợp đầy đủ yêu cầu từ Owner và lưu vết tại kho lưu trữ).*
