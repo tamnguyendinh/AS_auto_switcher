@@ -5,7 +5,7 @@ import "fmt"
 var (
 	// Version là phiên bản chính thức của ứng dụng (Single Source of Truth).
 	// Giá trị fallback khi chạy dev nội bộ hoặc "go test ./...".
-	Version = "1.0.2.0"
+	Version = "1.0.3.0"
 
 	// GitCommit là short commit hash của Git (ví dụ: "a77efb9"), được inject qua -ldflags lúc build.
 	GitCommit = ""
