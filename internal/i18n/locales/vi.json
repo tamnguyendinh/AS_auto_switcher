@@ -1,0 +1,63 @@
+{
+  "app_title": "Antigravity Multi-Account Switcher",
+  "lang_dropdown_label": "VN",
+
+  "btn_add": "Thêm",
+  "btn_refresh_list": "Làm mới danh sách",
+  "btn_refresh_list_loading": "⏳ Đang làm mới...",
+  "btn_refresh_quota": "Làm mới Quota",
+  "btn_refresh_quota_loading": "⏳ Đang quét...",
+  "btn_always_on_top": "📌",
+  "lbl_mask_accounts": "Ẩn tài khoản:",
+  "lbl_auto_switch": "Tự động:",
+
+  "main_empty_accounts": "Không tìm thấy tài khoản Google nào trên Chrome.",
+  "badge_active": "[✔ Đang dùng]",
+  "badge_switch": "[Chuyển]",
+  "badge_need_oauth": "[Cần OAuth]",
+  "badge_added": "[Đã thêm]",
+  "badge_account_not_found": "[Tài khoản không tồn tại]",
+
+  "quota_col_5h": "5h",
+  "quota_col_week": "Tuần",
+  "quota_ready": "(Sẵn sàng)",
+  "quota_unavailable": "N/A",
+
+  "server_connecting": "Antigravity: Hoạt động  | Đang kết nối...",
+  "server_connected": "Antigravity: Hoạt động  | PID %d | Cổng %d",
+  "server_stopped": "Antigravity: Không hoạt động  | Dự phòng WinCred",
+
+  "status_no_candidate": "⚠️ Không có tài khoản để chuyển.",
+  "status_fetch_error": "Không lấy được danh sách tài khoản: %s",
+  "status_fetch_success": "Đã cập nhật danh sách tài khoản",
+  "status_switching_to": "⏳ Đang chuyển sang %s...",
+  "status_switched_success": "✅ Đã chuyển sang %s",
+  "status_update_error": "❌ Lỗi cập nhật trạng thái: %v",
+  "status_cannot_delete_active": "⚠️ Không thể xóa tài khoản đang hoạt động.",
+  "status_delete_error": "❌ Lỗi xóa tài khoản: %v",
+  "status_delete_success": "🗑 Đã xóa tài khoản %s khỏi hệ thống.",
+  "status_mask_on": "🔒 Đã ẩn thông tin tài khoản",
+  "status_mask_off": "🔓 Đã hiển thị đầy đủ tài khoản",
+  "status_auto_on": "Tự động chuyển tài khoản: BẬT",
+  "status_auto_off": "Tự động chuyển tài khoản: TẮT",
+
+  "modal_add_title": "Thêm tài khoản",
+  "modal_add_header": "Thêm tài khoản",
+  "modal_add_close": "Đóng",
+  "modal_scan_chrome": "Quét Chrome",
+  "modal_scanning_chrome": "⏳ Đang quét...",
+  "modal_empty_candidates": "Không có tài khoản nào trong danh bạ.",
+  "modal_btn_add_item": "THÊM",
+
+  "confirm_delete_title": "Xác nhận xóa tài khoản",
+  "confirm_btn_delete": "Xóa",
+  "confirm_btn_cancel": "Hủy",
+  "confirm_msg_disc_exists": "Bạn có chắc chắn muốn xóa tài khoản %s khỏi danh bạ đã quét không?\n\n(Lưu ý: Thao tác này chỉ xóa dữ liệu trong danh bạ khám phá, không xóa tài khoản hay token trên màn hình chính).",
+  "confirm_msg_disc_no_file": "Tài khoản %s không có tệp dữ liệu trên hệ thống.\nBạn có muốn gỡ bỏ tài khoản này khỏi danh sách hiển thị không?",
+  "confirm_msg_main_no_token": "Bạn có chắc chắn muốn gỡ tài khoản %s khỏi màn hình chính không?",
+  "confirm_msg_main_has_token": "Bạn có chắc chắn muốn xóa tài khoản %s khỏi hệ thống? Thao tác này sẽ xóa token đã lưu và bạn sẽ cần đăng nhập lại.",
+
+  "tray_open": "Hiển thị Switcher",
+  "tray_refresh": "Làm mới Chrome",
+  "tray_exit": "Thoát"
+}

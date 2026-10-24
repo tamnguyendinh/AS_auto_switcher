@@ -136,9 +136,9 @@ func (a *App) setupLayout() {
 	// TopSection Row 2 (Combined): Toolbar Buttons (trái) + Theme Select (phải)
 	// -------------------------------------------------------------------------
 	d := i18n.Current()
-	a.serverStatusLabel = widget.NewLabelWithStyle("Antigravity: Hoạt động  | Đang kết nối...", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	a.serverStatusLabel = widget.NewLabelWithStyle(d.ServerConnecting, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 
-	a.addAccountBtn = widget.NewButtonWithIcon(d.BtnAddAccount, theme.ContentAddIcon(), func() {
+	a.addAccountBtn = widget.NewButtonWithIcon(d.BtnAdd, theme.ContentAddIcon(), func() {
 		a.ShowAddAccountModal()
 	})
 

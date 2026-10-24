@@ -4,6 +4,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
+
+	"antigravity-switch/internal/i18n"
 )
 
 // setupTray initializes the system tray menu and minimize-to-tray close intercept.
@@ -13,27 +15,7 @@ func (a *App) setupTray() {
 		return
 	}
 
-	// Tray Menu
-	menu := fyne.NewMenu("Antigravity Switcher",
-		fyne.NewMenuItem("Hiển thị Switcher", func() {
-			if a.win != nil {
-				a.win.Show()
-				a.win.RequestFocus()
-				if a.IsAlwaysOnTop() {
-					setWindowAlwaysOnTop(windowTitle, true)
-				}
-			}
-		}),
-		fyne.NewMenuItem("Làm mới Chrome", func() {
-			a.Refresh()
-		}),
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem("Thoát", func() {
-			a.app.Quit()
-		}),
-	)
-
-	desk.SetSystemTrayMenu(menu)
+	a.updateTrayMenu()
 
 	// Set tray icon to official brand logo
 	if AppLogoResource != nil && len(AppLogoResource.Content()) > 0 {
@@ -50,4 +32,34 @@ func (a *App) setupTray() {
 			a.app.Quit() // 2. Thoát hoàn toàn tiến trình Fyne GUI và System Tray
 		})
 	}
+}
+
+// updateTrayMenu updates or sets the system tray menu localized per current i18n settings.
+func (a *App) updateTrayMenu() {
+	desk, ok := a.app.(desktop.App)
+	if !ok {
+		return
+	}
+
+	d := i18n.Current()
+	menu := fyne.NewMenu(d.AppTitle,
+		fyne.NewMenuItem(d.TrayOpen, func() {
+			if a.win != nil {
+				a.win.Show()
+				a.win.RequestFocus()
+				if a.IsAlwaysOnTop() {
+					setWindowAlwaysOnTop(windowTitle, true)
+				}
+			}
+		}),
+		fyne.NewMenuItem(d.TrayRefresh, func() {
+			a.Refresh()
+		}),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem(d.TrayExit, func() {
+			a.app.Quit()
+		}),
+	)
+
+	desk.SetSystemTrayMenu(menu)
 }

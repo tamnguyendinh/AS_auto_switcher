@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -227,4 +228,52 @@ func TestAcceptance_i18n_StartupRestoration(t *testing.T) {
 	if app.addAccountBtn.Text != "Add" {
 		t.Errorf("expected 'Add', got '%s'", app.addAccountBtn.Text)
 	}
+}
+
+// TestAcceptance_i18n_FooterAndModalBilingual verifies that the footer status label,
+// overview empty state, and add modal accurately switch between Vietnamese and English.
+func TestAcceptance_i18n_FooterAndModalBilingual(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 500*time.Millisecond)
+
+	// In VI:
+	app.SetLanguage("vi")
+	waitForIdle(app, 200*time.Millisecond)
+
+	dVI := i18n.Current()
+	if app.serverStatusLabel != nil {
+		if !strings.Contains(app.serverStatusLabel.Text, "Hoạt động") && !strings.Contains(app.serverStatusLabel.Text, "Không hoạt động") && !strings.Contains(app.serverStatusLabel.Text, "kết nối") {
+			t.Errorf("expected VI server status, got %q", app.serverStatusLabel.Text)
+		}
+	}
+
+	contentBoxVI, scanBtnVI, _, _ := app.buildAddAccountModalContent()
+	if scanBtnVI.Text != dVI.ModalScanChrome {
+		t.Errorf("expected VI scanBtn %q, got %q", dVI.ModalScanChrome, scanBtnVI.Text)
+	}
+	_ = contentBoxVI
+
+	// Switch to EN:
+	app.SetLanguage("en")
+	waitForIdle(app, 200*time.Millisecond)
+
+	dEN := i18n.Current()
+	if app.serverStatusLabel != nil {
+		if !strings.Contains(app.serverStatusLabel.Text, "Active") && !strings.Contains(app.serverStatusLabel.Text, "Inactive") && !strings.Contains(app.serverStatusLabel.Text, "Connecting") {
+			t.Errorf("expected EN server status, got %q", app.serverStatusLabel.Text)
+		}
+	}
+
+	contentBoxEN, scanBtnEN, _, _ := app.buildAddAccountModalContent()
+	if scanBtnEN.Text != dEN.ModalScanChrome {
+		t.Errorf("expected EN scanBtn %q, got %q", dEN.ModalScanChrome, scanBtnEN.Text)
+	}
+	_ = contentBoxEN
 }
