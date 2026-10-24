@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-10-24T15:30:00+07:00",
+  "feature": "i18n Dropdown Language Switcher and Compact Footer Bar",
+  "tested_commit": "1e55b77",
+  "verdict": "REJECT",
+  "reasons": [
+    "Full build pipeline failure: scripts/build_windows.ps1 failed due to flaky async persistence race in TestAcceptance_i18n_LiveInPlaceSwitching",
+    "Incomplete localization: Dozens of UI surfaces, buttons, modals, badges, status lines, and popups remain hardcoded in Vietnamese",
+    "Button label reversion defect: Refreshing quota or account list while in English locale permanently resets button text back to Vietnamese",
+    "Footer Server Status label ignored: SetLanguage does not update serverStatusLabel, and status format hardcodes 'Hoạt động'",
+    "Architectural violation of Owner specification: Missing independent parallel JSON translation catalogs (locales/vi.json and locales/en.json) for side-by-side review and standardized i18n"
+  ],
+  "invariants_status": {
+    "dropdown_position_and_geometry": "PASS",
+    "footer_height_50pct_reduction": "PASS",
+    "live_in_place_switching": "FAIL_INCOMPLETE",
+    "preferences_persistence": "FAIL_ASYNC_RACE",
+    "default_fallback": "PASS",
+    "parallel_json_locale_files": "FAIL_MISSING"
+  },
+  "evidence": {
+    "build_log": "reports/QA/i18n-footer/build.log",
+    "test_suites_log": "reports/QA/i18n-footer/test-suites.log",
+    "screenshots": [
+      "reports/QA/i18n-footer/screenshots/01_ui_vietnamese_default.png",
+      "reports/QA/i18n-footer/screenshots/02_ui_english_switched.png",
+      "reports/QA/i18n-footer/screenshots/03_add_modal_hardcoded_vietnamese.png"
+    ]
+  }
+}

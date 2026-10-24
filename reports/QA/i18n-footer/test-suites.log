@@ -1,0 +1,53 @@
+=== RUN   TestAcceptance_TC01_DeleteInactiveStatusOnAccount
+--- PASS: TestAcceptance_TC01_DeleteInactiveStatusOnAccount (0.84s)
+=== RUN   TestAcceptance_TC02_DeleteInactiveStatusOffAccount
+--- PASS: TestAcceptance_TC02_DeleteInactiveStatusOffAccount (0.95s)
+=== RUN   TestAcceptance_TC03_DeleteNeedOAuthAccount
+--- PASS: TestAcceptance_TC03_DeleteNeedOAuthAccount (0.98s)
+=== RUN   TestAcceptance_TC04_ProtectActiveAccount
+--- PASS: TestAcceptance_TC04_ProtectActiveAccount (1.55s)
+=== RUN   TestAcceptance_TC05_DismissConfirmationDialog
+--- PASS: TestAcceptance_TC05_DismissConfirmationDialog (0.67s)
+=== RUN   TestAcceptance_TC06_ActionClusterStrictOrder
+--- PASS: TestAcceptance_TC06_ActionClusterStrictOrder (0.00s)
+=== RUN   TestAcceptance_TC07_CleanupQuotaCache
+--- PASS: TestAcceptance_TC07_CleanupQuotaCache (0.28s)
+=== RUN   TestAcceptance_TC08_AutoSwitchCutoffWhenNoCandidates
+--- PASS: TestAcceptance_TC08_AutoSwitchCutoffWhenNoCandidates (0.73s)
+=== RUN   TestAcceptance_TC01_CleanStartup
+--- PASS: TestAcceptance_TC01_CleanStartup (0.47s)
+=== RUN   TestAcceptance_TC02_OpenAddModal_ThreeStates
+--- PASS: TestAcceptance_TC02_OpenAddModal_ThreeStates (1.43s)
+=== RUN   TestAcceptance_TC03_TapAddButton_InPlaceMutationAndOverviewCard
+--- PASS: TestAcceptance_TC03_TapAddButton_InPlaceMutationAndOverviewCard (0.53s)
+=== RUN   TestAcceptance_TC04_PersistenceAcrossAppRestart
+--- PASS: TestAcceptance_TC04_PersistenceAcrossAppRestart (0.83s)
+=== RUN   TestAcceptance_TC05_OnDemandChromeScan
+--- PASS: TestAcceptance_TC05_OnDemandChromeScan (0.37s)
+=== RUN   TestAcceptance_TC06_CompleteOAuthAfterAdd
+--- PASS: TestAcceptance_TC06_CompleteOAuthAfterAdd (0.64s)
+=== RUN   TestAcceptance_TC07_AutoSwitchAndTelemetrySafety
+--- PASS: TestAcceptance_TC07_AutoSwitchAndTelemetrySafety (0.77s)
+=== RUN   TestAcceptance_TC08_StartupPerformanceBenchmark
+    add_modal_acceptance_test.go:872: TC-08 Startup Benchmark: 10 runs, avg=5.68676ms, max=15.6902ms (tiêu chuẩn: < 50ms)
+--- PASS: TestAcceptance_TC08_StartupPerformanceBenchmark (2.02s)
+=== RUN   TestAcceptance_TC09_DeleteCandidateConfirmationFlow
+--- PASS: TestAcceptance_TC09_DeleteCandidateConfirmationFlow (1.43s)
+=== RUN   TestAcceptance_TC01_HeaderRow2_CleanLayout
+--- PASS: TestAcceptance_TC01_HeaderRow2_CleanLayout (0.15s)
+=== RUN   TestAcceptance_TC02_FooterPlacementAndPrefix
+--- PASS: TestAcceptance_TC02_FooterPlacementAndPrefix (1.41s)
+=== RUN   TestAcceptance_TC03_VersionDisplayAndFormatting
+--- PASS: TestAcceptance_TC03_VersionDisplayAndFormatting (0.19s)
+=== RUN   TestAcceptance_TC04_FullWidthNotificationTakeover
+--- PASS: TestAcceptance_TC04_FullWidthNotificationTakeover (0.66s)
+=== RUN   TestAcceptance_TC05_FooterCompactHeight
+--- PASS: TestAcceptance_TC05_FooterCompactHeight (0.32s)
+=== RUN   TestAcceptance_i18n_DropdownPosition
+--- PASS: TestAcceptance_i18n_DropdownPosition (0.28s)
+=== RUN   TestAcceptance_i18n_LiveInPlaceSwitching
+--- PASS: TestAcceptance_i18n_LiveInPlaceSwitching (0.90s)
+=== RUN   TestAcceptance_i18n_StartupRestoration
+--- PASS: TestAcceptance_i18n_StartupRestoration (0.22s)
+PASS
+ok  	antigravity-switch/internal/ui	20.863s

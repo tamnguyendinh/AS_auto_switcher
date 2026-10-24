@@ -1,0 +1,36 @@
+================================================================================
+ΓÜí Antigravity Multi-Account Switcher - Windows Build System
+   OutDir: bin | SkipTests: False | Clean: False | SyncOnly: False
+================================================================================
+[0/4] Checking and synchronizing application version...
+  -> Single Source of Truth detected: Version 1.0.3.0 (from internal\version\version.go)
+  [OK] README.md version is already in sync (1.0.3.0)
+  [OK] README_VN.md version is already in sync (1.0.3.0)
+  [OK] README_EN.md version is already in sync (1.0.3.0)
+  [OK] cmd\switcher\app.rc is already in sync (1.0.3.0)
+[2/4] Running pre-flight tests & vet...
+ok  	antigravity-switch/cmd/switcher	(cached)
+ok  	antigravity-switch/internal/automation	(cached)
+ok  	antigravity-switch/internal/connector	(cached)
+ok  	antigravity-switch/internal/i18n	(cached)
+ok  	antigravity-switch/internal/manager	(cached)
+ok  	antigravity-switch/internal/model	(cached)
+ok  	antigravity-switch/internal/reloader	(cached)
+ok  	antigravity-switch/internal/scanner	(cached)
+ok  	antigravity-switch/internal/store	5.918s
+ok  	antigravity-switch/internal/telemetry	(cached)
+--- FAIL: TestAcceptance_i18n_LiveInPlaceSwitching (0.79s)
+    i18n_acceptance_test.go:156: expected persisted language 'en', got 'vi'
+    i18n_acceptance_test.go:186: expected persisted language 'vi', got 'en'
+FAIL
+FAIL	antigravity-switch/internal/ui	21.984s
+ok  	antigravity-switch/internal/version	(cached)
+ok  	antigravity-switch/internal/wincred	(cached)
+FAIL
+G:\antigravity_auto_switch\scripts\build_windows.ps1 : Test suite failed
+At G:\antigravity_auto_switch\scripts\build_windows.ps1:151 char:9
++         Write-Error "Test suite failed"
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException,build_windows.ps1
+ 
