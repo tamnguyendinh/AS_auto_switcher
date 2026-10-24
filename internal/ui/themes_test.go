@@ -787,3 +787,56 @@ func TestSyncVisualScaleAndTextures_SafeWhenOverviewNil(t *testing.T) {
 		t.Errorf("expected non-nil maskAccountsToggle")
 	}
 }
+
+
+func TestUIPreferences_LanguagePersistence(t *testing.T) {
+	tempDir := t.TempDir()
+	prefFile := filepath.Join(tempDir, "ui_preferences.json")
+
+	pref := &UIPreferences{
+		Theme:    ThemeDark,
+		Language: "en",
+	}
+	if err := SaveUIPreferences(prefFile, pref); err != nil {
+		t.Fatalf("failed saving preferences: %v", err)
+	}
+
+	loaded, err := LoadUIPreferences(prefFile)
+	if err != nil {
+		t.Fatalf("failed loading preferences: %v", err)
+	}
+	if loaded.Language != "en" {
+		t.Errorf("expected Language to be 'en', got '%s'", loaded.Language)
+	}
+}
+
+func TestUIPreferences_LanguageDefaultFallback(t *testing.T) {
+	tempDir := t.TempDir()
+	prefFile := filepath.Join(tempDir, "ui_preferences.json")
+
+	// 1. Missing file -> fallback "vi"
+	fallbackMissing, err := LoadUIPreferences(filepath.Join(tempDir, "missing.json"))
+	if err != nil {
+		t.Fatalf("unexpected error loading missing preferences: %v", err)
+	}
+	if fallbackMissing.Language != "vi" {
+		t.Errorf("expected default language 'vi' for missing file, got '%s'", fallbackMissing.Language)
+	}
+
+	// 2. Empty language or invalid value -> fallback "vi"
+	invalidPref := &UIPreferences{
+		Theme:    ThemeWarm,
+		Language: "de",
+	}
+	if err := SaveUIPreferences(prefFile, invalidPref); err != nil {
+		t.Fatalf("failed saving preferences: %v", err)
+	}
+
+	loaded, err := LoadUIPreferences(prefFile)
+	if err != nil {
+		t.Fatalf("failed loading preferences: %v", err)
+	}
+	if loaded.Language != "vi" {
+		t.Errorf("expected invalid language to fallback to 'vi', got '%s'", loaded.Language)
+	}
+}
