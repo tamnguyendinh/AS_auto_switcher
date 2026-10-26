@@ -108,7 +108,7 @@ func inspectAcceptanceActionSlot(t *testing.T, slot *fyne.Container) (badgeText 
 				} else if btn, ok := inner.(*widget.Button); ok {
 					if btn.Icon == theme.DeleteIcon() || btn.Text == "" {
 						deleteBtn = btn
-					} else if btn.Text == "ADD" {
+					} else if btn.Icon == theme.ContentAddIcon() || btn.Text == "Thêm" || btn.Text == "Add" || btn.Text == "ADD" {
 						addBtn = btn
 					}
 				}
@@ -196,7 +196,7 @@ func TestAcceptance_TC01_CleanStartup(t *testing.T) {
 // =============================================================================
 // TC-02: Mở Modal [+ Thêm] (Open Add Modal)
 // Điều kiện: 1 email có token, 1 email đã add, 3 email chưa add.
-// Kỳ vọng: Modal hiển thị đúng 3 trạng thái: 1 dòng [✔ Đã OAuth], 1 dòng [Đã add], 3 dòng [Cần OAuth] + [ + ADD ].
+// Kỳ vọng: Modal hiển thị đúng 3 trạng thái: 1 dòng [✔ Đã OAuth], 1 dòng [Đã thêm], 3 dòng [Cần OAuth] + [ + Thêm ].
 // =============================================================================
 func TestAcceptance_TC02_OpenAddModal_ThreeStates(t *testing.T) {
 	tempDir := t.TempDir()
@@ -271,11 +271,11 @@ func TestAcceptance_TC02_OpenAddModal_ThreeStates(t *testing.T) {
 		t.Fatalf("expected delete button for %s", oauthEmail)
 	}
 
-	// 2. Dòng [Đã add] + Nút Xóa
+	// 2. Dòng [Đã thêm] + Nút Xóa
 	slotAdded := rowsMap[addedEmail]
 	badgeAdded, addAdded, delAdded := inspectAcceptanceActionSlot(t, slotAdded)
-	if badgeAdded != "[Đã add]" {
-		t.Fatalf("expected badge '[Đã add]' for %s, got '%s'", addedEmail, badgeAdded)
+	if badgeAdded != "[Đã thêm]" {
+		t.Fatalf("expected badge '[Đã thêm]' for %s, got '%s'", addedEmail, badgeAdded)
 	}
 	if addAdded != nil {
 		t.Fatalf("expected no ADD button for %s", addedEmail)
@@ -291,7 +291,7 @@ func TestAcceptance_TC02_OpenAddModal_ThreeStates(t *testing.T) {
 		if badgeRaw != "[Cần OAuth]" {
 			t.Fatalf("expected '[Cần OAuth]' for %s, got '%s'", rawEm, badgeRaw)
 		}
-		if addRaw == nil || addRaw.Text != "ADD" {
+		if addRaw == nil || (addRaw.Text != "Thêm" && addRaw.Text != "Add" && addRaw.Text != "ADD") {
 			t.Fatalf("expected ADD button for %s", rawEm)
 		}
 		if delRaw == nil || delRaw.Icon != theme.DeleteIcon() {
@@ -303,7 +303,7 @@ func TestAcceptance_TC02_OpenAddModal_ThreeStates(t *testing.T) {
 // =============================================================================
 // TC-03: Nhấn nút [ + ADD ] (Tap ADD button)
 // Điều kiện: Nhấn [ + ADD ] tại email test@gmail.com.
-// Kỳ vọng: Nhãn [Cần OAuth] đổi thành [Đã add], nút [ + ADD ] biến mất.
+// Kỳ vọng: Nhãn [Cần OAuth] đổi thành [Đã thêm], nút [ + Thêm ] biến mất.
 // Thẻ test@gmail.com xuất hiện ngay ngoài UI tổng với badge [Cần OAuth] và Quota N/A.
 // =============================================================================
 func TestAcceptance_TC03_TapAddButton_InPlaceMutationAndOverviewCard(t *testing.T) {
@@ -337,10 +337,10 @@ func TestAcceptance_TC03_TapAddButton_InPlaceMutationAndOverviewCard(t *testing.
 	// Nhấn nút [ + ADD ] tại email test@gmail.com
 	addBtn.OnTapped()
 
-	// 1. Nhãn [Cần OAuth] đổi thành [Đã add], nút [ + ADD ] biến mất, nút Xóa vẫn còn
+	// 1. Nhãn [Cần OAuth] đổi thành [Đã thêm], nút [ + Thêm ] biến mất, nút Xóa vẫn còn
 	badgeAfter, addAfter, delAfter := inspectAcceptanceActionSlot(t, actionSlot)
-	if badgeAfter != "[Đã add]" {
-		t.Fatalf("expected badge '[Đã add]', got '%s'", badgeAfter)
+	if badgeAfter != "[Đã thêm]" {
+		t.Fatalf("expected badge '[Đã thêm]', got '%s'", badgeAfter)
 	}
 	if addAfter != nil {
 		t.Fatalf("expected ADD button to disappear after click")

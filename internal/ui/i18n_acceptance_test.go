@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"antigravity-switch/internal/i18n"
 	"antigravity-switch/internal/manager"
+	"antigravity-switch/internal/model"
 )
 
 // TestAcceptance_i18n_DropdownPosition verifies that the language dropdown is located in row1Header
@@ -276,4 +278,196 @@ func TestAcceptance_i18n_FooterAndModalBilingual(t *testing.T) {
 		t.Errorf("expected EN scanBtn %q, got %q", dEN.ModalScanChrome, scanBtnEN.Text)
 	}
 	_ = contentBoxEN
+}
+
+// TestAcceptance_i18n_AddModal_BilingualCandidateBadges verifies bilingual rendering
+// and in-place reactive mutation of candidate badges in Add Account Modal (TC-MODAL-i18n-01 -> 04).
+func TestAcceptance_i18n_AddModal_BilingualCandidateBadges(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	tempDir := t.TempDir()
+	mgr, accStore, discStore := createAcceptanceManagerInDir(t, tempDir)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 500*time.Millisecond)
+
+	// Set up 4 candidate accounts:
+	// 1. oauthEmail: has token in store -> [✔ Đã OAuth] (VI) / [✔ OAuth Done] (EN)
+	oauthEmail := "oauth_user@company.com"
+	if err := discStore.SaveDiscovered(oauthEmail); err != nil {
+		t.Fatal(err)
+	}
+	if err := accStore.SaveAccount(oauthEmail, &model.TokenData{
+		AccessToken: "test_token",
+		IDToken:     makeTestJWT(oauthEmail),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. addedEmail: Added == true -> [Đã thêm] (VI) / [Added] (EN)
+	addedEmail := "added_user@school.edu"
+	if err := discStore.SaveDiscovered(addedEmail); err != nil {
+		t.Fatal(err)
+	}
+	if err := discStore.SetDiscoveredAdded(addedEmail, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. needOAuthEmail: Added == false, HasToken == false -> [Cần OAuth] + "Thêm" (VI) / [Need OAuth] + "Add" (EN)
+	needOAuthEmail := "need_oauth_user@gmail.com"
+	if err := discStore.SaveDiscovered(needOAuthEmail); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. ghostEmail: FileExists == false -> [Tài khoản không tồn tại] (VI) / [Account Not Found] (EN)
+	ghostEmail := "ghost_user@deleted.com"
+	if err := discStore.SaveDiscovered(ghostEmail); err != nil {
+		t.Fatal(err)
+	}
+	if err := discStore.SetDiscoveredAdded(ghostEmail, true); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(filepath.Join(tempDir, "discovered_accounts", ghostEmail+".json"))
+
+	app.mu.Lock()
+	app.overview = &manager.AccountOverview{
+		Accounts: []manager.AccountDisplayItem{
+			{Email: ghostEmail, State: model.StateUnauth, HasToken: false},
+		},
+	}
+	app.mu.Unlock()
+
+	// --- 1. TC-MODAL-i18n-01: Vietnamese Locale Validation ---
+	app.SetLanguage("vi")
+	waitForIdle(app, 200*time.Millisecond)
+
+	_, _, listContainerVI, _ := app.buildAddAccountModalContent()
+	rowsVI := make(map[string]*fyne.Container)
+	for _, obj := range listContainerVI.Objects {
+		em, slot := extractModalRow(t, obj)
+		rowsVI[em] = slot
+	}
+
+	// Verify oauthEmail in VI
+	badgeOAuthVI, addOAuthVI, delOAuthVI := inspectAcceptanceActionSlot(t, rowsVI[oauthEmail])
+	if badgeOAuthVI != "[✔ Đã OAuth]" {
+		t.Errorf("VI: expected '[✔ Đã OAuth]' for %s, got %q (Must NOT be '[✔ Active]' or '[✔ Đang dùng]')", oauthEmail, badgeOAuthVI)
+	}
+	if addOAuthVI != nil {
+		t.Errorf("VI: expected no add button for %s", oauthEmail)
+	}
+	if delOAuthVI == nil {
+		t.Errorf("VI: expected delete button for %s", oauthEmail)
+	}
+
+	// Verify addedEmail in VI
+	badgeAddedVI, addAddedVI, delAddedVI := inspectAcceptanceActionSlot(t, rowsVI[addedEmail])
+	if badgeAddedVI != "[Đã thêm]" {
+		t.Errorf("VI: expected '[Đã thêm]' for %s, got %q (Must NOT be '[Đã add]')", addedEmail, badgeAddedVI)
+	}
+	if addAddedVI != nil {
+		t.Errorf("VI: expected no add button for %s", addedEmail)
+	}
+	if delAddedVI == nil {
+		t.Errorf("VI: expected delete button for %s", addedEmail)
+	}
+
+	// Verify needOAuthEmail in VI
+	badgeNeedVI, addNeedVI, delNeedVI := inspectAcceptanceActionSlot(t, rowsVI[needOAuthEmail])
+	if badgeNeedVI != "[Cần OAuth]" {
+		t.Errorf("VI: expected '[Cần OAuth]' for %s, got %q", needOAuthEmail, badgeNeedVI)
+	}
+	if addNeedVI == nil || addNeedVI.Text != "Thêm" {
+		t.Errorf("VI: expected add button labeled 'Thêm' for %s, got %v", needOAuthEmail, addNeedVI)
+	}
+	if delNeedVI == nil {
+		t.Errorf("VI: expected delete button for %s", needOAuthEmail)
+	}
+
+	// Verify ghostEmail in VI
+	badgeGhostVI, addGhostVI, delGhostVI := inspectAcceptanceActionSlot(t, rowsVI[ghostEmail])
+	if badgeGhostVI != "[Tài khoản không tồn tại]" {
+		t.Errorf("VI: expected '[Tài khoản không tồn tại]' for %s, got %q", ghostEmail, badgeGhostVI)
+	}
+	if addGhostVI != nil {
+		t.Errorf("VI: expected no add button for ghost account %s", ghostEmail)
+	}
+	if delGhostVI == nil {
+		t.Errorf("VI: expected delete button for ghost account %s", ghostEmail)
+	}
+
+	// --- 2. TC-MODAL-i18n-02: English Locale Validation ---
+	app.SetLanguage("en")
+	waitForIdle(app, 200*time.Millisecond)
+
+	_, _, listContainerEN, _ := app.buildAddAccountModalContent()
+	rowsEN := make(map[string]*fyne.Container)
+	for _, obj := range listContainerEN.Objects {
+		em, slot := extractModalRow(t, obj)
+		rowsEN[em] = slot
+	}
+
+	// Verify oauthEmail in EN
+	badgeOAuthEN, addOAuthEN, delOAuthEN := inspectAcceptanceActionSlot(t, rowsEN[oauthEmail])
+	if badgeOAuthEN != "[✔ OAuth Done]" {
+		t.Errorf("EN: expected '[✔ OAuth Done]' for %s, got %q", oauthEmail, badgeOAuthEN)
+	}
+	if addOAuthEN != nil {
+		t.Errorf("EN: expected no add button for %s", oauthEmail)
+	}
+	if delOAuthEN == nil {
+		t.Errorf("EN: expected delete button for %s", oauthEmail)
+	}
+
+	// Verify addedEmail in EN
+	badgeAddedEN, addAddedEN, delAddedEN := inspectAcceptanceActionSlot(t, rowsEN[addedEmail])
+	if badgeAddedEN != "[Added]" {
+		t.Errorf("EN: expected '[Added]' for %s, got %q", addedEmail, badgeAddedEN)
+	}
+	if addAddedEN != nil {
+		t.Errorf("EN: expected no add button for %s", addedEmail)
+	}
+	if delAddedEN == nil {
+		t.Errorf("EN: expected delete button for %s", addedEmail)
+	}
+
+	// Verify needOAuthEmail in EN
+	badgeNeedEN, addNeedEN, delNeedEN := inspectAcceptanceActionSlot(t, rowsEN[needOAuthEmail])
+	if badgeNeedEN != "[Need OAuth]" {
+		t.Errorf("EN: expected '[Need OAuth]' for %s, got %q", needOAuthEmail, badgeNeedEN)
+	}
+	if addNeedEN == nil || addNeedEN.Text != "Add" {
+		t.Errorf("EN: expected add button labeled 'Add' for %s, got %v", needOAuthEmail, addNeedEN)
+	}
+	if delNeedEN == nil {
+		t.Errorf("EN: expected delete button for %s", needOAuthEmail)
+	}
+
+	// Verify ghostEmail in EN
+	badgeGhostEN, addGhostEN, delGhostEN := inspectAcceptanceActionSlot(t, rowsEN[ghostEmail])
+	if badgeGhostEN != "[Account Not Found]" {
+		t.Errorf("EN: expected '[Account Not Found]' for %s, got %q", ghostEmail, badgeGhostEN)
+	}
+	if addGhostEN != nil {
+		t.Errorf("EN: expected no add button for ghost account %s", ghostEmail)
+	}
+	if delGhostEN == nil {
+		t.Errorf("EN: expected delete button for ghost account %s", ghostEmail)
+	}
+
+	// --- 3. TC-MODAL-i18n-03: In-Place Reactive Mutation in EN ---
+	addNeedEN.OnTapped()
+	badgeMutatedEN, addMutatedEN, delMutatedEN := inspectAcceptanceActionSlot(t, rowsEN[needOAuthEmail])
+	if badgeMutatedEN != "[Added]" {
+		t.Errorf("EN mutation: expected badge to become '[Added]', got %q", badgeMutatedEN)
+	}
+	if addMutatedEN != nil {
+		t.Errorf("EN mutation: expected add button to disappear after click")
+	}
+	if delMutatedEN == nil {
+		t.Errorf("EN mutation: expected delete button to remain present")
+	}
 }

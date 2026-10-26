@@ -63,13 +63,17 @@ type Dictionary struct {
 	StatusAutoOn             string `json:"status_auto_on"`
 	StatusAutoOff            string `json:"status_auto_off"`
 
-	// Modals
+	// Modals & Candidate Badges
 	ModalAddTitle        string `json:"modal_add_title"`
 	ModalAddHeader       string `json:"modal_add_header"`
 	ModalAddClose        string `json:"modal_add_close"`
 	ModalScanChrome      string `json:"modal_scan_chrome"`
 	ModalScanningChrome  string `json:"modal_scanning_chrome"`
 	ModalEmptyCandidates string `json:"modal_empty_candidates"`
+	ModalBadgeOAuthDone  string `json:"modal_badge_oauth_done"`
+	ModalBadgeAdded      string `json:"modal_badge_added"`
+	ModalBadgeNeedOAuth  string `json:"modal_badge_need_oauth"`
+	ModalBadgeNotFound   string `json:"modal_badge_not_found"`
 	ModalBtnAddItem      string `json:"modal_btn_add_item"`
 
 	// Confirmation Popups

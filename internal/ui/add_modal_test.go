@@ -103,7 +103,7 @@ func TestShowAddAccountModal_ThreeCandidateStates(t *testing.T) {
 		t.Fatalf("SaveDiscovered error: %v", err)
 	}
 
-	// 3. Candidate 3: Discovered, !HasToken && Added -> [Đã add]
+	// 3. Candidate 3: Discovered, !HasToken && Added -> [Đã thêm]
 	email3 := "user3@school.edu"
 	if err := discStore.SaveDiscovered(email3); err != nil {
 		t.Fatalf("SaveDiscovered error: %v", err)
@@ -158,14 +158,14 @@ func TestShowAddAccountModal_ThreeCandidateStates(t *testing.T) {
 		t.Errorf("expected delete button with DeleteIcon for state 1")
 	}
 
-	// Verify State 3: user3@school.edu -> [Đã add] + Nút Xóa
+	// Verify State 3: user3@school.edu -> [Đã thêm] + Nút Xóa
 	slot3, ok := rowsByEmail[email3]
 	if !ok || slot3 == nil {
 		t.Fatalf("row for %s not found", email3)
 	}
 	badge3, add3, del3 := inspectModalActionSlot(t, slot3)
-	if badge3 != "[Đã add]" {
-		t.Errorf("expected [Đã add], got '%s'", badge3)
+	if badge3 != "[Đã thêm]" {
+		t.Errorf("expected [Đã thêm], got '%s'", badge3)
 	}
 	if add3 != nil {
 		t.Errorf("expected no ADD button for state 3")
@@ -183,7 +183,7 @@ func TestShowAddAccountModal_ThreeCandidateStates(t *testing.T) {
 	if badge2 != "[Cần OAuth]" {
 		t.Errorf("expected [Cần OAuth], got '%s'", badge2)
 	}
-	if add2 == nil || add2.Text != "ADD" || add2.Importance != widget.HighImportance {
+	if add2 == nil || (add2.Text != "Thêm" && add2.Text != "Add" && add2.Text != "ADD") || add2.Importance != widget.HighImportance {
 		t.Errorf("expected ADD button with HighImportance for state 2")
 	}
 	if del2 == nil || del2.Icon != theme.DeleteIcon() {
@@ -204,7 +204,7 @@ func inspectModalActionSlot(t *testing.T, slot *fyne.Container) (badgeText strin
 				} else if btn, ok := inner.(*widget.Button); ok {
 					if btn.Icon == theme.DeleteIcon() || btn.Text == "" {
 						deleteBtn = btn
-					} else if btn.Text == "ADD" {
+					} else if btn.Icon == theme.ContentAddIcon() || btn.Text == "Thêm" || btn.Text == "Add" || btn.Text == "ADD" {
 						addBtn = btn
 					}
 				}
@@ -260,10 +260,10 @@ func TestShowAddAccountModal_AddActionInPlaceMutationAndOverviewUpdate(t *testin
 	// Tap the ADD button
 	addBtn.OnTapped()
 
-	// 1. Verify in-place reaction: badge now says [Đã add], ADD button is gone, delete button remains
+	// 1. Verify in-place reaction: badge now says [Đã thêm], ADD button is gone, delete button remains
 	badgeAfter, addAfter, delAfter := inspectModalActionSlot(t, actionSlot)
-	if badgeAfter != "[Đã add]" {
-		t.Errorf("expected '[Đã add]', got '%s'", badgeAfter)
+	if badgeAfter != "[Đã thêm]" {
+		t.Errorf("expected '[Đã thêm]', got '%s'", badgeAfter)
 	}
 	if addAfter != nil {
 		t.Errorf("expected add button to disappear after click, got %+v", addAfter)
@@ -493,9 +493,9 @@ func TestModal_Delete_Button_Rendered(t *testing.T) {
 		t.Errorf("state 1 mismatch: badge=%s, add=%v, del=%v", badge1, add1, del1)
 	}
 
-	// Kiểm tra State 2: [Đã add] + Nút Xóa
+	// Kiểm tra State 2: [Đã thêm] + Nút Xóa
 	badge2, add2, del2 := inspectModalActionSlot(t, rowsByEmail[email2])
-	if badge2 != "[Đã add]" || add2 != nil || del2 == nil || del2.Icon != theme.DeleteIcon() {
+	if badge2 != "[Đã thêm]" || add2 != nil || del2 == nil || del2.Icon != theme.DeleteIcon() {
 		t.Errorf("state 2 mismatch: badge=%s, add=%v, del=%v", badge2, add2, del2)
 	}
 

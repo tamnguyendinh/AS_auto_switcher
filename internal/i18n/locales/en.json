@@ -47,7 +47,11 @@
   "modal_scan_chrome": "Scan Chrome",
   "modal_scanning_chrome": "⏳ Scanning...",
   "modal_empty_candidates": "No accounts found in catalog.",
-  "modal_btn_add_item": "ADD",
+  "modal_badge_oauth_done": "[✔ OAuth Done]",
+  "modal_badge_added": "[Added]",
+  "modal_badge_need_oauth": "[Need OAuth]",
+  "modal_badge_not_found": "[Account Not Found]",
+  "modal_btn_add_item": "Add",
 
   "confirm_delete_title": "Confirm Account Deletion",
   "confirm_btn_delete": "Delete",

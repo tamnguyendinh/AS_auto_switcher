@@ -47,7 +47,11 @@
   "modal_scan_chrome": "Quét Chrome",
   "modal_scanning_chrome": "⏳ Đang quét...",
   "modal_empty_candidates": "Không có tài khoản nào trong danh bạ.",
-  "modal_btn_add_item": "THÊM",
+  "modal_badge_oauth_done": "[✔ Đã OAuth]",
+  "modal_badge_added": "[Đã thêm]",
+  "modal_badge_need_oauth": "[Cần OAuth]",
+  "modal_badge_not_found": "[Tài khoản không tồn tại]",
+  "modal_btn_add_item": "Thêm",
 
   "confirm_delete_title": "Xác nhận xóa tài khoản",
   "confirm_btn_delete": "Xóa",

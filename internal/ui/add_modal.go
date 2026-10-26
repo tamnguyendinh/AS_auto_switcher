@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -27,18 +26,6 @@ func (a *App) buildAddAccountModalContent() (contentBox *fyne.Container, scanBtn
 	listContainer = container.NewVBox()
 	scrollContent := container.NewVScroll(container.NewPadded(listContainer))
 	scrollContent.SetMinSize(fyne.NewSize(420, 260))
-
-	// Detect legacy tests if any
-	isLegacyModalTest := false
-	for i := 1; i < 15; i++ {
-		if pc, file, _, ok := runtime.Caller(i); ok {
-			_ = pc
-			if strings.Contains(file, "add_modal_test.go") || strings.Contains(file, "add_modal_acceptance_test.go") {
-				isLegacyModalTest = true
-				break
-			}
-		}
-	}
 
 	reloadCandidates = func() {
 		var known []string
@@ -95,58 +82,40 @@ func (a *App) buildAddAccountModalContent() (contentBox *fyne.Container, scanBtn
 			var actionSlot *fyne.Container
 
 			if !candItem.FileExists {
-				// Trường hợp 4: [Tài khoản không tồn tại] + Nút [Xóa] (Ẩn nút ADD)
-				statusBadge := canvas.NewText(d.BadgeAccountNotFound, palette.TextMuted)
+				// Trường hợp 4: [Tài khoản không tồn tại] / [Account Not Found] + Nút [Xóa] (Ẩn nút ADD)
+				statusBadge := canvas.NewText(d.ModalBadgeNotFound, palette.TextMuted)
 				statusBadge.TextSize = 11
 				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
 
 				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactDel)
 
 			} else if candItem.HasToken {
-				// Trường hợp 1: [✔ Đã OAuth] + Nút [Xóa]
-				badgeText := d.BadgeActive
-				if isLegacyModalTest {
-					badgeText = "[✔ Đã OAuth]"
-				}
-				statusBadge := canvas.NewText(badgeText, palette.Success)
+				// Trường hợp 1: [✔ Đã OAuth] / [✔ OAuth Done] + Nút [Xóa]
+				statusBadge := canvas.NewText(d.ModalBadgeOAuthDone, palette.Success)
 				statusBadge.TextSize = 11
 				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
 
 				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactDel)
 
 			} else if candItem.Added {
-				// Trường hợp 2: [Đã thêm] / [Added] (hoặc [Đã add] trong legacy test) + Nút [Xóa]
-				badgeText := d.BadgeAdded
-				if isLegacyModalTest {
-					badgeText = "[Đã add]"
-				}
-				statusBadge := canvas.NewText(badgeText, palette.TextMuted)
+				// Trường hợp 2: [Đã thêm] / [Added] + Nút [Xóa]
+				statusBadge := canvas.NewText(d.ModalBadgeAdded, palette.TextMuted)
 				statusBadge.TextSize = 11
 				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
 
 				actionSlot = container.NewHBox(container.NewCenter(statusBadge), compactDel)
 
 			} else {
-				// Trường hợp 3: [Cần OAuth] + Nút [THÊM / ADD] + Nút [Xóa]
-				badgeText := d.BadgeNeedOAuth
-				statusBadge := canvas.NewText(badgeText, palette.Warning)
+				// Trường hợp 3: [Cần OAuth] / [Need OAuth] + Nút [Thêm / Add] + Nút [Xóa]
+				statusBadge := canvas.NewText(d.ModalBadgeNeedOAuth, palette.Warning)
 				statusBadge.TextSize = 11
 				statusBadge.TextStyle = fyne.TextStyle{Bold: true}
 
-				addBtnText := d.ModalBtnAddItem
-				if isLegacyModalTest {
-					addBtnText = "ADD"
-				}
-
 				var addBtn *widget.Button
-				addBtn = widget.NewButtonWithIcon(addBtnText, theme.ContentAddIcon(), func() {
+				addBtn = widget.NewButtonWithIcon(d.ModalBtnAddItem, theme.ContentAddIcon(), func() {
 					if err := a.mgr.AddDiscoveredAccount(candItem.Email); err == nil {
-						// Chuyển đổi tại chỗ: [Cần OAuth] đổi thành [Đã thêm] và nút ADD biến mất, giữ nguyên nút Xóa
-						doneText := d.BadgeAdded
-						if isLegacyModalTest {
-							doneText = "[Đã add]"
-						}
-						doneBadge := canvas.NewText(doneText, palette.TextMuted)
+						// Chuyển đổi tại chỗ: [Cần OAuth] đổi thành [Đã thêm] và nút Thêm biến mất, giữ nguyên nút Xóa
+						doneBadge := canvas.NewText(d.ModalBadgeAdded, palette.TextMuted)
 						doneBadge.TextSize = 11
 						doneBadge.TextStyle = fyne.TextStyle{Bold: true}
 						actionSlot.Objects = []fyne.CanvasObject{container.NewCenter(doneBadge), compactDel}
