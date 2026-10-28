@@ -18,11 +18,11 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/automation"
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/i18n"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/core/i18n"
+	"antigravity-switch/internal/engines/antigravity/automation"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 )
 
 // App manages the Fyne GUI runtime lifecycle, state, telemetry, and UI bindings.
@@ -798,7 +798,6 @@ func (a *App) renderServerStatusLabel(running bool, info *connector.ServerInfo) 
 		a.serverStatusLabel.SetText(d.ServerStopped)
 	}
 }
-
 
 // handleAutomationStatus handles state transitions dispatched from the AutomationController
 // and displays transient or persistent feedback on the status bar.

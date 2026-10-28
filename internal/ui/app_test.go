@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"antigravity-switch/internal/automation"
-	"antigravity-switch/internal/model"
-	"antigravity-switch/internal/store"
+	"antigravity-switch/internal/engines/antigravity/automation"
+	"antigravity-switch/internal/engines/antigravity/model"
+	"antigravity-switch/internal/engines/antigravity/store"
 
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"

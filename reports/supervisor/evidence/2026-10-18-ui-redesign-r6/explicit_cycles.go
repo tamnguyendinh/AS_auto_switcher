@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 	"antigravity-switch/internal/ui"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"

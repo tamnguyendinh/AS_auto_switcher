@@ -17,7 +17,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"golang.org/x/sys/windows"
 
-	"antigravity-switch/internal/manager"
+	"antigravity-switch/internal/engines/antigravity/manager"
 )
 
 // Run explicitly on an interactive Windows desktop:

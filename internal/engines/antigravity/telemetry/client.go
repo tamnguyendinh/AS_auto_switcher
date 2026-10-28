@@ -1,0 +1,1004 @@
+package telemetry
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+	"unsafe"
+
+	"antigravity-switch/internal/engines/antigravity/connector"
+
+	"golang.org/x/sys/windows"
+)
+
+const (
+	// DefaultGoogleQuotaURL is the authoritative Google Cloud Code quota endpoint.
+	DefaultGoogleQuotaURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+
+	// DefaultGoogleCodeAssistURL is the authoritative Google Cloud Code assist tier endpoint.
+	DefaultGoogleCodeAssistURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+
+	// DefaultUserAgent is the default fallback User-Agent when discovery is inactive.
+	DefaultUserAgent = "antigravity/2.24.0"
+
+	// DefaultGoogApiClient is the required Google API client header.
+	DefaultGoogApiClient = "gl-go/1.22.0 gdcl/20261017"
+
+	// FallbackUserAgent is the emergency fallback user agent when discovery finds nothing.
+	FallbackUserAgent = "antigravity/2.24.0"
+
+	// Standard health statuses for accounts.
+	StatusPristine  = "Pristine"
+	StatusPlentiful = "Plentiful"
+	StatusLowGemini = "Low Gemini"
+	StatusLowClaude = "Low Claude"
+	StatusLowGPT    = "Low GPT"
+	StatusLow       = "Low"
+	StatusDepleted  = "Depleted"
+	StatusError     = "Error"
+)
+
+var (
+	// ErrEmptyRefreshToken is returned when the refresh token passed is empty.
+	ErrEmptyRefreshToken = errors.New("refresh token is empty")
+
+	// ErrQuotaFetchFailed is returned when retrieving quota from Google fails.
+	ErrQuotaFetchFailed = errors.New("failed to retrieve user quota from google")
+
+	// ErrNilRefresher is returned when the OAuth refresher is nil.
+	ErrNilRefresher = errors.New("oauth refresher cannot be nil")
+)
+
+var (
+	reUserAgentName = regexp.MustCompile(`--override_user_agent_name(?:=|\s+)(?:["']?)([a-zA-Z0-9_.-]+)(?:["']?)`)
+	reIdeVersion    = regexp.MustCompile(`--override_ide_version(?:=|\s+)(?:["']?)([a-zA-Z0-9_.-]+)(?:["']?)`)
+)
+
+var (
+	modVersion                  = windows.NewLazySystemDLL("version.dll")
+	procGetFileVersionInfoSizeW = modVersion.NewProc("GetFileVersionInfoSizeW")
+	procGetFileVersionInfoW     = modVersion.NewProc("GetFileVersionInfoW")
+	procVerQueryValueW          = modVersion.NewProc("VerQueryValueW")
+)
+
+type vsFixedFileInfo struct {
+	Signature        uint32
+	StrucVersion     uint32
+	FileVersionMS    uint32
+	FileVersionLS    uint32
+	ProductVersionMS uint32
+	ProductVersionLS uint32
+	FileFlagsMask    uint32
+	FileFlags        uint32
+	FileOS           uint32
+	FileType         uint32
+	FileSubtype      uint32
+	FileDateMS       uint32
+	FileDateLS       uint32
+}
+
+func readPEFileVersion(exePath string) (string, error) {
+	if runtime.GOOS != "windows" {
+		return "", errors.New("PE version inspection only supported on windows")
+	}
+	cleanPath := filepath.Clean(strings.TrimSpace(exePath))
+	if cleanPath == "" {
+		return "", errors.New("empty executable path")
+	}
+	if _, err := os.Stat(cleanPath); err != nil {
+		return "", err
+	}
+
+	utfPath, err := windows.UTF16PtrFromString(cleanPath)
+	if err != nil {
+		return "", err
+	}
+
+	var dummy uint32
+	size, _, _ := procGetFileVersionInfoSizeW.Call(uintptr(unsafe.Pointer(utfPath)), uintptr(unsafe.Pointer(&dummy)))
+	if size == 0 {
+		return "", errors.New("GetFileVersionInfoSizeW returned 0")
+	}
+
+	buf := make([]byte, size)
+	r1, _, _ := procGetFileVersionInfoW.Call(uintptr(unsafe.Pointer(utfPath)), 0, size, uintptr(unsafe.Pointer(&buf[0])))
+	if r1 == 0 {
+		return "", errors.New("GetFileVersionInfoW failed")
+	}
+
+	subBlock, err := windows.UTF16PtrFromString(`\`)
+	if err != nil {
+		return "", err
+	}
+
+	var ptr uintptr
+	var length uint32
+	r1, _, _ = procVerQueryValueW.Call(
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(unsafe.Pointer(subBlock)),
+		uintptr(unsafe.Pointer(&ptr)),
+		uintptr(unsafe.Pointer(&length)),
+	)
+	if r1 == 0 || length < uint32(unsafe.Sizeof(vsFixedFileInfo{})) {
+		return "", errors.New("VerQueryValueW failed")
+	}
+
+	ffi := (*vsFixedFileInfo)(unsafe.Pointer(ptr))
+	major := ffi.FileVersionMS >> 16
+	minor := ffi.FileVersionMS & 0xFFFF
+	build := ffi.FileVersionLS >> 16
+	rev := ffi.FileVersionLS & 0xFFFF
+
+	if rev == 0 {
+		return fmt.Sprintf("%d.%d.%d", major, minor, build), nil
+	}
+	return fmt.Sprintf("%d.%d.%d.%d", major, minor, build, rev), nil
+}
+
+var (
+	cachedUserAgent string
+	userAgentMutex  sync.RWMutex
+)
+
+// DiscoverAntigravityUserAgent dynamically scans for the running or installed Antigravity version across 3 priority levels.
+func DiscoverAntigravityUserAgent() string {
+	userAgentMutex.RLock()
+	if cachedUserAgent != "" {
+		ua := cachedUserAgent
+		userAgentMutex.RUnlock()
+		return ua
+	}
+	userAgentMutex.RUnlock()
+
+	userAgentMutex.Lock()
+	defer userAgentMutex.Unlock()
+	if cachedUserAgent != "" {
+		return cachedUserAgent
+	}
+
+	cachedUserAgent = resolveAntigravityUserAgent()
+	return cachedUserAgent
+}
+
+// SetDiscoveredUserAgent overrides the dynamically discovered User-Agent (useful in testing).
+func SetDiscoveredUserAgent(ua string) {
+	userAgentMutex.Lock()
+	defer userAgentMutex.Unlock()
+	cachedUserAgent = ua
+}
+
+// ResetDiscoveredUserAgent clears the cached User-Agent so the next call performs a fresh scan.
+func ResetDiscoveredUserAgent() {
+	userAgentMutex.Lock()
+	defer userAgentMutex.Unlock()
+	cachedUserAgent = ""
+}
+
+func resolveAntigravityUserAgent() string {
+	// Priority 1: Running language_server.exe process command-line arguments
+	if procs, err := connector.QueryLanguageServerProcesses(); err == nil && len(procs) > 0 {
+		for _, p := range procs {
+			if strings.TrimSpace(p.CommandLine) == "" {
+				continue
+			}
+			verMatches := reIdeVersion.FindStringSubmatch(p.CommandLine)
+			if len(verMatches) > 1 && strings.TrimSpace(verMatches[1]) != "" {
+				version := strings.TrimSpace(verMatches[1])
+				appName := "antigravity"
+				nameMatches := reUserAgentName.FindStringSubmatch(p.CommandLine)
+				if len(nameMatches) > 1 && strings.TrimSpace(nameMatches[1]) != "" {
+					appName = strings.TrimSpace(nameMatches[1])
+				}
+				return fmt.Sprintf("%s/%s", appName, version)
+			}
+		}
+	}
+
+	// Priority 2: PE FileVersion from Antigravity.exe
+	candidatePaths := []string{}
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		candidatePaths = append(candidatePaths, filepath.Join(localAppData, "Programs", "antigravity", "Antigravity.exe"))
+	}
+	if progFiles := os.Getenv("ProgramFiles"); progFiles != "" {
+		candidatePaths = append(candidatePaths, filepath.Join(progFiles, "Antigravity", "Antigravity.exe"))
+	}
+
+	for _, p := range candidatePaths {
+		if ver, err := readPEFileVersion(p); err == nil && ver != "" {
+			return fmt.Sprintf("antigravity/%s", ver)
+		}
+	}
+
+	// Priority 3: Fallback safe constant
+	return FallbackUserAgent
+}
+
+// ModelQuotaBucket represents quota status for an individual model or aggregated model family.
+type ModelQuotaBucket struct {
+	ModelID           string    `json:"model_id"`
+	RemainingFraction float64   `json:"remaining_fraction"` // 0.0 to 1.0 (e.g. 0.235 = 23.5%)
+	RemainingAmount   int64     `json:"remaining_amount,omitempty"`
+	ResetTime         time.Time `json:"reset_time"`
+	TokenType         string    `json:"token_type,omitempty"`
+	FiveHourFraction  float64   `json:"five_hour_fraction"`
+	WeeklyFraction    float64   `json:"weekly_fraction"`
+	FiveHourReset     time.Time `json:"five_hour_reset,omitempty"`
+	WeeklyReset       time.Time `json:"weekly_reset,omitempty"`
+	Disabled          bool      `json:"disabled,omitempty"`
+	FiveHourDisabled  bool      `json:"five_hour_disabled,omitempty"`
+	WeeklyDisabled    bool      `json:"weekly_disabled,omitempty"`
+}
+
+// UnmarshalJSON custom unmarshaler ensures cycle and remaining fractions default to -1 when absent in JSON (legacy cache).
+func (m *ModelQuotaBucket) UnmarshalJSON(data []byte) error {
+	type Alias ModelQuotaBucket
+	aux := &struct {
+		RemainingFraction      *float64 `json:"remaining_fraction"`
+		RemainingFractionCamel *float64 `json:"remainingFraction"`
+		FiveHour               *float64 `json:"five_hour_fraction"`
+		FiveHourCamel          *float64 `json:"fiveHourFraction"`
+		Weekly                 *float64 `json:"weekly_fraction"`
+		WeeklyCamel            *float64 `json:"weeklyFraction"`
+		Disabled               *bool    `json:"disabled,omitempty"`
+		FiveHourDisabled       *bool    `json:"five_hour_disabled,omitempty"`
+		FiveHourDisabledCamel  *bool    `json:"fiveHourDisabled,omitempty"`
+		WeeklyDisabled         *bool    `json:"weekly_disabled,omitempty"`
+		WeeklyDisabledCamel    *bool    `json:"weeklyDisabled,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.RemainingFraction != nil {
+		m.RemainingFraction = *aux.RemainingFraction
+	} else if aux.RemainingFractionCamel != nil {
+		m.RemainingFraction = *aux.RemainingFractionCamel
+	} else {
+		m.RemainingFraction = -1
+	}
+
+	if aux.FiveHour != nil {
+		m.FiveHourFraction = *aux.FiveHour
+	} else if aux.FiveHourCamel != nil {
+		m.FiveHourFraction = *aux.FiveHourCamel
+	} else {
+		m.FiveHourFraction = -1
+	}
+
+	if aux.Weekly != nil {
+		m.WeeklyFraction = *aux.Weekly
+	} else if aux.WeeklyCamel != nil {
+		m.WeeklyFraction = *aux.WeeklyCamel
+	} else {
+		m.WeeklyFraction = -1
+	}
+
+	if aux.Disabled != nil {
+		m.Disabled = *aux.Disabled
+	}
+	if aux.FiveHourDisabled != nil {
+		m.FiveHourDisabled = *aux.FiveHourDisabled
+	} else if aux.FiveHourDisabledCamel != nil {
+		m.FiveHourDisabled = *aux.FiveHourDisabledCamel
+	}
+	if aux.WeeklyDisabled != nil {
+		m.WeeklyDisabled = *aux.WeeklyDisabled
+	} else if aux.WeeklyDisabledCamel != nil {
+		m.WeeklyDisabled = *aux.WeeklyDisabledCamel
+	}
+	return nil
+}
+
+// UnmarshalJSON custom unmarshaler ensures missing model families default to -1 fractions instead of zero.
+func (a *AccountQuotaData) UnmarshalJSON(data []byte) error {
+	type Alias AccountQuotaData
+	aux := &struct {
+		Claude *ModelQuotaBucket `json:"claude"`
+		Gemini *ModelQuotaBucket `json:"gemini"`
+		*Alias
+	}{
+		Alias: (*Alias)(a),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.Claude != nil {
+		a.Claude = *aux.Claude
+	} else {
+		a.Claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	}
+	if aux.Gemini != nil {
+		a.Gemini = *aux.Gemini
+	} else {
+		a.Gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	}
+	if a.Claude.ModelID == "" {
+		a.Claude.ModelID = "claude-4-6"
+	}
+	if a.Gemini.ModelID == "" {
+		a.Gemini.ModelID = "gemini-2-5"
+	}
+	return nil
+}
+
+// rawCodeAssistResponse captures current tier and paid tier structures from Google Cloud Code.
+type rawCodeAssistResponse struct {
+	CurrentTier struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"currentTier"`
+	PaidTier struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"paidTier"`
+}
+
+// AccountQuotaData encapsulates the parsed quota telemetry across model families for one account.
+type AccountQuotaData struct {
+	Email        string             `json:"email"`
+	Tier         string             `json:"tier,omitempty"` // "PRO", "ULTRA", "FREE", "BIZ", "--"
+	Claude       ModelQuotaBucket   `json:"claude"`
+	Gemini       ModelQuotaBucket   `json:"gemini"`
+	RawBuckets   []ModelQuotaBucket `json:"raw_buckets,omitempty"`
+	ResetTime    time.Time          `json:"reset_time"` // Canonical reset time (UTC)
+	Status       string             `json:"status"`     // Pristine, Plentiful, Low Gemini, Depleted, Error
+	ErrorMessage string             `json:"error_message,omitempty"`
+	LastUpdated  time.Time          `json:"last_updated"`
+}
+
+// QuotaClient communicates with Google Cloud Code internal quota endpoints.
+type QuotaClient struct {
+	refresher          connector.OAuthRefresher
+	endpoint           string
+	codeAssistEndpoint string
+	httpClient         *http.Client
+	userAgent          string
+}
+
+// NewQuotaClient creates a QuotaClient with default Google Cloud Code endpoint.
+func NewQuotaClient(refresher connector.OAuthRefresher, httpClient *http.Client) *QuotaClient {
+	return NewQuotaClientWithEndpoint(refresher, DefaultGoogleQuotaURL, httpClient)
+}
+
+// NewQuotaClientWithEndpoint creates a QuotaClient with custom endpoint and HTTP client (ideal for tests).
+func NewQuotaClientWithEndpoint(refresher connector.OAuthRefresher, endpoint string, httpClient *http.Client) *QuotaClient {
+	if endpoint == "" {
+		endpoint = DefaultGoogleQuotaURL
+	}
+	if httpClient == nil {
+		httpClient = &http.Client{
+			Timeout: 10 * time.Second,
+		}
+	}
+	return &QuotaClient{
+		refresher:  refresher,
+		endpoint:   endpoint,
+		httpClient: httpClient,
+	}
+}
+
+// SetCodeAssistEndpoint overrides the default loadCodeAssist endpoint (ideal for tests).
+func (c *QuotaClient) SetCodeAssistEndpoint(endpoint string) {
+	c.codeAssistEndpoint = endpoint
+}
+
+// CodeAssistEndpoint returns the configured or inferred loadCodeAssist endpoint.
+func (c *QuotaClient) CodeAssistEndpoint() string {
+	if c.codeAssistEndpoint != "" {
+		return c.codeAssistEndpoint
+	}
+	if c.endpoint == DefaultGoogleQuotaURL {
+		return DefaultGoogleCodeAssistURL
+	}
+	if strings.Contains(c.endpoint, "retrieveUserQuotaSummary") {
+		return strings.Replace(c.endpoint, "retrieveUserQuotaSummary", "loadCodeAssist", 1)
+	}
+	if strings.Contains(c.endpoint, "retrieveUserQuota") {
+		return strings.Replace(c.endpoint, "retrieveUserQuota", "loadCodeAssist", 1)
+	}
+	return c.endpoint + "/loadCodeAssist"
+}
+
+// ParseCodeAssistTier parses the loadCodeAssist response payload and normalizes the tier.
+func ParseCodeAssistTier(caBytes []byte) string {
+	var caResp rawCodeAssistResponse
+	if err := json.Unmarshal(caBytes, &caResp); err == nil {
+		rawTier := caResp.CurrentTier.ID
+		if (rawTier == "" || rawTier == "free-tier") && caResp.PaidTier.ID != "" {
+			rawTier = caResp.PaidTier.ID
+		}
+		if rawTier == "" {
+			rawTier = caResp.CurrentTier.Name
+		}
+		return NormalizeTier(rawTier)
+	}
+	return "--"
+}
+
+// FetchTier queries loadCodeAssist with the given accessToken and returns the normalized tier.
+func (c *QuotaClient) FetchTier(ctx context.Context, accessToken string) string {
+	caURL := c.CodeAssistEndpoint()
+	if caURL == "" {
+		return "--"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, caURL, bytes.NewBufferString("{}"))
+	if err != nil {
+		return "--"
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.UserAgent())
+	req.Header.Set("X-Goog-Api-Client", DefaultGoogApiClient)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "--"
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "--"
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "--"
+	}
+
+	return ParseCodeAssistTier(bodyBytes)
+}
+
+// SetUserAgent sets a custom User-Agent for this client instance (useful for testing).
+func (c *QuotaClient) SetUserAgent(ua string) {
+	c.userAgent = ua
+}
+
+// UserAgent returns the configured or dynamically discovered User-Agent.
+func (c *QuotaClient) UserAgent() string {
+	if c.userAgent != "" {
+		return c.userAgent
+	}
+	return DiscoverAntigravityUserAgent()
+}
+
+type rawQuotaResponse struct {
+	Buckets []rawBucketInfo `json:"buckets"`
+}
+
+type rawBucketInfo struct {
+	RemainingFraction      *float64        `json:"remainingFraction"`
+	RemainingFractionSnake *float64        `json:"remaining_fraction"`
+	RemainingAmount        *int64          `json:"remainingAmount"`
+	RemainingAmountSnake   *int64          `json:"remaining_amount"`
+	ResetTimeRaw           json.RawMessage `json:"resetTime"`
+	ResetTimeSnakeRaw      json.RawMessage `json:"reset_time"`
+	TokenType              string          `json:"tokenType"`
+	TokenTypeSnake         string          `json:"token_type"`
+	ModelID                string          `json:"modelId"`
+	ModelIDSnake           string          `json:"model_id"`
+	Disabled               *bool           `json:"disabled,omitempty"`
+	DisabledSnake          *bool           `json:"disabled_snake,omitempty"`
+}
+
+func parseResetTime(raw json.RawMessage) time.Time {
+	if len(raw) == 0 {
+		return time.Time{}
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return time.Time{}
+	}
+
+	// 1. String representation: "2026-10-17T11:29:41Z"
+	if strings.HasPrefix(trimmed, "\"") && strings.HasSuffix(trimmed, "\"") {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+				return t.UTC()
+			}
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return t.UTC()
+			}
+			if t, err := time.Parse("2006-01-02 15:04:05Z", s); err == nil {
+				return t.UTC()
+			}
+		}
+	}
+
+	// 2. Protobuf JSON object: {"seconds": 1792056078, "nanos": 0}
+	if strings.HasPrefix(trimmed, "{") {
+		var protoTs struct {
+			Seconds int64 `json:"seconds"`
+			Nanos   int64 `json:"nanos"`
+		}
+		if err := json.Unmarshal(raw, &protoTs); err == nil && protoTs.Seconds > 0 {
+			return time.Unix(protoTs.Seconds, protoTs.Nanos).UTC()
+		}
+	}
+
+	// 3. Epoch numeric seconds: 1792056078
+	var epoch int64
+	if err := json.Unmarshal(raw, &epoch); err == nil && epoch > 0 {
+		return time.Unix(epoch, 0).UTC()
+	}
+
+	return time.Time{}
+}
+
+func (r *rawBucketInfo) toModelQuotaBucket() ModelQuotaBucket {
+	b := ModelQuotaBucket{
+		RemainingFraction: -1,
+		FiveHourFraction:  -1,
+		WeeklyFraction:    -1,
+	}
+
+	if r.ModelID != "" {
+		b.ModelID = r.ModelID
+	} else {
+		b.ModelID = r.ModelIDSnake
+	}
+
+	if r.TokenType != "" {
+		b.TokenType = r.TokenType
+	} else {
+		b.TokenType = r.TokenTypeSnake
+	}
+
+	if r.RemainingFraction != nil {
+		b.RemainingFraction = *r.RemainingFraction
+	} else if r.RemainingFractionSnake != nil {
+		b.RemainingFraction = *r.RemainingFractionSnake
+	}
+	// Note: DO NOT synthesize RemainingFraction from RemainingAmount!
+	// If remaining fraction is absent, RemainingFraction MUST remain -1 (HasData=false, "--%").
+
+	if r.RemainingAmount != nil {
+		b.RemainingAmount = *r.RemainingAmount
+	} else if r.RemainingAmountSnake != nil {
+		b.RemainingAmount = *r.RemainingAmountSnake
+	}
+
+	if r.Disabled != nil {
+		b.Disabled = *r.Disabled
+	} else if r.DisabledSnake != nil {
+		b.Disabled = *r.DisabledSnake
+	}
+
+	if len(r.ResetTimeRaw) > 0 {
+		b.ResetTime = parseResetTime(r.ResetTimeRaw)
+	}
+	if b.ResetTime.IsZero() && len(r.ResetTimeSnakeRaw) > 0 {
+		b.ResetTime = parseResetTime(r.ResetTimeSnakeRaw)
+	}
+
+	return b
+}
+
+// AggregateBuckets parses raw buckets into standard Claude, Gemini, and GPT families, and computes status.
+func AggregateBuckets(rawBuckets []ModelQuotaBucket) (claude, gemini, gpt ModelQuotaBucket, canonicalReset time.Time, status string) {
+	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+
+	hasClaude := false
+	hasGemini := false
+	hasGPT := false
+
+	for _, b := range rawBuckets {
+		lower := strings.ToLower(b.ModelID)
+		switch {
+		case strings.Contains(lower, "claude"):
+			if !hasClaude || (b.RemainingFraction >= 0 && (claude.RemainingFraction < 0 || b.RemainingFraction < claude.RemainingFraction)) {
+				claude = b
+				hasClaude = true
+			}
+		case strings.Contains(lower, "gemini"):
+			if !hasGemini || (b.RemainingFraction >= 0 && (gemini.RemainingFraction < 0 || b.RemainingFraction < gemini.RemainingFraction)) {
+				gemini = b
+				hasGemini = true
+			}
+		case strings.Contains(lower, "gpt") || strings.Contains(lower, "oss"):
+			if !hasGPT || (b.RemainingFraction >= 0 && (gpt.RemainingFraction < 0 || b.RemainingFraction < gpt.RemainingFraction)) {
+				gpt = b
+				hasGPT = true
+			}
+		}
+	}
+
+	if !hasClaude && !hasGemini && !hasGPT {
+		return claude, gemini, gpt, canonicalReset, ""
+	}
+
+	minFrac := -1.0
+	if hasClaude && claude.RemainingFraction >= 0 {
+		minFrac = claude.RemainingFraction
+		canonicalReset = claude.ResetTime
+	}
+	if hasGemini && gemini.RemainingFraction >= 0 {
+		if minFrac < 0 || gemini.RemainingFraction < minFrac {
+			minFrac = gemini.RemainingFraction
+			if !gemini.ResetTime.IsZero() {
+				canonicalReset = gemini.ResetTime
+			}
+		} else if canonicalReset.IsZero() && !gemini.ResetTime.IsZero() {
+			canonicalReset = gemini.ResetTime
+		}
+	}
+	if hasGPT && gpt.RemainingFraction >= 0 {
+		if minFrac < 0 || gpt.RemainingFraction < minFrac {
+			minFrac = gpt.RemainingFraction
+			if !gpt.ResetTime.IsZero() {
+				canonicalReset = gpt.ResetTime
+			}
+		} else if canonicalReset.IsZero() && !gpt.ResetTime.IsZero() {
+			canonicalReset = gpt.ResetTime
+		}
+	}
+
+	if canonicalReset.IsZero() {
+		for _, b := range rawBuckets {
+			if !b.ResetTime.IsZero() {
+				canonicalReset = b.ResetTime
+				break
+			}
+		}
+	}
+
+	if minFrac < 0 {
+		status = ""
+	} else if minFrac < 0.15 {
+		if (hasClaude && claude.RemainingFraction < 0.15) && (hasGemini && gemini.RemainingFraction < 0.15) {
+			status = StatusDepleted
+		} else if hasGemini && gemini.RemainingFraction < 0.15 {
+			status = StatusLowGemini
+		} else if hasClaude && claude.RemainingFraction < 0.15 {
+			status = StatusLowClaude
+		} else {
+			status = StatusLowGPT
+		}
+	} else if minFrac <= 0.50 {
+		if hasGemini && gemini.RemainingFraction <= 0.50 && (!hasClaude || claude.RemainingFraction > 0.50) {
+			status = StatusLowGemini
+		} else if hasClaude && claude.RemainingFraction <= 0.50 && (!hasGemini || gemini.RemainingFraction > 0.50) {
+			status = StatusLowClaude
+		} else if hasGPT && gpt.RemainingFraction <= 0.50 {
+			status = StatusLowGPT
+		} else {
+			status = StatusLow
+		}
+	} else if (!hasClaude || claude.RemainingFraction >= 1.0) && (!hasGemini || gemini.RemainingFraction >= 1.0) && (!hasGPT || gpt.RemainingFraction >= 1.0) {
+		status = StatusPristine
+	} else {
+		status = StatusPlentiful
+	}
+
+	return claude, gemini, gpt, canonicalReset, status
+}
+
+// RetrieveUserQuota queries Google Cloud Code for the user's quota telemetry.
+func (c *QuotaClient) RetrieveUserQuota(ctx context.Context, refreshToken string) (*AccountQuotaData, error) {
+	cleanRefreshToken := strings.TrimSpace(refreshToken)
+	if cleanRefreshToken == "" {
+		return nil, ErrEmptyRefreshToken
+	}
+	if c.refresher == nil {
+		return nil, ErrNilRefresher
+	}
+
+	// 1. Refresh OAuth access token
+	tokenResult, err := c.refresher.RefreshToken(ctx, cleanRefreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to refresh access token: %v", ErrQuotaFetchFailed, err)
+	}
+
+	// 1b. Fetch Tier via loadCodeAssist (best effort with 3s timeout)
+	tier := "--"
+	caCtx, caCancel := context.WithTimeout(ctx, 3*time.Second)
+	tier = c.FetchTier(caCtx, tokenResult.AccessToken)
+	caCancel()
+
+	// 2. Build HTTP request
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewBufferString("{}"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to create http request: %v", ErrQuotaFetchFailed, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tokenResult.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.UserAgent())
+	req.Header.Set("X-Goog-Api-Client", DefaultGoogApiClient)
+
+	// 3. Execute HTTP request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: http request failed: %v", ErrQuotaFetchFailed, err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to read response body: %v", ErrQuotaFetchFailed, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: server returned status %d: %s", ErrQuotaFetchFailed, resp.StatusCode, string(bodyBytes))
+	}
+
+	// 4. Try summary payload with groups first
+	claude, gemini, _, rawBuckets, resetTime, status, summaryErr := ParseQuotaSummaryWithBuckets(bodyBytes)
+	if summaryErr == nil {
+		var checkResp rawQuotaSummaryResponse
+		if json.Unmarshal(bodyBytes, &checkResp) == nil && (checkResp.Response.Groups != nil || checkResp.Groups != nil) {
+			return &AccountQuotaData{
+				Tier:        tier,
+				Claude:      claude,
+				Gemini:      gemini,
+				RawBuckets:  rawBuckets,
+				ResetTime:   resetTime,
+				Status:      status,
+				LastUpdated: time.Now().UTC(),
+			}, nil
+		}
+	}
+
+	// 5. Fallback to legacy rawQuotaResponse with top-level "buckets"
+	var rawResp rawQuotaResponse
+	if err := json.Unmarshal(bodyBytes, &rawResp); err != nil {
+		return nil, fmt.Errorf("%w: failed to parse quota json: %v", ErrQuotaFetchFailed, err)
+	}
+
+	rawBuckets = make([]ModelQuotaBucket, 0, len(rawResp.Buckets))
+	for _, rawB := range rawResp.Buckets {
+		rawBuckets = append(rawBuckets, rawB.toModelQuotaBucket())
+	}
+
+	// 6. Aggregate into model families
+	claude, gemini, _, resetTime, status = AggregateBuckets(rawBuckets)
+
+	return &AccountQuotaData{
+		Tier:        tier,
+		Claude:      claude,
+		Gemini:      gemini,
+		RawBuckets:  rawBuckets,
+		ResetTime:   resetTime,
+		Status:      status,
+		LastUpdated: time.Now().UTC(),
+	}, nil
+}
+
+// rawQuotaSummaryResponse represents the Connect-RPC RetrieveUserQuotaSummary structure or direct REST summary.
+type rawQuotaSummaryResponse struct {
+	Response rawQuotaSummaryBody `json:"response"`
+	Groups   []rawQuotaGroup     `json:"groups"`
+}
+
+type rawQuotaSummaryBody struct {
+	Groups []rawQuotaGroup `json:"groups"`
+}
+
+type rawQuotaGroup struct {
+	DisplayName string           `json:"displayName"`
+	Description string           `json:"description"`
+	Buckets     []rawQuotaBucket `json:"buckets"`
+}
+
+type rawQuotaBucket struct {
+	BucketID          string   `json:"bucketId"`
+	DisplayName       string   `json:"displayName"`
+	Window            string   `json:"window"`
+	RemainingFraction *float64 `json:"remainingFraction"`
+	ResetTime         string   `json:"resetTime"`
+	Disabled          *bool    `json:"disabled,omitempty"`
+}
+
+// ParseQuotaSummary parses the Connect-RPC RetrieveUserQuotaSummary JSON payload.
+func ParseQuotaSummary(bodyBytes []byte) (claude, gemini, gpt ModelQuotaBucket, canonicalReset time.Time, status string, err error) {
+	claude, gemini, gpt, _, canonicalReset, status, err = ParseQuotaSummaryWithBuckets(bodyBytes)
+	return claude, gemini, gpt, canonicalReset, status, err
+}
+
+// ParseQuotaSummaryWithBuckets parses the summary payload and returns all raw buckets and aggregated models.
+func ParseQuotaSummaryWithBuckets(bodyBytes []byte) (claude, gemini, gpt ModelQuotaBucket, rawBuckets []ModelQuotaBucket, canonicalReset time.Time, status string, err error) {
+	var resp rawQuotaSummaryResponse
+	if err := json.Unmarshal(bodyBytes, &resp); err != nil {
+		return claude, gemini, gpt, nil, canonicalReset, StatusError, fmt.Errorf("failed to parse quota summary JSON: %w", err)
+	}
+
+	groups := resp.Response.Groups
+	hasGroups := resp.Response.Groups != nil
+	if len(groups) == 0 && resp.Groups != nil {
+		groups = resp.Groups
+		hasGroups = true
+	}
+
+	claude = ModelQuotaBucket{ModelID: "claude-4-6", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	gemini = ModelQuotaBucket{ModelID: "gemini-2-5", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+	gpt = ModelQuotaBucket{ModelID: "gpt-oss", RemainingFraction: -1, FiveHourFraction: -1, WeeklyFraction: -1}
+
+	if hasGroups && len(groups) == 0 {
+		return claude, gemini, gpt, nil, canonicalReset, "", nil
+	}
+
+	hasGemini := false
+	hasClaudeGPT := false
+	hasValidFraction := false
+
+	for _, g := range groups {
+		lowerGroup := strings.ToLower(g.DisplayName)
+		for _, b := range g.Buckets {
+			frac := -1.0
+			hasFrac := false
+			if b.RemainingFraction != nil {
+				frac = *b.RemainingFraction
+				hasFrac = true
+				hasValidFraction = true
+			}
+			var resetT time.Time
+			if strings.TrimSpace(b.ResetTime) != "" {
+				if t, err := time.Parse(time.RFC3339Nano, b.ResetTime); err == nil {
+					resetT = t.UTC()
+				} else if t, err := time.Parse(time.RFC3339, b.ResetTime); err == nil {
+					resetT = t.UTC()
+				}
+			}
+
+			rawB := ModelQuotaBucket{
+				ModelID:           b.BucketID,
+				RemainingFraction: frac,
+				FiveHourFraction:  -1,
+				WeeklyFraction:    -1,
+				ResetTime:         resetT,
+			}
+			if b.Disabled != nil && *b.Disabled {
+				rawB.Disabled = true
+			}
+
+			lowerID := strings.ToLower(b.BucketID)
+			lowerWindow := strings.ToLower(b.Window)
+			is5h := strings.Contains(lowerID, "5h") || strings.Contains(lowerWindow, "5h")
+			isWeek := strings.Contains(lowerID, "week") || strings.Contains(lowerWindow, "week")
+
+			if is5h {
+				if hasFrac {
+					rawB.FiveHourFraction = frac
+				}
+				if b.Disabled != nil && *b.Disabled {
+					rawB.FiveHourDisabled = true
+				}
+			} else if isWeek {
+				if hasFrac {
+					rawB.WeeklyFraction = frac
+				}
+				if b.Disabled != nil && *b.Disabled {
+					rawB.WeeklyDisabled = true
+				}
+			}
+
+			if strings.Contains(lowerGroup, "gemini") || strings.Contains(lowerID, "gemini") {
+				rawB.TokenType = "gemini"
+				if is5h {
+					if hasFrac {
+						gemini.FiveHourFraction = frac
+						gemini.FiveHourReset = resetT
+					}
+					if b.Disabled != nil && *b.Disabled {
+						gemini.FiveHourDisabled = true
+					}
+				} else if isWeek {
+					if hasFrac {
+						gemini.WeeklyFraction = frac
+						gemini.WeeklyReset = resetT
+					}
+					if b.Disabled != nil && *b.Disabled {
+						gemini.WeeklyDisabled = true
+					}
+				}
+				if hasFrac && (!hasGemini || frac < gemini.RemainingFraction) {
+					gemini.RemainingFraction = frac
+					gemini.ResetTime = resetT
+					gemini.ModelID = b.BucketID
+					hasGemini = true
+				}
+			} else if strings.Contains(lowerGroup, "claude") || strings.Contains(lowerGroup, "gpt") || strings.Contains(lowerGroup, "3p") ||
+				strings.Contains(lowerID, "claude") || strings.Contains(lowerID, "3p") {
+				rawB.TokenType = "claude"
+				if is5h {
+					if hasFrac {
+						claude.FiveHourFraction = frac
+						claude.FiveHourReset = resetT
+						gpt.FiveHourFraction = frac
+						gpt.FiveHourReset = resetT
+					}
+					if b.Disabled != nil && *b.Disabled {
+						claude.FiveHourDisabled = true
+						gpt.FiveHourDisabled = true
+					}
+				} else if isWeek {
+					if hasFrac {
+						claude.WeeklyFraction = frac
+						claude.WeeklyReset = resetT
+						gpt.WeeklyFraction = frac
+						gpt.WeeklyReset = resetT
+					}
+					if b.Disabled != nil && *b.Disabled {
+						claude.WeeklyDisabled = true
+						gpt.WeeklyDisabled = true
+					}
+				}
+				if hasFrac && (!hasClaudeGPT || frac < claude.RemainingFraction) {
+					claude.RemainingFraction = frac
+					claude.ResetTime = resetT
+					claude.ModelID = b.BucketID
+
+					gpt.RemainingFraction = frac
+					gpt.ResetTime = resetT
+					gpt.ModelID = b.BucketID
+					hasClaudeGPT = true
+				}
+			}
+			rawBuckets = append(rawBuckets, rawB)
+		}
+	}
+
+	if !hasValidFraction {
+		return claude, gemini, gpt, rawBuckets, canonicalReset, "", nil
+	}
+
+	minFrac := -1.0
+	if hasClaudeGPT && claude.RemainingFraction >= 0 {
+		minFrac = claude.RemainingFraction
+		canonicalReset = claude.ResetTime
+	}
+	if hasGemini && gemini.RemainingFraction >= 0 {
+		if minFrac < 0 || gemini.RemainingFraction < minFrac {
+			minFrac = gemini.RemainingFraction
+			if !gemini.ResetTime.IsZero() {
+				canonicalReset = gemini.ResetTime
+			}
+		} else if canonicalReset.IsZero() && !gemini.ResetTime.IsZero() {
+			canonicalReset = gemini.ResetTime
+		}
+	}
+
+	if minFrac < 0 {
+		status = ""
+	} else if minFrac < 0.15 {
+		if (hasClaudeGPT && claude.RemainingFraction < 0.15) && (hasGemini && gemini.RemainingFraction < 0.15) {
+			status = StatusDepleted
+		} else if hasGemini && gemini.RemainingFraction < 0.15 {
+			status = StatusLowGemini
+		} else if hasClaudeGPT && claude.RemainingFraction < 0.15 {
+			status = StatusLowClaude
+		} else {
+			status = StatusLow
+		}
+	} else if minFrac <= 0.50 {
+		if hasGemini && gemini.RemainingFraction <= 0.50 && (!hasClaudeGPT || claude.RemainingFraction > 0.50) {
+			status = StatusLowGemini
+		} else if hasClaudeGPT && claude.RemainingFraction <= 0.50 && (!hasGemini || gemini.RemainingFraction > 0.50) {
+			status = StatusLowClaude
+		} else {
+			status = StatusLow
+		}
+	} else if (!hasClaudeGPT || claude.RemainingFraction >= 1.0) && (!hasGemini || gemini.RemainingFraction >= 1.0) {
+		status = StatusPristine
+	} else {
+		status = StatusPlentiful
+	}
+
+	return claude, gemini, gpt, rawBuckets, canonicalReset, status, nil
+}

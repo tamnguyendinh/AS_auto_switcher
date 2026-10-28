@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/model"
-	"antigravity-switch/internal/store"
-	"antigravity-switch/internal/wincred"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/model"
+	"antigravity-switch/internal/engines/antigravity/store"
+	"antigravity-switch/internal/engines/antigravity/wincred"
 	"fyne.io/fyne/v2/test"
 )
 

@@ -10,9 +10,9 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 
-	"antigravity-switch/internal/i18n"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/model"
+	"antigravity-switch/internal/core/i18n"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/model"
 )
 
 // TestAcceptance_i18n_DropdownPosition verifies that the language dropdown is located in row1Header
@@ -197,9 +197,9 @@ func TestAcceptance_i18n_StartupRestoration(t *testing.T) {
 	// Pre-seed preference with English
 	top := true
 	_ = SaveUIPreferences(prefFile, &UIPreferences{
-		Theme:        ThemeDark,
-		AlwaysOnTop:  &top,
-		Language:     "en",
+		Theme:       ThemeDark,
+		AlwaysOnTop: &top,
+		Language:    "en",
 	})
 
 	app := newIsolatedApp(testApp, mgr)

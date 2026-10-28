@@ -10,8 +10,8 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/manager"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/manager"
 )
 
 // TC-01: Header Row 2 Tinh Gọn (Clean Header)
@@ -244,14 +244,15 @@ func TestAcceptance_TC03_VersionDisplayAndFormatting(t *testing.T) {
 // Tiêu chí PASS:
 // - Ban đầu (Idle): a.serverStatusLabel.Visible() == true, a.versionLabel.Visible() == true, a.statusBar.Visible() == false.
 // - Khi gọi a.showStatusBar("🔒 Đã ẩn thông tin tài khoản"):
-//   * a.serverStatusLabel.Visible() == false.
-//   * a.versionLabel.Visible() == false.
-//   * a.statusBar.Visible() == true.
-//   * a.statusBar.Text == "🔒 Đã ẩn thông tin tài khoản".
+//   - a.serverStatusLabel.Visible() == false.
+//   - a.versionLabel.Visible() == false.
+//   - a.statusBar.Visible() == true.
+//   - a.statusBar.Text == "🔒 Đã ẩn thông tin tài khoản".
+//
 // - Khi gọi a.clearStatusBar():
-//   * a.statusBar.Visible() == false.
-//   * a.serverStatusLabel.Visible() == true.
-//   * a.versionLabel.Visible() == true.
+//   - a.statusBar.Visible() == false.
+//   - a.serverStatusLabel.Visible() == true.
+//   - a.versionLabel.Visible() == true.
 func TestAcceptance_TC04_FullWidthNotificationTakeover(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
@@ -374,4 +375,3 @@ func TestAcceptance_TC05_FooterCompactHeight(t *testing.T) {
 		t.Errorf("TC-05 VIOLATION: expected bottomSection height <= 25px (50%% reduced), got %f px", h)
 	}
 }
-

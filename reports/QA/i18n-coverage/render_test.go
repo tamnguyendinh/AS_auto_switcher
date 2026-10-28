@@ -19,12 +19,12 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/i18n"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/model"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/core/i18n"
+	"antigravity-switch/internal/core/version"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/model"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 	"antigravity-switch/internal/ui"
-	"antigravity-switch/internal/version"
 )
 
 func saveCanvas(t *testing.T, win fyne.Window, filename string) {
@@ -54,8 +54,8 @@ func layoutSpacer() fyne.CanvasObject {
 // Test 1: JSON Parity & Dual File Integrity (Invariant 1)
 // -----------------------------------------------------------------------------
 func TestQA_Invariant1_DualJSONParity(t *testing.T) {
-	viPath := filepath.Join("..", "..", "..", "internal", "i18n", "locales", "vi.json")
-	enPath := filepath.Join("..", "..", "..", "internal", "i18n", "locales", "en.json")
+	viPath := filepath.Join("..", "..", "..", "internal", "core", "i18n", "locales", "vi.json")
+	enPath := filepath.Join("..", "..", "..", "internal", "core", "i18n", "locales", "en.json")
 
 	viBytes, err := os.ReadFile(viPath)
 	if err != nil {
@@ -80,8 +80,19 @@ func TestQA_Invariant1_DualJSONParity(t *testing.T) {
 		t.Fatalf("Key count mismatch: vi.json has %d keys, en.json has %d keys", len(viMap), len(enMap))
 	}
 
-	if len(viMap) != 53 {
-		t.Errorf("Expected 53 keys per complete i18n specification, got %d", len(viMap))
+	dictionaryType := reflect.TypeOf(i18n.Dictionary{})
+	expectedKeys := 0
+	for i := 0; i < dictionaryType.NumField(); i++ {
+		key := dictionaryType.Field(i).Tag.Get("json")
+		if key != "" && key != "-" {
+			expectedKeys++
+			if _, ok := viMap[key]; !ok {
+				t.Errorf("Missing dictionary key: %s", key)
+			}
+		}
+	}
+	if len(viMap) != expectedKeys {
+		t.Errorf("Expected %d dictionary keys, got %d", expectedKeys, len(viMap))
 	}
 
 	// 1:1 Key symmetry and non-empty check
@@ -447,6 +458,7 @@ func buildFooterCapture(t *testing.T, filename string) {
 // Test 4: Invariant 2 - Live In-Place Switching
 // -----------------------------------------------------------------------------
 func TestQA_Invariant2_LiveInPlaceSwitching(t *testing.T) {
+	t.Setenv("ANTIGRAVITY_STORE_DIR", filepath.Join(t.TempDir(), "accounts_store"))
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
@@ -456,6 +468,7 @@ func TestQA_Invariant2_LiveInPlaceSwitching(t *testing.T) {
 	}
 
 	app := ui.NewAppWithFyne(testApp, mgr)
+	defer app.Close()
 	tempDir := t.TempDir()
 	prefPath := filepath.Join(tempDir, "ui_preferences.json")
 	app.SetPreferencesPath(prefPath)
@@ -648,8 +661,8 @@ func TestQA_Invariant6_ModalsAndPopups(t *testing.T) {
 	if dVI.ModalScanChrome != "Quét Chrome" {
 		t.Errorf("Expected VI ModalScanChrome 'Quét Chrome', got '%s'", dVI.ModalScanChrome)
 	}
-	if dVI.ModalBtnAddItem != "THÊM" {
-		t.Errorf("Expected VI ModalBtnAddItem 'THÊM', got '%s'", dVI.ModalBtnAddItem)
+	if dVI.ModalBtnAddItem != "Thêm" {
+		t.Errorf("Expected VI ModalBtnAddItem 'Thêm', got '%s'", dVI.ModalBtnAddItem)
 	}
 	if dVI.BadgeAdded != "[Đã thêm]" {
 		t.Errorf("Expected VI BadgeAdded '[Đã thêm]', got '%s'", dVI.BadgeAdded)
@@ -670,8 +683,8 @@ func TestQA_Invariant6_ModalsAndPopups(t *testing.T) {
 	if dEN.ModalScanChrome != "Scan Chrome" {
 		t.Errorf("Expected EN ModalScanChrome 'Scan Chrome', got '%s'", dEN.ModalScanChrome)
 	}
-	if dEN.ModalBtnAddItem != "ADD" {
-		t.Errorf("Expected EN ModalBtnAddItem 'ADD', got '%s'", dEN.ModalBtnAddItem)
+	if dEN.ModalBtnAddItem != "Add" {
+		t.Errorf("Expected EN ModalBtnAddItem 'Add', got '%s'", dEN.ModalBtnAddItem)
 	}
 	if dEN.BadgeAdded != "[Added]" {
 		t.Errorf("Expected EN BadgeAdded '[Added]', got '%s'", dEN.BadgeAdded)

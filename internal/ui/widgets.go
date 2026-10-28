@@ -12,9 +12,9 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/i18n"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/core/i18n"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 )
 
 var (

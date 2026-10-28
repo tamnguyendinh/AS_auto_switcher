@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 	"antigravity-switch/internal/ui"
 	"fyne.io/fyne/v2/test"
 )

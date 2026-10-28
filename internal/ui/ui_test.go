@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"antigravity-switch/internal/automation"
+	"antigravity-switch/internal/engines/antigravity/automation"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -26,12 +26,12 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/model"
-	"antigravity-switch/internal/reloader"
-	"antigravity-switch/internal/store"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/model"
+	"antigravity-switch/internal/engines/antigravity/reloader"
+	"antigravity-switch/internal/engines/antigravity/store"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 )
 
 func makeTestJWT(email string) string {
@@ -3015,7 +3015,6 @@ func TestApp_AddAccountButton_ToolbarInteractionOpensModalSafely(t *testing.T) {
 	}
 }
 
-
 // -----------------------------------------------------------------------------
 // Test for SPEC-ARCH-20261019-SYMMETRIC-GRID-WRAP-MARGINS
 // -----------------------------------------------------------------------------
@@ -4225,7 +4224,6 @@ func TestArchitectSpec_MaskAccounts_NewCardInitialMask(t *testing.T) {
 	// Allow goroutines to settle
 	time.Sleep(150 * time.Millisecond)
 }
-
 
 // -----------------------------------------------------------------------------
 // Tests for rp_architect_20261023_160500_toolbar_refresh_clarification_spec

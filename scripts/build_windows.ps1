@@ -39,7 +39,7 @@ if ($Clean) {
 Write-Host "[0/4] Checking and synchronizing application version..." -ForegroundColor Yellow
 
 function Get-AppVersionFromSource {
-    param([string]$SourcePath = "internal\version\version.go")
+    param([string]$SourcePath = "internal\core\version\version.go")
     if (-not (Test-Path $SourcePath)) {
         Write-Error "Version source of truth not found: $SourcePath"
     }
@@ -190,7 +190,13 @@ function Compile-WindowsResource {
     }
 
     Write-Host "  -> Compiling resource with windres: $RcPath -> $SysoPath" -ForegroundColor Cyan
-    & $windresPath -I . -I logo -I cmd\switcher -i $RcPath -O coff -o $SysoPath
+    # Honor the same explicitly selected C compiler as the Go CGO build.
+    $resourceCompilerArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:CC)) {
+        $resourceCompiler = (Get-Command $env:CC -ErrorAction Stop).Source
+        $resourceCompilerArgs = @('--preprocessor', ('"{0}" -E -xc -DRC_INVOKED' -f $resourceCompiler))
+    }
+    & $windresPath @resourceCompilerArgs -I . -I logo -I cmd\switcher -i $RcPath -O coff -o $SysoPath
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $SysoPath)) {
         Write-Error "Failed compiling Windows resource COFF object: $SysoPath"
     }
@@ -221,7 +227,7 @@ function Build-GUI {
         $GitCommit = ""
     }
 
-    $ldflags = "-H windowsgui -s -w -X 'antigravity-switch/internal/version.Version=$Version' -X 'antigravity-switch/internal/version.GitCommit=$GitCommit'"
+    $ldflags = "-H windowsgui -s -w -X 'antigravity-switch/internal/core/version.Version=$Version' -X 'antigravity-switch/internal/core/version.GitCommit=$GitCommit'"
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     go build -ldflags="$ldflags" -o $outFile .\cmd\switcher

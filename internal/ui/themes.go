@@ -7,7 +7,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/theme"
 
-	"antigravity-switch/internal/store"
+	"antigravity-switch/internal/core/preferences"
 )
 
 const (
@@ -22,11 +22,11 @@ const (
 	ThemeWarm  = "warm"
 
 	// DefaultUIPreferencesPath is the canonical disk path for UI settings.
-	DefaultUIPreferencesPath = store.DefaultUIPreferencesPath
+	DefaultUIPreferencesPath = preferences.DefaultUIPreferencesPath
 )
 
 // UIPreferences stores persistent user interface settings.
-type UIPreferences = store.UIPreferences
+type UIPreferences = preferences.UIPreferences
 
 // ThemePalette defines semantic color tokens for custom Canvas rendering across themes.
 type ThemePalette struct {
@@ -254,10 +254,10 @@ func NewThemeInstance(themeName string) fyne.Theme {
 
 // LoadUIPreferences loads UI settings from disk. Returns default preferences if file is missing.
 func LoadUIPreferences(path string) (*UIPreferences, error) {
-	return store.LoadUIPreferences(path)
+	return preferences.LoadUIPreferences(path)
 }
 
 // SaveUIPreferences atomically writes UI preferences to disk.
 func SaveUIPreferences(path string, pref *UIPreferences) error {
-	return store.SaveUIPreferences(path, pref)
+	return preferences.SaveUIPreferences(path, pref)
 }

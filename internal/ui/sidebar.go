@@ -9,7 +9,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/i18n"
+	"antigravity-switch/internal/core/i18n"
 )
 
 // SidebarWidth định nghĩa độ rộng chuẩn của thanh Sidebar (thu gọn xuống 80% còn 136px theo Phase 1A)

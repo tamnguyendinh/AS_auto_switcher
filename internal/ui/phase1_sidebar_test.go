@@ -11,9 +11,9 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/i18n"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/version"
+	"antigravity-switch/internal/core/i18n"
+	"antigravity-switch/internal/core/version"
+	"antigravity-switch/internal/engines/antigravity/manager"
 )
 
 // TestPhase1_AppTitleAndLocales verifies that the application title has been renamed

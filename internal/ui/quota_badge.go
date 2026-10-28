@@ -11,8 +11,8 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 
-	"antigravity-switch/internal/i18n"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/core/i18n"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 )
 
 var (

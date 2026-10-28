@@ -9,7 +9,7 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/manager"
+	"antigravity-switch/internal/engines/antigravity/manager"
 )
 
 func TestStatusTextButton_RenderingAndHover(t *testing.T) {

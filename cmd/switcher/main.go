@@ -6,9 +6,9 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/reloader"
-	"antigravity-switch/internal/store"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/reloader"
+	"antigravity-switch/internal/engines/antigravity/store"
 	"antigravity-switch/internal/ui"
 )
 

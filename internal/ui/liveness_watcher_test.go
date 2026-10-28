@@ -8,9 +8,9 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/i18n"
-	"antigravity-switch/internal/manager"
+	"antigravity-switch/internal/core/i18n"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/manager"
 )
 
 // TC-LIVE-01: Chuyển đổi trạng thái khi Antigravity tắt (Running -> Stopped)

@@ -19,7 +19,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 	"antigravity-switch/internal/ui"
 )
 

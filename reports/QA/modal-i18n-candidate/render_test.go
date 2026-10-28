@@ -17,7 +17,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/i18n"
+	"antigravity-switch/internal/core/i18n"
 	"antigravity-switch/internal/ui"
 )
 
@@ -122,8 +122,8 @@ func TestQA_Invariant2_ZeroReflection_StaticSweep(t *testing.T) {
 // Test 3: Pure Dual-JSON Parity Invariant (TC-MODAL-i18n-01/02)
 // -----------------------------------------------------------------------------
 func TestQA_Invariant3_DualJSONParity(t *testing.T) {
-	viPath := filepath.Join("..", "..", "..", "internal", "i18n", "locales", "vi.json")
-	enPath := filepath.Join("..", "..", "..", "internal", "i18n", "locales", "en.json")
+	viPath := filepath.Join("..", "..", "..", "internal", "core", "i18n", "locales", "vi.json")
+	enPath := filepath.Join("..", "..", "..", "internal", "core", "i18n", "locales", "en.json")
 
 	viBytes, err := os.ReadFile(viPath)
 	if err != nil {

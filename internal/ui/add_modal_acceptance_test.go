@@ -17,14 +17,14 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/automation"
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/model"
-	"antigravity-switch/internal/reloader"
-	"antigravity-switch/internal/store"
-	"antigravity-switch/internal/telemetry"
-	"antigravity-switch/internal/wincred"
+	"antigravity-switch/internal/engines/antigravity/automation"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/model"
+	"antigravity-switch/internal/engines/antigravity/reloader"
+	"antigravity-switch/internal/engines/antigravity/store"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
+	"antigravity-switch/internal/engines/antigravity/wincred"
 )
 
 // Helper to create an isolated test AccountManager within an explicit base directory.

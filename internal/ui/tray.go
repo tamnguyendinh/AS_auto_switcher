@@ -5,7 +5,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 
-	"antigravity-switch/internal/i18n"
+	"antigravity-switch/internal/core/i18n"
 )
 
 // setupTray initializes the system tray menu and minimize-to-tray close intercept.

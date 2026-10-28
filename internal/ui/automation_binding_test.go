@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"antigravity-switch/internal/manager"
+	"antigravity-switch/internal/engines/antigravity/manager"
 	"context"
 	"errors"
 	"fyne.io/fyne/v2"
@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"antigravity-switch/internal/automation"
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/engines/antigravity/automation"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 
 	"fyne.io/fyne/v2/test"
 )

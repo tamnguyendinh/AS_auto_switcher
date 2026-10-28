@@ -12,8 +12,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/i18n"
-	"antigravity-switch/internal/version"
+	"antigravity-switch/internal/core/i18n"
+	"antigravity-switch/internal/core/version"
 
 	"golang.org/x/sys/windows"
 )
@@ -429,7 +429,6 @@ func (d *windowDragArea) Dragged(e *fyne.DragEvent) {
 
 func (d *windowDragArea) DragEnd() {}
 
-
 // -----------------------------------------------------------------------------
 // Symmetric GridWrap Layout (SPEC-ARCH-20261019-SYMMETRIC-GRID-WRAP-MARGINS)
 // -----------------------------------------------------------------------------
@@ -617,8 +616,8 @@ func (t *AutoSwitchToggle) Cursor() desktop.Cursor {
 	return desktop.PointerCursor
 }
 
-func (t *AutoSwitchToggle) MouseIn(*desktop.MouseEvent)   {}
-func (t *AutoSwitchToggle) MouseOut()                    {}
+func (t *AutoSwitchToggle) MouseIn(*desktop.MouseEvent)    {}
+func (t *AutoSwitchToggle) MouseOut()                      {}
 func (t *AutoSwitchToggle) MouseMoved(*desktop.MouseEvent) {}
 
 func (t *AutoSwitchToggle) IsOn() bool {
@@ -837,8 +836,8 @@ func (t *MaskAccountsToggle) Cursor() desktop.Cursor {
 	return desktop.PointerCursor
 }
 
-func (t *MaskAccountsToggle) MouseIn(*desktop.MouseEvent)   {}
-func (t *MaskAccountsToggle) MouseOut()                    {}
+func (t *MaskAccountsToggle) MouseIn(*desktop.MouseEvent)    {}
+func (t *MaskAccountsToggle) MouseOut()                      {}
 func (t *MaskAccountsToggle) MouseMoved(*desktop.MouseEvent) {}
 
 func (t *MaskAccountsToggle) IsOn() bool {
@@ -944,6 +943,3 @@ func (a *App) MaskAccountsToggleWidget() *CapsuleToggle {
 func (a *App) Row2Dividers() (*canvas.Rectangle, *canvas.Rectangle) {
 	return a.row2Divider1, a.row2Divider2
 }
-
-
-

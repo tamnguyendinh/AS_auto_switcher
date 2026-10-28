@@ -14,8 +14,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/telemetry"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/telemetry"
 )
 
 func assertColorMatches(t *testing.T, themeName, tokenName string, actual color.Color, expected color.NRGBA) {
@@ -787,7 +787,6 @@ func TestSyncVisualScaleAndTextures_SafeWhenOverviewNil(t *testing.T) {
 		t.Errorf("expected non-nil maskAccountsToggle")
 	}
 }
-
 
 func TestUIPreferences_LanguagePersistence(t *testing.T) {
 	tempDir := t.TempDir()

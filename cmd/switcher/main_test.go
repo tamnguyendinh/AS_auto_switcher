@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"antigravity-switch/internal/automation"
-	"antigravity-switch/internal/connector"
-	"antigravity-switch/internal/manager"
-	"antigravity-switch/internal/model"
-	"antigravity-switch/internal/reloader"
-	"antigravity-switch/internal/store"
+	"antigravity-switch/internal/engines/antigravity/automation"
+	"antigravity-switch/internal/engines/antigravity/connector"
+	"antigravity-switch/internal/engines/antigravity/manager"
+	"antigravity-switch/internal/engines/antigravity/model"
+	"antigravity-switch/internal/engines/antigravity/reloader"
+	"antigravity-switch/internal/engines/antigravity/store"
 )
 
 func makeTestJWT(email string) string {
