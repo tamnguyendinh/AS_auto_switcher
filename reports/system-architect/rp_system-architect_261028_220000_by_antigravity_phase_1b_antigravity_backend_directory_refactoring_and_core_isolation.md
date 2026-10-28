@@ -1,292 +1,542 @@
-# BÁO CÁO ĐẶC TẢ KIẾN TRÚC CHI TIẾT (SYSTEM ARCHITECTURE SPECIFICATION)
-## Giai Đoạn 1B: Tái Cấu Trúc Hệ Thống Thư Mục Mã Nguồn — Tách Biệt Backend Antigravity & Tầng Lõi Dùng Chung (Core) Chuẩn Bị Cho Nền Tảng Đa IDE
+# BÁO CÁO KIẾN TRÚC VÀ CHỈ DẪN TRIỂN KHAI — GIAI ĐOẠN 1B
+## Tách backend Antigravity và core dùng chung, bảo toàn hành vi hiện tại
 
 - **Mã tài liệu:** `rp_system-architect_261028_220000_by_antigravity_phase_1b_antigravity_backend_directory_refactoring_and_core_isolation`
-- **Tác giả:** System Architect (Strategic Lane)
-- **Ngày lập:** 2026-10-28
-- **Thẩm quyền phê duyệt:** Human Owner (Chủ tịch) phê duyệt trực tiếp trong phiên thảo luận kỹ thuật
-- **Trạng thái:** PRODUCTION-READY BLUEPRINT (Khóa cứng Touch-Map 1-1, bàn giao chìa khóa trao tay cho Coder)
-- **Mục tiêu cốt tử:** Tái cấu trúc không gian mã nguồn một cách an toàn, có kiểm soát theo từng bước nhỏ, bảo toàn 100% tính năng hiện có của Antigravity và tạo nền móng vững chắc trước khi bước sang Giai đoạn 2 (Tích hợp Codex).
+- **Ngày lập / cập nhật:** 2026-10-28.
+- **Bản cập nhật:** R2, điều tra source và cập nhật trực tiếp theo yêu cầu Owner.
+- **Baseline đã đối chiếu:** commit `f8bed972c35bff013c3d360c856f75712ace5bc2`, repository `G:\antigravity_auto_switch`.
+- **Trạng thái:** chỉ dẫn triển khai đã bổ sung; chưa thực hiện refactor, chưa có build/test/runtime PASS của phase 1B. Kết quả review tài liệu ghi ở cuối.
+- **Phạm vi:** phase 1B; không tích hợp Codex, không đổi thuật toán switch/quota/retry/continuation, schema dữ liệu hoặc thiết kế UI.
+- **Thẩm quyền:** báo cáo gốc ghi nhận hướng phân vùng được Owner chấp thuận; R2 sửa các khoảng trống từ source theo yêu cầu cập nhật của Owner. Không coi báo cáo là bằng chứng implementation đã được nghiệm thu.
+- **Cách đọc:** Phần 1 quy định ranh giới; Phần 2–5 là hướng dẫn thi công cụ thể theo yêu cầu Owner. Không tự mở rộng thiết kế đa IDE từ hướng dẫn này.
 
 ---
 
-# PHẦN 1: BỐI CẢNH & PHÂN TÍCH RỦI RO KIẾN TRÚC
+# PHẦN 1: KẾT QUẢ ĐIỀU TRA VÀ QUYẾT ĐỊNH
 
-### 1.1. Hiện trạng và Nguy cơ "Chắp vá"
-Hiện tại, toàn bộ mã nguồn backend của ứng dụng đang nằm phẳng tại thư mục `internal/`:
-- 8 package gồm: `connector`, `reloader`, `scanner`, `telemetry`, `automation`, `manager`, `model`, `store` được thiết kế phục vụ riêng 100% cho Google Antigravity (gọi daemon `language_server.exe`, quét SQLite session tại `.gemini/antigravity/`, quét Chrome profiles, gọi API Quota Gemini).
-- Nếu tiếp tục đưa mã nguồn của Codex vào chung các package này, codebase sẽ rơi vào trạng thái spaghetti code, các struct bị phình to, import chéo hỗn loạn và gây rủi ro phá vỡ tính năng của Antigravity.
+## 1.1. Các sai lệch đã xác nhận
 
-### 1.2. Phân tích Rủi ro Khi Tái Cấu Trúc (Refactoring Risk Analysis)
-Chủ tịch đã chỉ đạo rõ ràng:
-> *"Đây là công việc rất nguy hiểm, tuy chỉ là đổi vị trí các file nhưng nếu khai báo sai đường dẫn mới với số lượng file lớn thế này chỉ cần khai đường dẫn mới sai là gãy ngay. Vì thế phải tiến hành theo từng phase, mỗi phase có số lượng thư mục và file nhất định được chuyển đổi. Trong báo cáo phải có 2 bản đồ file chi tiết đến từng file (Bản đồ Cũ vs Bản đồ Mới), tuyệt đối không được viết tắt kiểu dấu ba chấm `...`"*
+| Phát hiện | Bằng chứng baseline | Xử lý R2 |
+|---|---|---|
+| Wincred chưa độc lập IDE | `internal/wincred/cred.go` import model; `types.go` chứa target/user Antigravity | Tách raw Windows API vào core, token adapter vào engine ở 1B.1 |
+| Build script bị bỏ sót | `scripts/build_windows.ps1` đọc version path cũ và hai linker symbol cũ | Sửa cả ba ngay khi move version |
+| Caller bị trì hoãn tới 1B.4 | Manager dùng connector/reloader/scanner/telemetry; telemetry test dùng store | Move và cập nhật mọi caller trong cùng bước |
+| Preferences cần tách symbol | `internal/ui/themes.go` dùng preferences qua store; `app_test.go` dùng account store | Đổi package preferences và qualifier đúng caller; không replace store toàn cục |
+| IDEEngine chưa có contract | Chỉ có tên interface, không có method/type/lifecycle | Không tạo engine.go trong 1B; thiết kế ở phase 2 |
+| Native tests bị bỏ qua | Ba file UI dùng tag `windows && gui && nativeui` | Native gate riêng trên Windows desktop tương tác |
+| Kiểm kê sai | 104 file cũ: 103 tracked và 1 syso generated; backend tám package có 51 file | Sửa map và số lượng, phân biệt runtime data |
+| Đếm bước sai | Có 1B.1–1B.6, không phải năm bước | Sáu bước và preflight 1B.0 |
 
-Do đó, tài liệu đặc tả này:
-1. **Kiểm kê chi tiết 100% toàn bộ 105 files trong `cmd/` và `internal/`** thành bảng đối chiếu 1-1 (không có bất kỳ dòng nào dùng `...`).
-2. **Chia nhỏ lộ trình thi công thành 5 tiểu giai đoạn (Sub-phases)**: di dời đến đâu, cập nhật import đến đó, chạy test và build ngay lập tức, PASS mới được sang bước tiếp theo.
+Ba file ignored tại `internal/ui/accounts_store/.ui_preferences.json`, `internal/ui/logs/.ui_preferences.json`, `internal/ui/logs/ui_preferences.json` là dữ liệu runtime có mặt lúc điều tra, không phải source cần move. Không đọc nội dung hoặc xóa chúng để làm sạch worktree.
 
----
+## 1.2. Ranh giới và hướng phụ thuộc
 
-# PHẦN 2: BẢN ĐỒ CHI TIẾT 1-1 TỪNG FILE ĐƠN LẺ (CURRENT ➔ TARGET MAPPING)
+- Core gồm `wincred` raw, `preferences`, `i18n`, `version`; không chứa Google token model, default credential Antigravity hoặc lifecycle IDE.
+- Antigravity gồm chín package: `scanner`, `reloader`, `telemetry`, `connector`, `model`, `store`, `manager`, `automation`, `wincred` token adapter.
+- Cho phép: UI/entrypoint → engine và core; engine → core. Core không được phụ thuộc engine/UI/entrypoint/domain cũ trực tiếp hoặc gián tiếp, kể cả test dependency.
+- UI và entrypoint vẫn gọi Antigravity concrete implementation; phase này không thêm registry/router/façade/interface rỗng.
+- Không đưa Google model vào core để né việc tách adapter.
+- `internal/engines/codex/` chỉ có `.gitkeep` rỗng, không thư mục con hoặc package Go.
+- **IDEEngine:** hoãn toàn bộ contract và lifecycle đa IDE sang phase 2. Không tạo `internal/core/engine.go` ở phase 1B. Việc hoãn không làm thay đổi hành vi đang có vì baseline chưa có interface/consumer này.
 
----
+## 1.3. Hợp đồng tách credential
 
-### KHỐI 1: TẦNG ENTRYPOINT (`cmd/switcher/` — 4 files)
-*Giữ nguyên vị trí các file, chỉ cập nhật đường dẫn import bên trong*:
+| File đích | Nội dung bắt buộc |
+|---|---|
+| `internal/core/wincred/cred.go` | Tách raw API từ file cũ: binding advapi32, ReadRaw, WriteRaw, DeleteRaw, HasRaw và hai sentinel ErrNotFound/ErrInvalidPayload |
+| `internal/core/wincred/types.go` | CREDENTIALW, CredTypeGeneric, CredPersistLocalMachine; bỏ hai hằng target/user Antigravity |
+| `internal/core/wincred/cred_test.go` | Test mới raw byte API, không dùng model hoặc credential thật |
+| `internal/engines/antigravity/wincred/cred.go` | Phần token còn lại từ cred.go cũ; nhận hai hằng target/user từ types.go; gọi raw core qua alias corewincred |
+| `internal/engines/antigravity/wincred/cred_test.go` | Di chuyển ba test token hiện hữu; bảo toàn assertions, đổi import model; bổ sung kiểm chứng lỗi nếu còn thiếu |
 
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) | Phân loại |
-|:---:|---|---|---|
-| 1 | `cmd/switcher/main.go` | `cmd/switcher/main.go` | Mã nguồn Go Entrypoint |
-| 2 | `cmd/switcher/main_test.go` | `cmd/switcher/main_test.go` | Unit Test Entrypoint |
-| 3 | `cmd/switcher/app.rc` | `cmd/switcher/app.rc` | Windows Resource Script |
-| 4 | `cmd/switcher/rsrc_windows_amd64.syso` | `cmd/switcher/rsrc_windows_amd64.syso` | Windows Resource Binary |
+Adapter giữ nguyên chữ ký và semantics của tám hàm: `ReadToken`, `ReadTokenTarget`, `WriteToken`, `WriteTokenTarget`, `DeleteToken`, `DeleteTokenTarget`, `HasToken`, `HasTokenTarget`.
 
----
+- Giữ `DefaultTargetName = "LegacyGeneric:target=gemini:antigravity"`, `DefaultUserName = "antigravity"` trong adapter.
+- Giữ identity lỗi bằng alias: `ErrNotFound = corewincred.ErrNotFound`, `ErrInvalidPayload = corewincred.ErrInvalidPayload`. Không tạo errors.New mới cùng message.
+- Raw core giữ validation target/blob, native error propagation, copy blob, CredFree, persist mode, delete idempotent và hành vi empty target như baseline.
+- Adapter giữ JSON parse/serialize, TokenData.IsValid, nil-token và empty-blob behavior. Không copy Win32 syscall trở lại engine; không cần tái xuất raw API từ adapter.
+- Trong 1B.1 adapter tạm import `antigravity-switch/internal/model`; tới 1B.3 đổi sang `antigravity-switch/internal/engines/antigravity/model`. Core không bao giờ dùng model này.
+- Toàn bộ caller token cũ chuyển import sang adapter engine, không chuyển sang raw core.
+- Test raw dùng target thử nghiệm riêng, cleanup đúng target test; không ghi/xóa default credential. Kiểm byte roundtrip, absent/ErrNotFound, repeated delete, empty target/blob.
+- Test token giữ roundtrip/validation/live-read; thêm assertion identity của hai sentinel và parse invalid JSON/empty blob nếu coverage chưa có. Không sửa expected behavior để ép PASS.
+- Test live-read hiện có chứa nhánh lỗi in token: khi move phải thay message đó bằng thông báo không chứa payload, giữ nguyên điều kiện assertion. Không đưa token/credential vào evidence.
 
-### KHỐI 2: TẦNG LÕI DÙNG CHUNG CHO MỌI IDE (`internal/core/` — 13 files)
-*Gom các package độc lập, không phụ thuộc vào bất kỳ IDE nào vào phân vùng `internal/core/`*:
+## 1.4. Hợp đồng preferences, build và dữ liệu
 
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) | Phân loại |
-|:---:|---|---|---|
-| 5 | *(File mới tạo)* | `internal/core/engine.go` | Interface trừu tượng IDEEngine |
-| 6 | `internal/wincred/cred.go` | `internal/core/wincred/cred.go` | Win32 Credential API |
-| 7 | `internal/wincred/cred_test.go` | `internal/core/wincred/cred_test.go` | Test Win32 Credential API |
-| 8 | `internal/wincred/types.go` | `internal/core/wincred/types.go` | Types Win32 Credential |
-| 9 | `internal/version/version.go` | `internal/core/version/version.go` | Version Info |
-| 10 | `internal/version/version_test.go` | `internal/core/version/version_test.go` | Test Version Info |
-| 11 | `internal/i18n/dictionary.go` | `internal/core/i18n/dictionary.go` | Từ điển đa ngữ Struct |
-| 12 | `internal/i18n/locale.go` | `internal/core/i18n/locale.go` | Quản lý Locale runtime |
-| 13 | `internal/i18n/i18n_test.go` | `internal/core/i18n/i18n_test.go` | Test Đa ngữ |
-| 14 | `internal/i18n/locales/en.json` | `internal/core/i18n/locales/en.json` | Dữ liệu ngôn ngữ Tiếng Anh |
-| 15 | `internal/i18n/locales/vi.json` | `internal/core/i18n/locales/vi.json` | Dữ liệu ngôn ngữ Tiếng Việt |
-| 16 | `internal/store/preferences_store.go` | `internal/core/preferences/preferences_store.go` | Lưu trữ cấu hình app |
-| 17 | `internal/store/preferences_store_test.go` | `internal/core/preferences/preferences_store_test.go` | Test lưu trữ cấu hình app |
-
----
-
-### KHỐI 3: TOÀN BỘ 50 FILE BACKEND CỦA ANTIGRAVITY (`internal/engines/antigravity/`)
-*Chuyển toàn bộ 50 file mã nguồn và kiểm thử của Google Antigravity vào namespace riêng biệt*:
-
-#### A. Phân hệ Quét Chrome (Scanner — 2 files)
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) |
-|:---:|---|---|
-| 18 | `internal/scanner/chrome_scanner.go` | `internal/engines/antigravity/scanner/chrome_scanner.go` |
-| 19 | `internal/scanner/chrome_scanner_test.go` | `internal/engines/antigravity/scanner/chrome_scanner_test.go` |
-
-#### B. Phân hệ Quét Session 2h (Reloader — 6 files)
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) |
-|:---:|---|---|
-| 20 | `internal/reloader/active_threads.go` | `internal/engines/antigravity/reloader/active_threads.go` |
-| 21 | `internal/reloader/active_threads_test.go` | `internal/engines/antigravity/reloader/active_threads_test.go` |
-| 22 | `internal/reloader/continuation.go` | `internal/engines/antigravity/reloader/continuation.go` |
-| 23 | `internal/reloader/continuation_test.go` | `internal/engines/antigravity/reloader/continuation_test.go` |
-| 24 | `internal/reloader/session_reloader.go` | `internal/engines/antigravity/reloader/session_reloader.go` |
-| 25 | `internal/reloader/reloader_test.go` | `internal/engines/antigravity/reloader/reloader_test.go` |
-
-#### C. Phân hệ Quota Cloud Gemini (Telemetry — 8 files)
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) |
-|:---:|---|---|
-| 26 | `internal/telemetry/client.go` | `internal/engines/antigravity/telemetry/client.go` |
-| 27 | `internal/telemetry/cache.go` | `internal/engines/antigravity/telemetry/cache.go` |
-| 28 | `internal/telemetry/cache_test.go` | `internal/engines/antigravity/telemetry/cache_test.go` |
-| 29 | `internal/telemetry/loop.go` | `internal/engines/antigravity/telemetry/loop.go` |
-| 30 | `internal/telemetry/pool.go` | `internal/engines/antigravity/telemetry/pool.go` |
-| 31 | `internal/telemetry/tier.go` | `internal/engines/antigravity/telemetry/tier.go` |
-| 32 | `internal/telemetry/quota_test.go` | `internal/engines/antigravity/telemetry/quota_test.go` |
-| 33 | `internal/telemetry/telemetry_test.go` | `internal/engines/antigravity/telemetry/telemetry_test.go` |
-
-#### D. Phân hệ Kết nối Language Server LSP (Connector — 10 files)
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) |
-|:---:|---|---|
-| 34 | `internal/connector/discovery.go` | `internal/engines/antigravity/connector/discovery.go` |
-| 35 | `internal/connector/discovery_test.go` | `internal/engines/antigravity/connector/discovery_test.go` |
-| 36 | `internal/connector/endpoints.go` | `internal/engines/antigravity/connector/endpoints.go` |
-| 37 | `internal/connector/agent_state_stream.go` | `internal/engines/antigravity/connector/agent_state_stream.go` |
-| 38 | `internal/connector/api_client.go` | `internal/engines/antigravity/connector/api_client.go` |
-| 39 | `internal/connector/automation_rpc.go` | `internal/engines/antigravity/connector/automation_rpc.go` |
-| 40 | `internal/connector/automation_rpc_test.go` | `internal/engines/antigravity/connector/automation_rpc_test.go` |
-| 41 | `internal/connector/oauth_refresher.go` | `internal/engines/antigravity/connector/oauth_refresher.go` |
-| 42 | `internal/connector/oauth_refresher_test.go` | `internal/engines/antigravity/connector/oauth_refresher_test.go` |
-| 43 | `internal/connector/connector_test.go` | `internal/engines/antigravity/connector/connector_test.go` |
-
-#### E. Phân hệ Dữ liệu Đặc thù Token Google (Model — 2 files)
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) |
-|:---:|---|---|
-| 44 | `internal/model/types.go` | `internal/engines/antigravity/model/types.go` |
-| 45 | `internal/model/types_test.go` | `internal/engines/antigravity/model/types_test.go` |
-
-#### F. Phân hệ Lưu trữ File JSON Tài khoản Google (Store — 5 files)
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) |
-|:---:|---|---|
-| 46 | `internal/store/account_store.go` | `internal/engines/antigravity/store/account_store.go` |
-| 47 | `internal/store/account_store_test.go` | `internal/engines/antigravity/store/account_store_test.go` |
-| 48 | `internal/store/discovered_store.go` | `internal/engines/antigravity/store/discovered_store.go` |
-| 49 | `internal/store/discovered_store_test.go` | `internal/engines/antigravity/store/discovered_store_test.go` |
-| 50 | `internal/store/sanitizer.go` | `internal/engines/antigravity/store/sanitizer.go` |
-
-#### G. Phân hệ Quản lý Tài khoản Antigravity (Manager — 6 files)
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) |
-|:---:|---|---|
-| 51 | `internal/manager/account_manager.go` | `internal/engines/antigravity/manager/account_manager.go` |
-| 52 | `internal/manager/account_manager_test.go` | `internal/engines/antigravity/manager/account_manager_test.go` |
-| 53 | `internal/manager/manager_test.go` | `internal/engines/antigravity/manager/manager_test.go` |
-| 54 | `internal/manager/timeline.go` | `internal/engines/antigravity/manager/timeline.go` |
-| 55 | `internal/manager/timeline_test.go` | `internal/engines/antigravity/manager/timeline_test.go` |
-| 56 | `internal/manager/two_store_test.go` | `internal/engines/antigravity/manager/two_store_test.go` |
-
-#### H. Phân hệ Tự động Chuyển Đổi Quota Gemini (Automation — 12 files)
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) |
-|:---:|---|---|
-| 57 | `internal/automation/controller.go` | `internal/engines/antigravity/automation/controller.go` |
-| 58 | `internal/automation/controller_test.go` | `internal/engines/antigravity/automation/controller_test.go` |
-| 59 | `internal/automation/model_quota.go` | `internal/engines/antigravity/automation/model_quota.go` |
-| 60 | `internal/automation/model_quota_test.go` | `internal/engines/antigravity/automation/model_quota_test.go` |
-| 61 | `internal/automation/retry.go` | `internal/engines/antigravity/automation/retry.go` |
-| 62 | `internal/automation/retry_test.go` | `internal/engines/antigravity/automation/retry_test.go` |
-| 63 | `internal/automation/sorter.go` | `internal/engines/antigravity/automation/sorter.go` |
-| 64 | `internal/automation/sorter_test.go` | `internal/engines/antigravity/automation/sorter_test.go` |
-| 65 | `internal/automation/switch_gate_windows.go` | `internal/engines/antigravity/automation/switch_gate_windows.go` |
-| 66 | `internal/automation/switch_gate_windows_test.go` | `internal/engines/antigravity/automation/switch_gate_windows_test.go` |
-| 67 | `internal/automation/automation_e2e_test.go` | `internal/engines/antigravity/automation/automation_e2e_test.go` |
-| 68 | `internal/automation/runtime_regression_test.go` | `internal/engines/antigravity/automation/runtime_regression_test.go` |
+- Hai file preferences chuyển thành `package preferences`, giữ public API/schema/default/path/atomic-save behavior.
+- `internal/ui/themes.go` import `antigravity-switch/internal/core/preferences`; thay qualifier của DefaultUIPreferencesPath, UIPreferences, LoadUIPreferences, SaveUIPreferences từ store sang preferences.
+- Giữ `logs/ui_preferences.json`, mọi field JSON và mặc định hiện hữu. Các account/discovered store vẫn là `package store`; không replace store toàn cục.
+- Build script đổi SourcePath thành `internal\core\version\version.go`; đổi cả hai linker symbol thành `antigravity-switch/internal/core/version.Version` và `antigravity-switch/internal/core/version.GitCommit`.
+- Giữ module, Go/dependency version, version ứng dụng, icon, app ID, executable name, single-instance title và working directory của bản phát hành.
+- I18n JSON di chuyển cùng package; giữ `go:embed locales/vi.json` và `go:embed locales/en.json` cùng nguyên nội dung.
+- Không di dời account stores, logs, profile IDE, SQLite session hoặc credential của người dùng. Đây là refactor source, không phải data migration.
 
 ---
 
-### KHỐI 4: TOÀN BỘ 37 FILE TẦNG GIAO DIỆN (`internal/ui/` — Giữ nguyên vị trí)
-*Tất cả 37 file của `internal/ui/` giữ nguyên vị trí trên đĩa, chỉ cập nhật import paths*:
+# PHẦN 2: BẢN ĐỒ ĐẦY ĐỦ FILE CŨ → MỚI
 
-| STT | Đường dẫn CŨ (Hiện tại) | Đường dẫn MỚI (Mục tiêu) | Phân loại |
-|:---:|---|---|---|
-| 69 | `internal/ui/window.go` | `internal/ui/window.go` | Mã nguồn UI |
-| 70 | `internal/ui/sidebar.go` | `internal/ui/sidebar.go` | Mã nguồn UI |
-| 71 | `internal/ui/app.go` | `internal/ui/app.go` | Mã nguồn UI (Cập nhật Import) |
-| 72 | `internal/ui/widgets.go` | `internal/ui/widgets.go` | Mã nguồn UI |
-| 73 | `internal/ui/themes.go` | `internal/ui/themes.go` | Mã nguồn UI |
-| 74 | `internal/ui/add_modal.go` | `internal/ui/add_modal.go` | Mã nguồn UI |
-| 75 | `internal/ui/quota_badge.go` | `internal/ui/quota_badge.go` | Mã nguồn UI |
-| 76 | `internal/ui/compact_button.go` | `internal/ui/compact_button.go` | Mã nguồn UI |
-| 77 | `internal/ui/tray.go` | `internal/ui/tray.go` | Mã nguồn UI |
-| 78 | `internal/ui/assets.go` | `internal/ui/assets.go` | Mã nguồn UI |
-| 79 | `internal/ui/single_instance_windows.go` | `internal/ui/single_instance_windows.go` | Mã nguồn UI |
-| 80 | `internal/ui/single_instance_other.go` | `internal/ui/single_instance_other.go` | Mã nguồn UI |
-| 81 | `internal/ui/frameless_windows.go` | `internal/ui/frameless_windows.go` | Mã nguồn UI |
-| 82 | `internal/ui/frameless_other.go` | `internal/ui/frameless_other.go` | Mã nguồn UI |
-| 83 | `internal/ui/window_resize.go` | `internal/ui/window_resize.go` | Mã nguồn UI |
-| 84 | `internal/ui/window_resize_windows.go` | `internal/ui/window_resize_windows.go` | Mã nguồn UI |
-| 85 | `internal/ui/window_resize_other.go` | `internal/ui/window_resize_other.go` | Mã nguồn UI |
-| 86 | `internal/ui/assets/antigravity_logo.png` | `internal/ui/assets/antigravity_logo.png` | Asset Ảnh |
-| 87 | `internal/ui/assets/logo.png` | `internal/ui/assets/logo.png` | Asset Ảnh |
-| 88 | `internal/ui/ui_test.go` | `internal/ui/ui_test.go` | Kiểm thử UI |
-| 89 | `internal/ui/phase1_sidebar_test.go` | `internal/ui/phase1_sidebar_test.go` | Kiểm thử UI |
-| 90 | `internal/ui/themes_test.go` | `internal/ui/themes_test.go` | Kiểm thử UI |
-| 91 | `internal/ui/widgets_test.go` | `internal/ui/widgets_test.go` | Kiểm thử UI |
-| 92 | `internal/ui/add_modal_test.go` | `internal/ui/add_modal_test.go` | Kiểm thử UI |
-| 93 | `internal/ui/add_modal_acceptance_test.go` | `internal/ui/add_modal_acceptance_test.go` | Kiểm thử UI |
-| 94 | `internal/ui/footer_bar_acceptance_test.go` | `internal/ui/footer_bar_acceptance_test.go` | Kiểm thử UI |
-| 95 | `internal/ui/i18n_acceptance_test.go` | `internal/ui/i18n_acceptance_test.go` | Kiểm thử UI |
-| 96 | `internal/ui/liveness_watcher_test.go` | `internal/ui/liveness_watcher_test.go` | Kiểm thử UI |
-| 97 | `internal/ui/account_status_acceptance_test.go` | `internal/ui/account_status_acceptance_test.go` | Kiểm thử UI |
-| 98 | `internal/ui/account_deletion_acceptance_test.go` | `internal/ui/account_deletion_acceptance_test.go` | Kiểm thử UI |
-| 99 | `internal/ui/automation_binding_test.go` | `internal/ui/automation_binding_test.go` | Kiểm thử UI |
-| 100 | `internal/ui/two_store_test.go` | `internal/ui/two_store_test.go` | Kiểm thử UI |
-| 101 | `internal/ui/two_store_native_test.go` | `internal/ui/two_store_native_test.go` | Kiểm thử UI |
-| 102 | `internal/ui/window_native_test.go` | `internal/ui/window_native_test.go` | Kiểm thử UI |
-| 103 | `internal/ui/window_resize_test.go` | `internal/ui/window_resize_test.go` | Kiểm thử UI |
-| 104 | `internal/ui/window_resize_native_test.go` | `internal/ui/window_resize_native_test.go` | Kiểm thử UI |
-| 105 | `internal/ui/app_test.go` | `internal/ui/app_test.go` | Kiểm thử UI |
+## 2.1. Tổng kiểm kê và quy ước
 
----
+- Baseline: 4 entrypoint/resource (gồm syso generated), 12 file wincred/version/i18n/preferences, 51 file backend thuộc tám package, 37 UI = **104 đường dẫn cũ**.
+- Đích: 4 entrypoint/resource, 12 core, 53 Antigravity, 37 UI và 1 Codex gitkeep = **107 đường dẫn**, gồm 106 tracked sau khi add và 1 syso generated.
+- Ngoài tổng trên: build script và báo cáo này; evidence/ledger đếm riêng.
+- Bảng giữ đủ từng file. Riêng cred.go là tách nội dung, không phải move 1–1 thuần túy; Phần 1.3 và bảng 2.2 mô tả đầy đủ output bổ sung.
+- Bước move: nhóm core/wincred/preferences tại 1B.1; scanner/reloader/telemetry/connector tại 1B.2; model/store còn lại/manager/automation tại 1B.3; UI và entrypoint giữ vị trí, cập nhật import tại bước phát sinh.
 
-### KHỐI 5: TẦNG BACKEND CODEX MỚI (`internal/engines/codex/`)
-*Theo chỉ đạo trực tiếp của Chủ tịch, tại Giai đoạn 1B chỉ khởi tạo duy nhất thư mục này*:
-- **Đường dẫn**: `internal/engines/codex/`
-- **Quy tắc**: Thư mục rỗng (hoặc file `.gitkeep` để git nhận diện). Tuyệt đối **không tạo bất kỳ thư mục con nào bên trong**. Cấu trúc chi tiết của Codex sẽ được bàn sau tại Giai đoạn 2.
+| STT | Đường dẫn cũ | Đường dẫn đích |
+|---:|---|---|
+| 1 | `cmd/switcher/main.go` | `cmd/switcher/main.go` |
+| 2 | `cmd/switcher/main_test.go` | `cmd/switcher/main_test.go` |
+| 3 | `cmd/switcher/app.rc` | `cmd/switcher/app.rc` |
+| 4 | `cmd/switcher/rsrc_windows_amd64.syso` | `cmd/switcher/rsrc_windows_amd64.syso` |
+| 5 | `internal/wincred/cred.go` | `internal/engines/antigravity/wincred/cred.go` |
+| 6 | `internal/wincred/cred_test.go` | `internal/engines/antigravity/wincred/cred_test.go` |
+| 7 | `internal/wincred/types.go` | `internal/core/wincred/types.go` |
+| 8 | `internal/version/version.go` | `internal/core/version/version.go` |
+| 9 | `internal/version/version_test.go` | `internal/core/version/version_test.go` |
+| 10 | `internal/i18n/dictionary.go` | `internal/core/i18n/dictionary.go` |
+| 11 | `internal/i18n/locale.go` | `internal/core/i18n/locale.go` |
+| 12 | `internal/i18n/i18n_test.go` | `internal/core/i18n/i18n_test.go` |
+| 13 | `internal/i18n/locales/en.json` | `internal/core/i18n/locales/en.json` |
+| 14 | `internal/i18n/locales/vi.json` | `internal/core/i18n/locales/vi.json` |
+| 15 | `internal/store/preferences_store.go` | `internal/core/preferences/preferences_store.go` |
+| 16 | `internal/store/preferences_store_test.go` | `internal/core/preferences/preferences_store_test.go` |
+| 17 | `internal/scanner/chrome_scanner.go` | `internal/engines/antigravity/scanner/chrome_scanner.go` |
+| 18 | `internal/scanner/chrome_scanner_test.go` | `internal/engines/antigravity/scanner/chrome_scanner_test.go` |
+| 19 | `internal/reloader/active_threads.go` | `internal/engines/antigravity/reloader/active_threads.go` |
+| 20 | `internal/reloader/active_threads_test.go` | `internal/engines/antigravity/reloader/active_threads_test.go` |
+| 21 | `internal/reloader/continuation.go` | `internal/engines/antigravity/reloader/continuation.go` |
+| 22 | `internal/reloader/continuation_test.go` | `internal/engines/antigravity/reloader/continuation_test.go` |
+| 23 | `internal/reloader/session_reloader.go` | `internal/engines/antigravity/reloader/session_reloader.go` |
+| 24 | `internal/reloader/reloader_test.go` | `internal/engines/antigravity/reloader/reloader_test.go` |
+| 25 | `internal/telemetry/client.go` | `internal/engines/antigravity/telemetry/client.go` |
+| 26 | `internal/telemetry/cache.go` | `internal/engines/antigravity/telemetry/cache.go` |
+| 27 | `internal/telemetry/cache_test.go` | `internal/engines/antigravity/telemetry/cache_test.go` |
+| 28 | `internal/telemetry/loop.go` | `internal/engines/antigravity/telemetry/loop.go` |
+| 29 | `internal/telemetry/pool.go` | `internal/engines/antigravity/telemetry/pool.go` |
+| 30 | `internal/telemetry/tier.go` | `internal/engines/antigravity/telemetry/tier.go` |
+| 31 | `internal/telemetry/quota_test.go` | `internal/engines/antigravity/telemetry/quota_test.go` |
+| 32 | `internal/telemetry/telemetry_test.go` | `internal/engines/antigravity/telemetry/telemetry_test.go` |
+| 33 | `internal/connector/discovery.go` | `internal/engines/antigravity/connector/discovery.go` |
+| 34 | `internal/connector/discovery_test.go` | `internal/engines/antigravity/connector/discovery_test.go` |
+| 35 | `internal/connector/endpoints.go` | `internal/engines/antigravity/connector/endpoints.go` |
+| 36 | `internal/connector/agent_state_stream.go` | `internal/engines/antigravity/connector/agent_state_stream.go` |
+| 37 | `internal/connector/api_client.go` | `internal/engines/antigravity/connector/api_client.go` |
+| 38 | `internal/connector/automation_rpc.go` | `internal/engines/antigravity/connector/automation_rpc.go` |
+| 39 | `internal/connector/automation_rpc_test.go` | `internal/engines/antigravity/connector/automation_rpc_test.go` |
+| 40 | `internal/connector/oauth_refresher.go` | `internal/engines/antigravity/connector/oauth_refresher.go` |
+| 41 | `internal/connector/oauth_refresher_test.go` | `internal/engines/antigravity/connector/oauth_refresher_test.go` |
+| 42 | `internal/connector/connector_test.go` | `internal/engines/antigravity/connector/connector_test.go` |
+| 43 | `internal/model/types.go` | `internal/engines/antigravity/model/types.go` |
+| 44 | `internal/model/types_test.go` | `internal/engines/antigravity/model/types_test.go` |
+| 45 | `internal/store/account_store.go` | `internal/engines/antigravity/store/account_store.go` |
+| 46 | `internal/store/account_store_test.go` | `internal/engines/antigravity/store/account_store_test.go` |
+| 47 | `internal/store/discovered_store.go` | `internal/engines/antigravity/store/discovered_store.go` |
+| 48 | `internal/store/discovered_store_test.go` | `internal/engines/antigravity/store/discovered_store_test.go` |
+| 49 | `internal/store/sanitizer.go` | `internal/engines/antigravity/store/sanitizer.go` |
+| 50 | `internal/manager/account_manager.go` | `internal/engines/antigravity/manager/account_manager.go` |
+| 51 | `internal/manager/account_manager_test.go` | `internal/engines/antigravity/manager/account_manager_test.go` |
+| 52 | `internal/manager/manager_test.go` | `internal/engines/antigravity/manager/manager_test.go` |
+| 53 | `internal/manager/timeline.go` | `internal/engines/antigravity/manager/timeline.go` |
+| 54 | `internal/manager/timeline_test.go` | `internal/engines/antigravity/manager/timeline_test.go` |
+| 55 | `internal/manager/two_store_test.go` | `internal/engines/antigravity/manager/two_store_test.go` |
+| 56 | `internal/automation/controller.go` | `internal/engines/antigravity/automation/controller.go` |
+| 57 | `internal/automation/controller_test.go` | `internal/engines/antigravity/automation/controller_test.go` |
+| 58 | `internal/automation/model_quota.go` | `internal/engines/antigravity/automation/model_quota.go` |
+| 59 | `internal/automation/model_quota_test.go` | `internal/engines/antigravity/automation/model_quota_test.go` |
+| 60 | `internal/automation/retry.go` | `internal/engines/antigravity/automation/retry.go` |
+| 61 | `internal/automation/retry_test.go` | `internal/engines/antigravity/automation/retry_test.go` |
+| 62 | `internal/automation/sorter.go` | `internal/engines/antigravity/automation/sorter.go` |
+| 63 | `internal/automation/sorter_test.go` | `internal/engines/antigravity/automation/sorter_test.go` |
+| 64 | `internal/automation/switch_gate_windows.go` | `internal/engines/antigravity/automation/switch_gate_windows.go` |
+| 65 | `internal/automation/switch_gate_windows_test.go` | `internal/engines/antigravity/automation/switch_gate_windows_test.go` |
+| 66 | `internal/automation/automation_e2e_test.go` | `internal/engines/antigravity/automation/automation_e2e_test.go` |
+| 67 | `internal/automation/runtime_regression_test.go` | `internal/engines/antigravity/automation/runtime_regression_test.go` |
+| 68 | `internal/ui/window.go` | `internal/ui/window.go` |
+| 69 | `internal/ui/sidebar.go` | `internal/ui/sidebar.go` |
+| 70 | `internal/ui/app.go` | `internal/ui/app.go` |
+| 71 | `internal/ui/widgets.go` | `internal/ui/widgets.go` |
+| 72 | `internal/ui/themes.go` | `internal/ui/themes.go` |
+| 73 | `internal/ui/add_modal.go` | `internal/ui/add_modal.go` |
+| 74 | `internal/ui/quota_badge.go` | `internal/ui/quota_badge.go` |
+| 75 | `internal/ui/compact_button.go` | `internal/ui/compact_button.go` |
+| 76 | `internal/ui/tray.go` | `internal/ui/tray.go` |
+| 77 | `internal/ui/assets.go` | `internal/ui/assets.go` |
+| 78 | `internal/ui/single_instance_windows.go` | `internal/ui/single_instance_windows.go` |
+| 79 | `internal/ui/single_instance_other.go` | `internal/ui/single_instance_other.go` |
+| 80 | `internal/ui/frameless_windows.go` | `internal/ui/frameless_windows.go` |
+| 81 | `internal/ui/frameless_other.go` | `internal/ui/frameless_other.go` |
+| 82 | `internal/ui/window_resize.go` | `internal/ui/window_resize.go` |
+| 83 | `internal/ui/window_resize_windows.go` | `internal/ui/window_resize_windows.go` |
+| 84 | `internal/ui/window_resize_other.go` | `internal/ui/window_resize_other.go` |
+| 85 | `internal/ui/assets/antigravity_logo.png` | `internal/ui/assets/antigravity_logo.png` |
+| 86 | `internal/ui/assets/logo.png` | `internal/ui/assets/logo.png` |
+| 87 | `internal/ui/ui_test.go` | `internal/ui/ui_test.go` |
+| 88 | `internal/ui/phase1_sidebar_test.go` | `internal/ui/phase1_sidebar_test.go` |
+| 89 | `internal/ui/themes_test.go` | `internal/ui/themes_test.go` |
+| 90 | `internal/ui/widgets_test.go` | `internal/ui/widgets_test.go` |
+| 91 | `internal/ui/add_modal_test.go` | `internal/ui/add_modal_test.go` |
+| 92 | `internal/ui/add_modal_acceptance_test.go` | `internal/ui/add_modal_acceptance_test.go` |
+| 93 | `internal/ui/footer_bar_acceptance_test.go` | `internal/ui/footer_bar_acceptance_test.go` |
+| 94 | `internal/ui/i18n_acceptance_test.go` | `internal/ui/i18n_acceptance_test.go` |
+| 95 | `internal/ui/liveness_watcher_test.go` | `internal/ui/liveness_watcher_test.go` |
+| 96 | `internal/ui/account_status_acceptance_test.go` | `internal/ui/account_status_acceptance_test.go` |
+| 97 | `internal/ui/account_deletion_acceptance_test.go` | `internal/ui/account_deletion_acceptance_test.go` |
+| 98 | `internal/ui/automation_binding_test.go` | `internal/ui/automation_binding_test.go` |
+| 99 | `internal/ui/two_store_test.go` | `internal/ui/two_store_test.go` |
+| 100 | `internal/ui/two_store_native_test.go` | `internal/ui/two_store_native_test.go` |
+| 101 | `internal/ui/window_native_test.go` | `internal/ui/window_native_test.go` |
+| 102 | `internal/ui/window_resize_test.go` | `internal/ui/window_resize_test.go` |
+| 103 | `internal/ui/window_resize_native_test.go` | `internal/ui/window_resize_native_test.go` |
+| 104 | `internal/ui/app_test.go` | `internal/ui/app_test.go` |
 
----
+## 2.2. File bổ sung và file ngoài cây source
 
-# PHẦN 3: LỘ TRÌNH THI CÔNG TUẦN TỰ TỪNG BƯỚC NHỎ (SUB-PHASES CỦA 1B)
+| Loại | Đường dẫn chính xác | Bước / hành động |
+|---|---|---|
+| Tách mới từ cred.go cũ | `internal/core/wincred/cred.go` | 1B.1 raw API |
+| Test mới | `internal/core/wincred/cred_test.go` | 1B.1 kiểm raw contract |
+| File mới 0 byte | `internal/engines/codex/.gitkeep` | 1B.5 duy nhất file này |
+| Giữ vị trí, sửa | `scripts/build_windows.ps1` | 1B.1 version path và hai linker symbol |
+| Giữ vị trí, sửa | `reports/system-architect/rp_system-architect_261028_220000_by_antigravity_phase_1b_antigravity_backend_directory_refactoring_and_core_isolation.md` | R2 theo yêu cầu Owner |
 
-Để đảm bảo an toàn tuyệt đối và zero-downtime, Coder bắt buộc phải thực thi tuần tự theo 5 bước con dưới đây:
-
-### 🟢 BƯỚC 1B.1: Di dời Tầng Lõi Dùng Chung (`internal/core/`) — [13 files]
-1. Tạo thư mục `internal/core/` cùng các thư mục con: `wincred/`, `version/`, `i18n/`, `preferences/`.
-2. Di chuyển các file từ STT 6 đến STT 17 theo đúng bảng Khối 2.
-3. Tạo file `internal/core/engine.go` định nghĩa Interface `IDEEngine`.
-4. Cập nhật các import path trong các file đã di dời và các caller phụ thuộc.
-5. 🎯 **Cổng Kiểm Tra 1B.1**: Chạy `go test ./internal/core/... -v`. Phải đạt **100% PASS** mới được sang Bước 1B.2.
-
----
-
-### 🟢 BƯỚC 1B.2: Di dời Phân Hệ Backend Độc Lập của Antigravity — [26 files]
-1. Tạo thư mục `internal/engines/antigravity/` cùng các thư mục con: `scanner/`, `reloader/`, `telemetry/`, `connector/`.
-2. Di chuyển 26 files từ STT 18 đến STT 43 theo đúng bảng Khối 3.A, 3.B, 3.C, 3.D.
-3. Cập nhật import paths nội bộ giữa các package này.
-4. 🎯 **Cổng Kiểm Tra 1B.2**: Chạy kiểm thử các package vừa di dời:
-   ```powershell
-   go test ./internal/engines/antigravity/scanner/... -v
-   go test ./internal/engines/antigravity/reloader/... -v
-   go test ./internal/engines/antigravity/telemetry/... -v
-   go test ./internal/engines/antigravity/connector/... -v
-   ```
-   Phải đạt **100% PASS** mới được sang Bước 1B.3.
-
----
-
-### 🟢 BƯỚC 1B.3: Di dời Phân Hệ Backend Lõi của Antigravity — [24 files]
-1. Tạo các thư mục con còn lại: `model/`, `store/`, `manager/`, `automation/` trong `internal/engines/antigravity/`.
-2. Di chuyển 24 files từ STT 44 đến STT 68 theo đúng bảng Khối 3.E, 3.F, 3.G, 3.H.
-3. Cập nhật toàn bộ import paths kết nối toàn bộ hệ thống Backend Antigravity.
-4. 🎯 **Cổng Kiểm Tra 1B.3**: Chạy toàn bộ kiểm thử backend Antigravity:
-   ```powershell
-   go test ./internal/engines/antigravity/... -v
-   ```
-   Phải đạt **100% PASS** mới được sang Bước 1B.4.
-
----
-
-### 🟢 BƯỚC 1B.4: Đồng bộ Hóa Tầng Giao Diện `internal/ui/` & `cmd/switcher/`
-1. Cập nhật các import paths trong `internal/ui/*.go` và `cmd/switcher/main.go` trỏ về đúng đường dẫn mới:
-   - Thay `antigravity-switch/internal/connector` ➔ `antigravity-switch/internal/engines/antigravity/connector`
-   - Thay `antigravity-switch/internal/manager` ➔ `antigravity-switch/internal/engines/antigravity/manager`
-   - Thay `antigravity-switch/internal/telemetry` ➔ `antigravity-switch/internal/engines/antigravity/telemetry`
-   - Thay `antigravity-switch/internal/automation` ➔ `antigravity-switch/internal/engines/antigravity/automation`
-   - Thay `antigravity-switch/internal/i18n` ➔ `antigravity-switch/internal/core/i18n`
-   - Thay `antigravity-switch/internal/wincred` ➔ `antigravity-switch/internal/core/wincred`
-   - Thay `antigravity-switch/internal/version` ➔ `antigravity-switch/internal/core/version`
-2. 🎯 **Cổng Kiểm Tra 1B.4**: Chạy `go test ./internal/ui/... -v` và `go test ./cmd/switcher/... -v`. Phải đạt **100% PASS**.
-
----
-
-### 🟢 BƯỚC 1B.5: Khởi tạo Thư mục Gốc `internal/engines/codex/`
-1. Tạo thư mục rỗng `internal/engines/codex/` (tạo file `.gitkeep` bên trong để git ghi nhận).
-2. Tuyệt đối không tạo thêm bất kỳ file/folder nào khác trong `codex/`.
-
----
-
-### 🟢 BƯỚC 1B.6: Biên Dịch Tổng Thể Hệ Thống & Kiểm Tra Toàn Diện
-1. Chạy script build Windows chuẩn của repository:
-   ```powershell
-   .\scripts\build_windows.ps1
-   ```
-2. Chạy toàn bộ test suite của toàn dự án:
-   ```powershell
-   go test ./... -v
-   ```
-3. Chạy file nhị phân vừa build để xác nhận giao diện hoạt động 100% bình thường, không có lỗi runtime.
-
----
-
-# PHẦN 4: NGUYÊN TẮC BẤT BIẾN KIẾN TRÚC CHO GIAI ĐOẠN 1B
-
-1. **Zero-Ellipsis Invariant (Bất biến không viết tắt):** Mọi tài liệu và chỉ dẫn di dời file phải chỉ đích danh từng file, tuyệt đối cấm dùng dấu ba chấm `...` gây hiểu nhầm.
-2. **Zero-Dangling Import Invariant (Bất biến import sạch):** Sau khi hoàn thành Giai đoạn 1B, không còn bất kỳ dòng import nào trỏ tới các package cũ đã di dời.
-3. **Empty Codex Engine Invariant (Bất biến Codex rỗng):** Thư mục `internal/engines/codex/` chỉ là thư mục chờ, cấu trúc bên trong sẽ do Chủ tịch và System Architect thảo luận tại Giai đoạn 2.
-4. **Clean Worktree Invariant:** Sau khi hoàn tất và chạy build thành công, `git status --porcelain` phải trả về 0 dòng.
+Không tạo `internal/core/engine.go`, không giữ compatibility package tại đường dẫn cũ. Alias sentinel trong token adapter chỉ để bảo toàn identity lỗi.
 
 ---
 
-# PHẦN 5: ĐIỀU KIỆN CHUYỂN SANG GIAI ĐOẠN 2
+# PHẦN 3: CALLER TOUCH-MAP THEO BƯỚC
 
-Sau khi Coder hoàn thành toàn bộ 5 bước của Giai đoạn 1B, được QA và Supervisor kiểm duyệt và nghiệm thu **PASS 100%**:
-- Chủ tịch sẽ kiểm tra thực tế cấu trúc repository.
-- Sau khi Chủ tịch phê duyệt PASS Giai đoạn 1B, Chủ tịch và System Architect sẽ chính thức bắt đầu phiên thảo luận chuyên sâu về **GIAI ĐOẠN 2 (Thiết kế chi tiết nội bộ Backend Codex và Đưa Tab Codex lên Giao diện)**.
+Paths dưới đây là vị trí baseline; nếu file đã move, tra bảng 2.1 để lấy vị trí đang có. Bảng lấy từ import source thực; trước thi công phải quét lại source drift. Mỗi bước phải cập nhật cả production và test caller, không đợi 1B.4.
+
+## 1B.1 — caller phải cập nhật
+
+| File tại baseline | Import/symbol bị ảnh hưởng |
+|---|---|
+| `internal/manager/account_manager_test.go` | wincred |
+| `internal/manager/account_manager.go` | wincred |
+| `internal/manager/two_store_test.go` | wincred |
+| `internal/ui/account_deletion_acceptance_test.go` | wincred |
+| `internal/ui/add_modal_acceptance_test.go` | wincred |
+| `internal/ui/add_modal_test.go` | wincred |
+| `internal/ui/add_modal.go` | i18n |
+| `internal/ui/app.go` | i18n |
+| `internal/ui/i18n_acceptance_test.go` | i18n |
+| `internal/ui/liveness_watcher_test.go` | i18n |
+| `internal/ui/phase1_sidebar_test.go` | i18n, version |
+| `internal/ui/quota_badge.go` | i18n |
+| `internal/ui/sidebar.go` | i18n |
+| `internal/ui/themes.go` | preferences: bốn qualifier tại Phần 1.4 |
+| `internal/ui/tray.go` | i18n |
+| `internal/ui/two_store_native_test.go` | wincred |
+| `internal/ui/two_store_test.go` | wincred |
+| `internal/ui/widgets.go` | i18n |
+| `internal/ui/window.go` | i18n, version |
+
+## 1B.2 — caller phải cập nhật
+
+| File tại baseline | Import/symbol bị ảnh hưởng |
+|---|---|
+| `cmd/switcher/main_test.go` | connector, reloader |
+| `cmd/switcher/main.go` | reloader |
+| `internal/automation/automation_e2e_test.go` | connector, reloader, telemetry |
+| `internal/automation/controller_test.go` | connector, reloader, telemetry |
+| `internal/automation/controller.go` | connector, telemetry |
+| `internal/automation/model_quota_test.go` | telemetry |
+| `internal/automation/model_quota.go` | telemetry |
+| `internal/automation/retry_test.go` | connector |
+| `internal/automation/retry.go` | connector, reloader |
+| `internal/automation/runtime_regression_test.go` | connector, telemetry |
+| `internal/automation/sorter_test.go` | telemetry |
+| `internal/automation/sorter.go` | telemetry |
+| `internal/manager/account_manager_test.go` | connector, reloader |
+| `internal/manager/account_manager.go` | connector, reloader, scanner, telemetry |
+| `internal/manager/manager_test.go` | connector, reloader |
+| `internal/manager/timeline_test.go` | connector, reloader |
+| `internal/manager/two_store_test.go` | connector |
+| `internal/reloader/continuation_test.go` | connector |
+| `internal/reloader/continuation.go` | connector |
+| `internal/reloader/reloader_test.go` | connector |
+| `internal/reloader/session_reloader.go` | connector |
+| `internal/telemetry/client.go` | connector |
+| `internal/telemetry/pool.go` | connector |
+| `internal/telemetry/quota_test.go` | connector |
+| `internal/telemetry/telemetry_test.go` | connector |
+| `internal/ui/account_deletion_acceptance_test.go` | connector, reloader, telemetry |
+| `internal/ui/account_status_acceptance_test.go` | connector, reloader, telemetry |
+| `internal/ui/add_modal_acceptance_test.go` | connector, reloader, telemetry |
+| `internal/ui/add_modal_test.go` | connector |
+| `internal/ui/app.go` | connector, telemetry |
+| `internal/ui/automation_binding_test.go` | connector, telemetry |
+| `internal/ui/footer_bar_acceptance_test.go` | connector |
+| `internal/ui/liveness_watcher_test.go` | connector |
+| `internal/ui/quota_badge.go` | telemetry |
+| `internal/ui/themes_test.go` | telemetry |
+| `internal/ui/two_store_native_test.go` | connector |
+| `internal/ui/two_store_test.go` | connector |
+| `internal/ui/ui_test.go` | connector, reloader, telemetry |
+| `internal/ui/widgets.go` | telemetry |
+
+## 1B.3 — caller phải cập nhật
+
+| File tại baseline | Import/symbol bị ảnh hưởng |
+|---|---|
+| `cmd/switcher/main_test.go` | automation, manager, model, store |
+| `cmd/switcher/main.go` | manager, store |
+| `internal/automation/automation_e2e_test.go` | manager, model, store |
+| `internal/automation/controller_test.go` | manager, model, store |
+| `internal/automation/controller.go` | manager |
+| `internal/automation/switch_gate_windows.go` | manager |
+| `internal/manager/account_manager_test.go` | model, store |
+| `internal/manager/account_manager.go` | model, store |
+| `internal/manager/manager_test.go` | model, store |
+| `internal/manager/timeline_test.go` | model, store |
+| `internal/manager/two_store_test.go` | model, store |
+| `internal/store/account_store_test.go` | model |
+| `internal/store/account_store.go` | model |
+| `internal/telemetry/pool.go` | store |
+| `internal/telemetry/telemetry_test.go` | model, store |
+| `internal/ui/account_deletion_acceptance_test.go` | manager, model, store |
+| `internal/ui/account_status_acceptance_test.go` | automation, manager, model, store |
+| `internal/ui/add_modal_acceptance_test.go` | automation, manager, model, store |
+| `internal/ui/add_modal_test.go` | manager, model, store |
+| `internal/ui/add_modal.go` | manager, model |
+| `internal/ui/app_test.go` | automation, model, store |
+| `internal/ui/app.go` | automation, manager |
+| `internal/ui/automation_binding_test.go` | automation, manager |
+| `internal/ui/footer_bar_acceptance_test.go` | manager |
+| `internal/ui/i18n_acceptance_test.go` | manager, model |
+| `internal/ui/liveness_watcher_test.go` | manager |
+| `internal/ui/phase1_sidebar_test.go` | manager |
+| `internal/ui/themes_test.go` | manager |
+| `internal/ui/two_store_native_test.go` | manager, model, store |
+| `internal/ui/two_store_test.go` | manager, model, store |
+| `internal/ui/ui_test.go` | automation, manager, model, store |
+| `internal/ui/widgets_test.go` | manager |
+| `internal/ui/widgets.go` | manager |
+| `internal/ui/window_native_test.go` | manager |
+| `internal/wincred/cred_test.go` | model |
+| `internal/wincred/cred.go` | model |
+
+
+Lưu ý bảng 1B.3: các dòng wincred được sửa tại vị trí token adapter mới; raw core không được có import model. Hai file preferences chỉ đổi package declaration ở 1B.1 và không được chuyển lại vào engine store.
+
+---
+
+# PHẦN 4: LỘ TRÌNH VÀ CỔNG KIỂM TRA
+
+## 4.1. Quy tắc chung và cổng G
+
+1. Chạy lệnh từ root `G:\antigravity_auto_switch` bằng PowerShell. Sau mỗi native command kiểm tra `$LASTEXITCODE`; khác 0 là FAIL, trừ quy ước không-match của rg ở 5.1. Không chạy tiếp để che exit code.
+2. Mỗi slice gồm move/tách source, sửa mọi caller, gofmt file Go đổi, kiểm tra, QA/Supervisor và commit riêng. Không commit trạng thái import gãy.
+3. Không giảm assertions, skip test hoặc thay logic nghiệp vụ để làm gate xanh. Baseline fail phải được ghi và xử lý đúng nguyên nhân trước khi mở slice.
+4. Không dùng reset/clean/xóa dữ liệu hoặc stage thay đổi của người khác để đạt worktree sạch.
+5. Theo working-rules áp dụng cho công việc nhiều module này, planner phải tạo/cập nhật ledger `docs/plans` trước coding và chỉ mở slice hiện tại. Báo cáo này là đầu vào kiến trúc/thi công; ledger phải bám hợp đồng này, không tự thiết kế thêm scope.
+6. Dấu `...` trong pattern Go là cú pháp đệ quy, không phải viết tắt danh sách file. Touch-map phải ghi đích danh từng file.
+7. Cổng G dưới đây áp dụng sau từng bước 1B.1–1B.5; 1B.6 kiểm tra trạng thái cuối. Không chỉ test package vừa move.
+
+```powershell
+$env:GOOS = 'windows'
+$env:GOARCH = 'amd64'
+$env:CGO_ENABLED = '1'
+go list ./...
+if ($LASTEXITCODE -ne 0) { throw "Gate failed; stop this slice" }
+go test -count=1 ./...
+if ($LASTEXITCODE -ne 0) { throw "Gate failed; stop this slice" }
+.\scripts\build_windows.ps1
+if ($LASTEXITCODE -ne 0) { throw "Gate failed; stop this slice" }
+git diff --check
+if ($LASTEXITCODE -ne 0) { throw "Diff validation failed" }
+```
+
+Script build có vet/test; lệnh `-count=1` bảo đảm một lượt test không lấy cache. Sau build chạy native gate ở 5.2 và smoke binary ở 5.3. Không chạy build đồng thời native suite/app smoke vì build script có thể dừng executable đang chạy.
+
+## 4.2. Bước 1B.0 — baseline
+
+- Ghi HEAD, branch, `git status --porcelain`, `go version`, `go env GOOS GOARCH CGO_ENABLED CC`, compiler/resource tool và trạng thái app.
+- Đối chiếu 104 paths bảng 2.1; syso có thể chưa có ở fresh clone và phải được sinh bởi build, không được yêu cầu tracked. Xác nhận ba output mới chưa bị chiếm dụng.
+- Nếu source drift so với baseline R2, liệt kê file khác và cập nhật map trước move, không bỏ sót source mới.
+- Chạy G, native suite và runtime smoke baseline; lưu exit code/test JSON/ảnh. Nếu gate bắt buộc fail hoặc môi trường không đáp ứng, chưa mở 1B.1.
+- Đóng Auto Switcher bình thường trước build/native; không kill IDE Antigravity. Không chạy các test có side effect trên account/credential thật.
+- Giữ nguyên thay đổi có sẵn của người khác, ghi vào baseline; nếu không thể cô lập thì dùng checkout riêng theo quy trình dự án. Không tự stage/commit chúng.
+
+## 4.3. Bước 1B.1 — core và token adapter
+
+**Move 12 file baseline, tạo thêm hai file raw core, cập nhật caller/build trong cùng bước.**
+
+- Move wincred/version/i18n/preferences theo bảng 2.1; tách raw/token theo 1.3.
+- Package core và adapter đều tên wincred; adapter import core bằng alias corewincred.
+- Đổi package preferences và themes caller theo 1.4; cập nhật toàn bộ caller bảng 1B.1.
+- Sửa version source path và hai linker flags ngay khi move version. Không đợi bước build cuối.
+- Không tạo engine.go. Không giữ package bridge ở path cũ.
+
+```powershell
+go test -count=1 ./internal/core/...
+go test -count=1 ./internal/engines/antigravity/wincred
+```
+
+Sau đó G. Acceptance riêng: raw contract và token tests PASS, sentinel identity giữ nguyên, preferences/i18n/version vẫn hoạt động; core không import domain cũ/engine. Ghi SKIP của live read riêng, không coi là tích hợp thật đã PASS.
+
+## 4.4. Bước 1B.2 — scanner/reloader/telemetry/connector
+
+**Move 26 file:** scanner 2, reloader 6, telemetry 8, connector 10.
+
+- Move theo bảng 2.1 và cập nhật toàn bộ bảng caller 1B.2, gồm manager/automation/UI/entrypoint dù chúng chưa move.
+- Nhóm này không độc lập hoàn toàn: telemetry còn dùng store, caller còn dùng package cũ khác. Các import model/store/manager/automation chưa move vẫn hợp lệ cho tới 1B.3.
+
+```powershell
+go test -count=1 ./internal/engines/antigravity/scanner ./internal/engines/antigravity/reloader ./internal/engines/antigravity/telemetry ./internal/engines/antigravity/connector
+```
+
+Sau đó G. Acceptance: toàn bộ graph compile/test, không còn import bốn path đã move; discovery/RPC/OAuth/quota/continuation không thay hành vi.
+
+## 4.5. Bước 1B.3 — model/store/manager/automation
+
+**Move 25 file:** model 2, store 5, manager 6, automation 12. Preferences đã tách, không move lại.
+
+- Move theo bảng 2.1 và sửa toàn bộ bảng caller 1B.3, gồm model import trong token adapter mới.
+- Chỉ xóa thư mục source cũ khi đã rỗng sau move và đã xác minh absolute path nằm trong repo; không xóa thư mục runtime trùng tên.
+
+```powershell
+go test -count=1 ./internal/engines/antigravity/...
+```
+
+Sau đó G. Acceptance: account/discovered stores, manager/timeline, switch/automation/retry/continuation giữ behavior; core không phụ thuộc engine trực tiếp hoặc gián tiếp.
+
+## 4.6. Bước 1B.4 — audit UI và entrypoint
+
+**Không move thêm file.** Caller đã sửa ngay ở bước phát sinh; đây là audit tích hợp, không phải lần đầu sửa import UI.
+
+- Rà đủ 37 file UI và 4 entrypoint/resource, gồm `cmd/switcher/main_test.go` và ba test native.
+- Kiểm alias preferences/token adapter, import cũ, startup wiring và asset/embed.
+
+```powershell
+go test -count=1 ./internal/ui ./cmd/switcher
+```
+
+Sau đó G. Giữ sidebar Antigravity, startup size/layout, label/icon, theme/locale, account actions, tray/single-instance. Không tạo tab Codex. Nếu audit không tạo diff source thì chỉ ghi evidence/ledger, không tạo sửa đổi giả hoặc empty commit.
+
+## 4.7. Bước 1B.5 — placeholder Codex
+
+- Tạo đúng `internal/engines/codex/.gitkeep` dài 0 byte.
+- Chạy G và `Get-ChildItem -Force -Recurse internal/engines/codex`.
+- Acceptance: chỉ một file gitkeep, không có thư mục con, source Go hoặc import Codex. Test count không giảm do placeholder.
+
+## 4.8. Bước 1B.6 — nghiệm thu cuối
+
+- Đối chiếu toàn bộ map, ba output mới, tổng file; không có engine.go và source ở đường dẫn cũ.
+- Chạy G, dependency/resource checks, native và runtime smoke đầy đủ.
+- QA ghi evidence từng invariant; Supervisor kiểm tra độc lập diff/source/log/ảnh/runtime. Không ghi PASS trước evidence.
+- Commit từng slice đã được nghiệm thu; không gom toàn đợt chưa kiểm vào một commit.
+- Sau commit chạy `git status --porcelain`: baseline sạch thì output phải rỗng. Baseline có thay đổi của người khác thì chỉ yêu cầu không còn thay đổi chưa commit thuộc phase 1B, phần còn lại phải khớp baseline.
+- Không xóa ignored runtime data để đạt trạng thái sạch. Nếu smoke làm thay đổi tracked file, điều tra owner/path và xử lý đúng phạm vi.
+- Gate fail thì dừng bước tiếp theo, sửa invariant bị fail và chạy lại kiểm tra liên quan.
+
+---
+
+# PHẦN 5: VERIFICATION VÀ EVIDENCE
+
+## 5.1. Import, dependency và build resource
+
+Quét source/build scripts, không quét báo cáo lịch sử làm gate vì chúng cố ý ghi path cũ.
+
+```powershell
+rg -n 'antigravity-switch/internal/(wincred|version|i18n|scanner|reloader|telemetry|connector|model|store|manager|automation)(/|")' cmd internal scripts -g '*.go' -g '*.ps1'
+rg -n 'internal[\\/]+version|antigravity-switch/internal/version' scripts -g '*.ps1'
+go list -deps -test ./internal/core/...
+go version -m .\bin\antigravity-switch.exe
+```
+
+- Gate cuối không có match path cũ. `rg` exit 1 là không có match; lớn hơn 1 là lỗi scan. Tại bước trung gian chỉ cấm path đã move.
+- Core dependency list không chứa engine/UI/cmd/domain cũ; kiểm cả test dependency, không chỉ import sản phẩm.
+- Default go list không bao phủ tagged native files, cần gate 5.2.
+- I18n JSON, UI assets và resource không thay nội dung ngoài version sync đã dự kiến; version ứng dụng không được tự tăng.
+- Binary metadata phải chứa hai linker symbol mới và giá trị version/commit đúng lúc build. So với HEAD lúc build, không so HEAD của commit evidence tạo sau đó.
+- Diff được phép: move, import/qualifier, package preferences, raw/token split, sentinel alias, tests cho boundary mới, bỏ token khỏi message lỗi test, build version path/symbol, gitkeep. Thay đổi thuật toán ngoài đây phải được xử lý riêng.
+
+## 5.2. Native GUI gate
+
+Ba file cần được chọn:
+
+- `internal/ui/window_native_test.go`
+- `internal/ui/window_resize_native_test.go`
+- `internal/ui/two_store_native_test.go`
+
+Dùng Windows desktop tương tác, CGO/compiler GUI. Đóng Auto Switcher trước test: TestMain từ chối chạy nếu cửa sổ thật đang tồn tại. Không đóng IDE Antigravity và không chạy test native đồng thời release smoke.
+
+```powershell
+go list -tags 'gui nativeui' -f '{{.TestGoFiles}}' ./internal/ui
+go test -tags 'gui nativeui' -count=1 -run '^TestNative' -v ./internal/ui
+```
+
+Bốn test phải thực sự được chạy và PASS:
+
+- `TestNativeWindowMaximizeRestoreAndGrid`
+- `TestNativeWindowGeometryAndPointer`
+- `TestNativeWindowManualResize`
+- `TestNativeTwoStoreRefreshAndResize`
+
+Không trộn toàn bộ test UI thường vào GUI harness khi chưa chứng minh hỗ trợ; test thường đã chạy riêng trong G.
+
+Harness hỗ trợ `NATIVE_WINDOW_CAPTURE`, `NATIVE_MAXIMIZE_CAPTURE`, `TWO_STORE_CAPTURE`. Đặt biến này thành absolute path trong evidence của slice, tạo parent directory trước test. Mở ảnh để xác nhận native geometry/canvas, hit targets, resize/maximize/restore và ba trạng thái account/warning. Không dùng ảnh cũ chứng minh binary mới.
+
+Không có desktop hoặc không chạy được native suite → ghi BLOCKED native gate; không thay bằng unit PASS.
+
+## 5.3. Regression và release smoke
+
+| Boundary | Kiểm chứng | Hành vi phải giữ |
+|---|---|---|
+| Raw credential | Test mới target riêng | Byte roundtrip, absent, validation, delete lặp |
+| Token adapter | Test cũ và boundary assertions bổ sung | Token roundtrip, parse/validation, sentinel identity, default target/user |
+| Preferences | Store tests và đổi setting/reopen trên app QA | JSON/path/default và save/load giữ nguyên |
+| I18n | Package/UI tests, ảnh VI/EN | Embed và nội dung dịch không đổi |
+| Version/build | Build script, metadata binary, UI | Version/commit đúng, icon còn |
+| Account/discovered stores | Unit, manager two-store, native two-store | Active/ready/needs-OAuth và persistence không đổi |
+| Connector/telemetry | Existing fixture/server tests | Discovery/RPC/OAuth/quota/cache giữ kết quả |
+| Switch/automation/continuation | Manager, automation E2E/runtime regression, reloader tests | Thứ tự và side effect theo fixtures, không đổi policy |
+| Native UI | Bốn native tests và ảnh | Geometry, pointer, pin, resize, maximize/restore, refresh |
+| Release binary | Mở executable mới build | Startup/sidebar/theme/locale/footer/tray/hide-show/exit/single-instance |
+
+**Chuẩn bị release smoke bắt buộc:** chỉ đổi cwd không cô lập được dữ liệu. `internal/store/sanitizer.go` ưu tiên tìm repo từ executable trước cwd; `internal/ui/app.go` lấy logs/preferences từ parent của account store và có thể tự enable automation theo preferences đã lưu.
+
+1. Dùng Windows user/VM QA không chứa token hoặc Chrome profile cá nhân cho smoke cần cô lập hoàn toàn. Override account store không cô lập Windows Credential Manager hoặc profile IDE/Chrome.
+2. Tạo một QA root mới cho lượt chạy tại `.tmp/phase-1b-smoke-<mã lượt chạy>`, resolve thành absolute path dưới repo; tạo `accounts_store` và `logs` bên trong. Đây là runtime artifact, không cộng vào inventory source.
+3. Lưu giá trị hiện tại của biến môi trường `ANTIGRAVITY_STORE_DIR`; đặt biến của process launch thành absolute path `<QA root>/accounts_store` trước khi khởi chạy binary. Không thay environment toàn máy. Giữ override cho mọi lần reopen và kiểm single-instance của lượt smoke.
+4. Trước lần mở đầu tiên, ghi `<QA root>/logs/ui_preferences.json` bằng UTF-8 với `{"theme":"dark","mask_accounts":true,"auto_switch":false,"always_on_top":true,"language":"vi"}`. Dùng root mới để không kế thừa preference hoặc token cache của lượt khác.
+5. Chạy đúng absolute path binary vừa build, working directory là QA root. Xác nhận auto-switch OFF; xác nhận dữ liệu/log/preferences được sinh dưới QA root, không phải kho repo gốc. Account store override đồng thời đặt discovered store, quota log và timeline dưới cùng parent theo source baseline.
+6. Không bật automation, switch, add/delete account thật trong smoke. Kiểm nghiệp vụ đó bằng fixture/hook; đổi theme/locale rồi reopen phải tiếp tục dùng chính QA store override và giữ auto_switch:false.
+7. Sau khi đóng mọi process smoke, phục hồi giá trị environment ban đầu (hoặc bỏ biến nếu trước đó không có). Không xóa credential/default target hoặc account store thật để cleanup.
+
+Live-read tests vẫn có thể đọc session thật nếu chạy trên Windows user hiện tại. Ghi rõ phạm vi read-only và SKIP; mọi log/ảnh phải được kiểm tra và che dữ liệu cá nhân trước lưu evidence. Đặc biệt `TestLiveLanguageServerDiscoveryAndStatus` trong `internal/connector/connector_test.go` có log ActiveEmail; không commit log thô có email. Việc biên tập evidence chỉ che dữ liệu nhạy cảm, không xóa failure, thay exit code hoặc đổi verdict.
+
+Ghi path và SHA-256 executable đang mở. Kiểm theme dark/light/warm, VI/EN, lưu setting/mở lại và startup width/layout theo baseline đã nghiệm thu phase 1A. Native harness không thay cho việc mở release binary.
+
+Integration cần IDE/OAuth thật nhưng thiếu môi trường phải ghi NOT RUN/SKIP riêng cùng giới hạn fixture. Nếu đó là acceptance bắt buộc thì gate BLOCKED; không suy ra “100% tích hợp thật” từ mocked tests.
+
+## 5.4. Evidence, cleanup và rollback
+
+- Evidence từng bước đặt tại `reports/QA/phase-1b/1b-0/`, `reports/QA/phase-1b/1b-1/`, `reports/QA/phase-1b/1b-2/`, `reports/QA/phase-1b/1b-3/`, `reports/QA/phase-1b/1b-4/`, `reports/QA/phase-1b/1b-5/`, `reports/QA/phase-1b/1b-6/`.
+- Mỗi thư mục có `verification.md`, `verification.json`, `unit-tests.jsonl`, `native-tests.jsonl`, `build.log`, `dependencies.txt`; ảnh `native-window.png`, `native-maximize.png`, `native-two-store.png`, `runtime-dark-vi.png`, `runtime-light-en.png`, `runtime-warm-vi.png` khi gate đó chạy.
+- Dùng `go test -json` cùng package/tags/filter thay cho lượt -v để thu JSONL; không phải chạy lại chỉ để đổi định dạng. Lưu exit code trước lệnh khác.
+- MD/JSON ghi revision, dirty state, command/env, exit code, pass/fail/skip, binary hash, kết quả đọc ảnh, invariant và blocker. Không lưu token/blob/nội dung tài khoản cá nhân.
+- Supervisor kiểm source/diff/evidence thật; PASS tài liệu không thay cho PASS implementation.
+- Slice chưa commit bị lỗi: giữ evidence; nếu cần chỉ hoàn nguyên file do slice sở hữu, giữ thay đổi có sẵn. Slice đã commit: revert đúng commit theo quy trình, không reset lịch sử.
+- Không có schema migration; không rollback bằng xóa account stores, credentials hoặc logs người dùng.
+- Chỉ dọn artifact do đợt này sinh đã xác định superseded; giữ evidence hợp lệ và lịch sử báo cáo.
+
+---
+
+# PHẦN 6: ĐIỀU KIỆN KẾT THÚC VÀ BÀN GIAO
+
+Phase 1B hoàn tất khi map khớp source, core độc lập, import/script paths sạch, hành vi được bảo toàn, mọi gate bắt buộc có evidence PASS, Codex chỉ có gitkeep, QA/Supervisor PASS và worktree đối chiếu đúng baseline sau commit. Owner kiểm tra cấu trúc thực tế trước mở phase 2.
+
+Phase 2 mới thiết kế Codex, IDEEngine contract/lifecycle và tab Codex. Không tự triển khai chúng từ báo cáo 1B.
+
+## Nhật ký R2 và review tài liệu
+
+- Output cập nhật trực tiếp: chính báo cáo này; không tạo bản sao timestamp theo yêu cầu Owner.
+- Đã điều tra: inventory tracked/generated, caller imports, raw/token source/tests, preferences/theme, build script/version test và native harness.
+- Quyết định: tách raw/token, hoãn interface thiếu contract, sửa build paths, cập nhật caller nguyên tử, thêm native/runtime/evidence/rollback gates, sửa số lượng.
+- Chưa thực hiện trong lượt cập nhật tài liệu: move source, build/test sản phẩm hoặc nghiệm thu implementation.
+- Review độc lập Architect Review: **PASS tài liệu R2** sau khi sửa smoke isolation bằng absolute ANTIGRAVITY_STORE_DIR và seed auto_switch:false. Đã đối chiếu map/caller/raw-token/build/native gates; không còn blocker tài liệu được phát hiện. Đây không phải PASS implementation/runtime.
+- Kiểm tra tài liệu: 104 map rows bao phủ đủ 103 tracked source/asset và một syso generated; không trùng source/target; 7 khối PowerShell parse thành công; git diff --check PASS.
+- Commit tài liệu: tra lịch sử Git của file; commit baseline không phải commit triển khai.
