@@ -1,5 +1,7 @@
 {
-  "app_title": "Antigravity Multi-Account Switcher",
+  "app_title": "Auto Switcher",
+  "nav_antigravity": "Antigravity",
+  "nav_codex": "Codex",
   "lang_dropdown_label": "EN",
 
   "btn_add": "Add",

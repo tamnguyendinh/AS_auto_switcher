@@ -14,7 +14,7 @@ import (
 
 func main() {
 	// 1. Kiểm tra đơn bản sao (Single Instance Lock)
-	lock, isFirst := ui.TryAcquireSingleInstance("⚡ Antigravity Multi-Account Switcher")
+	lock, isFirst := ui.TryAcquireSingleInstance("⚡ Auto Switcher")
 	if !isFirst {
 		// Ứng dụng đã đang chạy, cửa sổ cũ đã được đưa lên trên màn hình -> Thoát bản sao mới ngay
 		os.Exit(0)

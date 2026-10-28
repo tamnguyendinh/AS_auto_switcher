@@ -18,7 +18,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const windowTitle = "⚡ Antigravity Multi-Account Switcher"
+const windowTitle = "⚡ Auto Switcher"
 
 var (
 	modUser32        = windows.NewLazySystemDLL("user32.dll")
@@ -51,9 +51,9 @@ func setWindowAlwaysOnTop(title string, isTop bool) {
 }
 
 const (
-	DefaultWindowWidth  float32 = 920.0
+	DefaultWindowWidth  float32 = 980.0
 	DefaultWindowHeight float32 = 630.0
-	MinWindowWidth      float32 = 480.0
+	MinWindowWidth      float32 = 640.0
 	MinWindowHeight     float32 = 360.0
 )
 
@@ -86,14 +86,14 @@ func (a *App) setupLayout() {
 	monogramStack := container.NewStack(a.monogramBg, container.NewCenter(monogramText))
 	monogramWrap := container.NewGridWrap(fyne.NewSize(26, 26), monogramStack)
 
-	titleLabel := widget.NewRichText(&widget.TextSegment{
-		Text: "Antigravity Multi-Account Switcher",
+	a.titleLabel = widget.NewRichText(&widget.TextSegment{
+		Text: i18n.Current().AppTitle,
 		Style: widget.RichTextStyle{
 			SizeName:  titleTextSizeName,
 			TextStyle: fyne.TextStyle{Bold: true},
 		},
 	})
-	titleLeft := container.NewHBox(monogramWrap, titleLabel)
+	titleLeft := container.NewHBox(monogramWrap, a.titleLabel)
 
 	// Standard window controls: [Dropdown VN/EN] -> [— Thu nhỏ] -> [□ Phóng to] -> [✕ Đóng]
 	a.langSelect = widget.NewSelect([]string{"VN", "EN"}, func(selected string) {
@@ -236,15 +236,19 @@ func (a *App) setupLayout() {
 		themeSelectWrap,
 	)
 	row2Combined := container.NewBorder(nil, nil, row2LeftCluster, rightCluster)
+	a.toolbar = row2Combined
 
-	// Separator chia phần điều khiển với lưới tài khoản
+	// Separator chia phần Top Bar với thân app
 	sep := widget.NewSeparator()
+	topSection := container.NewVBox(row1Header, sep)
+	a.topSection = topSection
 
-	topSection := container.NewVBox(
-		row1Header,
-		row2Combined,
-		sep,
-	)
+	// -------------------------------------------------------------------------
+	// Sidebar (170px) bên trái (Giai đoạn 1: Duy nhất tab Antigravity)
+	// -------------------------------------------------------------------------
+	a.sidebar = newSidebarContainer(palette, func(selectedTab NavTab) {
+		// Xử lý chuyển tab khi người dùng bấm (Giai đoạn 1 giữ vững Antigravity)
+	})
 
 	// -------------------------------------------------------------------------
 	// Center Section: 280x130 Fixed Card Grid inside Vertical Scroller
@@ -252,6 +256,24 @@ func (a *App) setupLayout() {
 	a.accountListContainer = newSymmetricGridWrap(fyne.NewSize(280, 130))
 	scrollList := container.NewVScroll(container.NewPadded(a.accountListContainer))
 	a.accountScroll = scrollList
+
+	// Khung làm việc Content Area của Antigravity (Toolbar hàng 2 + Lưới Card cuộn dọc)
+	antigravityContent := container.NewBorder(
+		row2Combined,
+		nil,
+		nil,
+		nil,
+		scrollList,
+	)
+
+	// Thân app: Sidebar bên trái + Content Area bên phải
+	bodyLayout := container.NewBorder(
+		nil,
+		nil,
+		a.sidebar,
+		nil,
+		antigravityContent,
+	)
 
 	// Status Bar: transient feedback for loading/success/error
 	a.statusBar = widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Italic: true})
@@ -284,13 +306,13 @@ func (a *App) setupLayout() {
 		paddedFooter,
 	)
 
-	// Main Layout
+	// Main Layout: Top Bar (Row 1 Header + Sep) | Bottom Section (Footer) | Center (Body Layout)
 	mainLayout := container.NewBorder(
 		topSection,
 		bottomSection,
 		nil,
 		nil,
-		scrollList,
+		bodyLayout,
 	)
 
 	addWindowResizeFrame(a.win, mainLayout)

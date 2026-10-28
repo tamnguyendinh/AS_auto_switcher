@@ -34,18 +34,7 @@ func TestAcceptance_TC01_HeaderRow2_CleanLayout(t *testing.T) {
 		t.Fatal("expected non-nil window after Init")
 	}
 
-	content := win.Content().(*fyne.Container)
-	var topSection *fyne.Container
-	for _, obj := range content.Objects {
-		if c, ok := obj.(*fyne.Container); ok {
-			if len(c.Objects) >= 3 {
-				if _, ok := c.Objects[2].(*widget.Separator); ok {
-					topSection = c
-					break
-				}
-			}
-		}
-	}
+	topSection := app.TopSection()
 	if topSection == nil {
 		t.Fatalf("expected topSection container with separator")
 	}
@@ -70,10 +59,10 @@ func TestAcceptance_TC01_HeaderRow2_CleanLayout(t *testing.T) {
 		t.Fatal("TC-01 VIOLATION: serverStatusLabel must NOT be present in topSection")
 	}
 
-	// 2. row2Combined.Objects[0] là row2LeftCluster
-	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
-	if !ok || row2Combined == nil {
-		t.Fatal("TC-01 VIOLATION: topSection.Objects[1] must be row2Combined container")
+	// 2. row2Combined (Toolbar)
+	row2Combined := app.Toolbar()
+	if row2Combined == nil {
+		t.Fatal("TC-01 VIOLATION: app.Toolbar() must be non-nil row2Combined container")
 	}
 
 	var foundLeftCluster *fyne.Container

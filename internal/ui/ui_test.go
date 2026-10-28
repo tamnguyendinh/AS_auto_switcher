@@ -168,7 +168,7 @@ func TestNewAppAndInit(t *testing.T) {
 	if win == nil {
 		t.Fatal("expected non-nil window after Init")
 	}
-	if win.Title() != "⚡ Antigravity Multi-Account Switcher" {
+	if win.Title() != "⚡ Auto Switcher" {
 		t.Errorf("unexpected window title: %s", win.Title())
 	}
 	if win.Content() == nil {
@@ -1021,8 +1021,8 @@ func TestOwnerRedesign_WindowSizeAndLayout(t *testing.T) {
 	}
 
 	sz := win.Canvas().Size()
-	if sz.Width != 920 || sz.Height != 630 {
-		t.Errorf("expected initial window size 920x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != DefaultWindowWidth || sz.Height != DefaultWindowHeight {
+		t.Errorf("expected initial window size %fx%f, got %fx%f", DefaultWindowWidth, DefaultWindowHeight, sz.Width, sz.Height)
 	}
 }
 
@@ -1548,7 +1548,7 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 	defer app.Close()
 
 	w := app.Window()
-	w.Resize(fyne.NewSize(920, 630))
+	w.Resize(fyne.NewSize(DefaultWindowWidth, DefaultWindowHeight))
 
 	// Populate 6 cards
 	palette := DarkPalette
@@ -1557,8 +1557,7 @@ func TestOwnerRedesign_F5_CompactCardHeight(t *testing.T) {
 		card := NewAccountCardWithQuota(item, nil, palette, nil, nil)
 		app.accountListContainer.Add(card)
 	}
-	minH := app.accountListContainer.MinSize().Height
-	app.accountListContainer.Resize(fyne.NewSize(992, minH))
+	app.accountListContainer.Resize(fyne.NewSize(992, 264))
 	app.accountListContainer.Refresh()
 
 	card0Size := app.accountListContainer.Objects[0].Size()
@@ -2251,8 +2250,8 @@ func TestIndustryStandard_WindowInit920x630(t *testing.T) {
 	}
 
 	sz := win.Canvas().Size()
-	if sz.Width != 920 || sz.Height != 630 {
-		t.Errorf("expected window canvas size 920x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != DefaultWindowWidth || sz.Height != DefaultWindowHeight {
+		t.Errorf("expected window canvas size %fx%f, got %fx%f", DefaultWindowWidth, DefaultWindowHeight, sz.Width, sz.Height)
 	}
 }
 
@@ -2271,14 +2270,7 @@ func TestWindowControlsMinimizeMaximizeClose(t *testing.T) {
 		t.Fatal("expected non-nil window")
 	}
 
-	content := win.Content().(*fyne.Container)
-	var topSection *fyne.Container
-	for _, obj := range content.Objects {
-		if c, ok := obj.(*fyne.Container); ok {
-			topSection = c
-			break
-		}
-	}
+	topSection := app.TopSection()
 	if topSection == nil {
 		t.Fatal("expected to find topSection container")
 	}
@@ -2360,8 +2352,8 @@ func TestArchitectSpec_QuotaStackedLayoutCard280x130_FullConformance(t *testing.
 		t.Fatal("expected non-nil window")
 	}
 	sz := win.Canvas().Size()
-	if sz.Width != 920 || sz.Height != 630 {
-		t.Errorf("AC-4 VIOLATION: expected window canvas size 920x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != DefaultWindowWidth || sz.Height != DefaultWindowHeight {
+		t.Errorf("AC-4 VIOLATION: expected window canvas size %fx%f, got %fx%f", DefaultWindowWidth, DefaultWindowHeight, sz.Width, sz.Height)
 	}
 
 	// AC-3: Account card size in GridWrap is 280x130
@@ -2539,9 +2531,9 @@ func TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance(t *te
 		t.Errorf("AC-2 VIOLATION: expected hSep width %f, got %f", expectedW, hSep.Size().Width)
 	}
 
-	// AC-4: Card Dimensions 280x130, Window 920x630
-	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-4 VIOLATION: expected window 920x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-4: Card Dimensions 280x130, Window 980x630
+	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected window 980x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 
 	// AC-5: In-place reactive update zero jank
@@ -2574,9 +2566,9 @@ func TestArchitectSpec_CompactWindowWidth920px_FullConformance(t *testing.T) {
 	app.Init()
 	waitForIdle(app, 3*time.Second)
 
-	// AC-1: Default window width 920.0, height 630.0
-	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
-		t.Fatalf("AC-1 VIOLATION: expected DefaultWindowWidth=920.0, DefaultWindowHeight=630.0, got %f x %f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-1: Default window width 980.0, height 630.0
+	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
+		t.Fatalf("AC-1 VIOLATION: expected DefaultWindowWidth=980.0, DefaultWindowHeight=630.0, got %f x %f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 
 	win := app.Window()
@@ -2584,8 +2576,8 @@ func TestArchitectSpec_CompactWindowWidth920px_FullConformance(t *testing.T) {
 		t.Fatal("expected non-nil window")
 	}
 	sz := win.Canvas().Size()
-	if sz.Width != 920 || sz.Height != 630 {
-		t.Errorf("AC-1 VIOLATION: expected window canvas size 920x630, got %fx%f", sz.Width, sz.Height)
+	if sz.Width != DefaultWindowWidth || sz.Height != DefaultWindowHeight {
+		t.Errorf("AC-1 VIOLATION: expected window canvas size %fx%f, got %fx%f", DefaultWindowWidth, DefaultWindowHeight, sz.Width, sz.Height)
 	}
 
 	// AC-2: 3-Column Card Layout (280x130 Card GridWrap)
@@ -2842,21 +2834,14 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Fatal("expected non-nil window after Init")
 	}
 
-	content := win.Content().(*fyne.Container)
-	var topSection *fyne.Container
-	for _, obj := range content.Objects {
-		if c, ok := obj.(*fyne.Container); ok {
-			topSection = c
-			break
-		}
-	}
+	topSection := app.TopSection()
 	if topSection == nil {
 		t.Fatal("expected to find topSection container")
 	}
 
-	// AC-2: No Row 3 - topSection must contain exactly 3 objects: row1Header, row2Combined, sep
-	if len(topSection.Objects) != 3 {
-		t.Fatalf("AC-2 VIOLATION: expected topSection to have exactly 3 children (row1Header, row2Combined, sep), got %d", len(topSection.Objects))
+	// In Phase 1: topSection contains row1Header and sep; row2Combined is in app.Toolbar()
+	if len(topSection.Objects) != 2 {
+		t.Fatalf("expected topSection to have exactly 2 children (row1Header, sep), got %d", len(topSection.Objects))
 	}
 
 	// topSection.Objects[0] must be row1Header
@@ -2865,15 +2850,14 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Fatalf("expected topSection.Objects[0] to be row1Header container")
 	}
 
-	// topSection.Objects[1] must be row2Combined
-	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
-	if !ok || row2Combined == nil {
-		t.Fatalf("AC-1 VIOLATION: expected topSection.Objects[1] to be row2Combined container")
+	// topSection.Objects[1] must be separator
+	if _, ok := topSection.Objects[1].(*widget.Separator); !ok {
+		t.Fatalf("expected topSection.Objects[1] to be separator")
 	}
 
-	// topSection.Objects[2] must be separator
-	if _, ok := topSection.Objects[2].(*widget.Separator); !ok {
-		t.Fatalf("expected topSection.Objects[2] to be separator")
+	row2Combined := app.Toolbar()
+	if row2Combined == nil {
+		t.Fatalf("expected app.Toolbar() to be non-nil row2Combined container")
 	}
 
 	// AC-1: row2Combined layout structure: Left cluster (toolbarLeft) + Right cluster (theme select)
@@ -2951,9 +2935,9 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Errorf("expected alwaysOnTopBtn text '📌', got '%s'", app.alwaysOnTopBtn.Text)
 	}
 
-	// AC-4: Dimension preservation: window 920x630, card 280x130
-	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 920 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-4: Dimension preservation: window 980x630, card 280x130
+	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 980 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 	if app.accountListContainer == nil {
 		t.Fatal("expected non-nil accountListContainer")
@@ -3160,18 +3144,8 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	if !ok || content == nil {
 		t.Fatal("expected non-nil window content container")
 	}
-	var topSection *fyne.Container
-	for _, obj := range content.Objects {
-		if c, ok := obj.(*fyne.Container); ok {
-			topSection = c
-			break
-		}
-	}
-	if topSection == nil || len(topSection.Objects) < 2 {
-		t.Fatal("expected topSection with at least 2 children")
-	}
-	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
-	if !ok || row2Combined == nil {
+	row2Combined := app.Toolbar()
+	if row2Combined == nil {
 		t.Fatal("expected row2Combined container")
 	}
 
@@ -3318,9 +3292,9 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	// Restore Dark Theme
 	app.SetTheme(ThemeDark)
 
-	// AC-5: Dimension preservation: window 920x630, card 280x130
-	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-5 VIOLATION: expected DefaultWindowWidth 920 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-5: Dimension preservation: window 980x630, card 280x130
+	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-5 VIOLATION: expected DefaultWindowWidth 980 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 }
 
@@ -3344,18 +3318,8 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 	if !ok || content == nil {
 		t.Fatal("expected non-nil window content container")
 	}
-	var topSection *fyne.Container
-	for _, obj := range content.Objects {
-		if c, ok := obj.(*fyne.Container); ok {
-			topSection = c
-			break
-		}
-	}
-	if topSection == nil || len(topSection.Objects) < 2 {
-		t.Fatal("expected topSection with at least 2 children")
-	}
-	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
-	if !ok || row2Combined == nil {
+	row2Combined := app.Toolbar()
+	if row2Combined == nil {
 		t.Fatal("expected row2Combined container")
 	}
 
@@ -3415,9 +3379,9 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 		t.Errorf("AC-3 VIOLATION: expected currentTheme ThemeDark, got %s", app.currentTheme)
 	}
 
-	// AC-4: Dimension preservation: window 920x630, card 280x130
-	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 920 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-4: Dimension preservation: window 980x630, card 280x130
+	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 980 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 	item := manager.AccountDisplayItem{Email: "compact_theme_test@example.com", HasToken: true}
 	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil)
@@ -3448,20 +3412,8 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 		t.Fatal("expected non-nil window after Init")
 	}
 
-	content := win.Content().(*fyne.Container)
-	var topSection *fyne.Container
-	for _, obj := range content.Objects {
-		if c, ok := obj.(*fyne.Container); ok {
-			topSection = c
-			break
-		}
-	}
-	if topSection == nil || len(topSection.Objects) < 2 {
-		t.Fatal("expected topSection with at least 2 children")
-	}
-
-	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
-	if !ok || row2Combined == nil {
+	row2Combined := app.Toolbar()
+	if row2Combined == nil {
 		t.Fatal("expected row2Combined container")
 	}
 
@@ -3548,8 +3500,8 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 	}
 
 	// AC-4: Dimension preservation
-	if DefaultWindowWidth != 920.0 || DefaultWindowHeight != 630.0 {
-		t.Fatalf("AC-4 VIOLATION: expected window 920x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
+		t.Fatalf("AC-4 VIOLATION: expected window 980x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 }
 
@@ -3837,18 +3789,8 @@ func TestArchitectSpec_Row2Layout_WithDividers(t *testing.T) {
 	if !ok || content == nil {
 		t.Fatal("expected non-nil window content container")
 	}
-	var topSection *fyne.Container
-	for _, obj := range content.Objects {
-		if c, ok := obj.(*fyne.Container); ok {
-			topSection = c
-			break
-		}
-	}
-	if topSection == nil || len(topSection.Objects) < 2 {
-		t.Fatal("expected topSection with at least 2 children")
-	}
-	row2Combined, ok := topSection.Objects[1].(*fyne.Container)
-	if !ok || row2Combined == nil {
+	row2Combined := app.Toolbar()
+	if row2Combined == nil {
 		t.Fatal("expected row2Combined container")
 	}
 

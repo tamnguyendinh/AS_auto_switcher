@@ -64,6 +64,10 @@ type App struct {
 	row2Divider1         *canvas.Rectangle
 	row2Divider2         *canvas.Rectangle
 	monogramBg           *canvas.Rectangle
+	titleLabel           *widget.RichText
+	sidebar              *SidebarContainer
+	topSection           *fyne.Container
+	toolbar              *fyne.Container
 	accountScroll        *container.Scroll
 	statusBar            *widget.Label
 	statusBarHideTimer   *time.Timer
@@ -344,6 +348,9 @@ func (a *App) SetTheme(themeName string) {
 		a.row2Divider2.FillColor = palette.BorderSubtle
 		a.row2Divider2.Refresh()
 	}
+	if a.sidebar != nil {
+		a.sidebar.ApplyTheme(palette)
+	}
 
 	a.mu.RLock()
 	overview := a.overview
@@ -379,6 +386,22 @@ func (a *App) SetLanguage(locale string) {
 
 	// 2. In-place update on Canvas UI (Main Thread)
 	fyne.Do(func() {
+		if a.titleLabel != nil {
+			a.titleLabel.Segments = []widget.RichTextSegment{
+				&widget.TextSegment{
+					Text: d.AppTitle,
+					Style: widget.RichTextStyle{
+						SizeName:  titleTextSizeName,
+						TextStyle: fyne.TextStyle{Bold: true},
+					},
+				},
+			}
+			a.titleLabel.Refresh()
+		}
+		if a.sidebar != nil && a.sidebar.antigravityItem != nil {
+			a.sidebar.antigravityItem.textLabel.Text = d.NavAntigravity
+			a.sidebar.antigravityItem.textLabel.Refresh()
+		}
 		if a.addAccountBtn != nil {
 			a.addAccountBtn.SetText(d.BtnAddAccount)
 		}
@@ -510,6 +533,9 @@ func (a *App) SyncVisualScaleAndTextures() {
 	if a.row2Divider2 != nil {
 		a.row2Divider2.FillColor = palette.BorderSubtle
 		a.row2Divider2.Refresh()
+	}
+	if a.sidebar != nil {
+		a.sidebar.ApplyTheme(palette)
 	}
 
 	// 3. Nếu danh sách tài khoản đã được tải xong từ trước, buộc dựng lại toàn bộ thẻ
@@ -1877,4 +1903,24 @@ func (a *App) forceRebuildCards(overview *manager.AccountOverview) {
 // Logo returns the brand logo static resource.
 func (a *App) Logo() fyne.Resource {
 	return AppLogoResource
+}
+
+// Sidebar returns the left sidebar container.
+func (a *App) Sidebar() *SidebarContainer {
+	return a.sidebar
+}
+
+// TitleLabel returns the rich text title widget in the top bar.
+func (a *App) TitleLabel() *widget.RichText {
+	return a.titleLabel
+}
+
+// TopSection returns the top bar container (Row 1 Header + Separator).
+func (a *App) TopSection() *fyne.Container {
+	return a.topSection
+}
+
+// Toolbar returns the Antigravity toolbar container (Row 2 buttons, mask, auto switch, theme).
+func (a *App) Toolbar() *fyne.Container {
+	return a.toolbar
 }

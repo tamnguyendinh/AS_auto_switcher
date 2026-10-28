@@ -29,15 +29,9 @@ func TestAcceptance_i18n_DropdownPosition(t *testing.T) {
 	waitForIdle(app, 1*time.Second)
 
 	win := app.Window()
-	content := win.Content().(*fyne.Container)
+	_ = win
 
-	var topSection *fyne.Container
-	for _, obj := range content.Objects {
-		if c, ok := obj.(*fyne.Container); ok {
-			topSection = c
-			break
-		}
-	}
+	topSection := app.TopSection()
 	if topSection == nil {
 		t.Fatal("expected topSection container")
 	}

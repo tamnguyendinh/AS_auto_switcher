@@ -17,6 +17,8 @@ var enJSON []byte
 type Dictionary struct {
 	// Header & Window
 	AppTitle          string `json:"app_title"`
+	NavAntigravity    string `json:"nav_antigravity"`
+	NavCodex          string `json:"nav_codex"`
 	LangDropdownLabel string `json:"lang_dropdown_label"`
 
 	// Toolbar Buttons & Controls
