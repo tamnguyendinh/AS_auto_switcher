@@ -51,7 +51,7 @@ func setWindowAlwaysOnTop(title string, isTop bool) {
 }
 
 const (
-	DefaultWindowWidth  float32 = 980.0
+	DefaultWindowWidth  float32 = 1100.0 // Mở rộng từ 980.0 lên 1100.0 theo Phase 1A (Khai phóng lưới 3 cột card)
 	DefaultWindowHeight float32 = 630.0
 	MinWindowWidth      float32 = 640.0
 	MinWindowHeight     float32 = 360.0
@@ -244,7 +244,7 @@ func (a *App) setupLayout() {
 	a.topSection = topSection
 
 	// -------------------------------------------------------------------------
-	// Sidebar (170px) bên trái (Giai đoạn 1: Duy nhất tab Antigravity)
+	// Sidebar (136px - 80%) bên trái (Giai đoạn 1A: Duy nhất tab Antigravity)
 	// -------------------------------------------------------------------------
 	a.sidebar = newSidebarContainer(palette, func(selectedTab NavTab) {
 		// Xử lý chuyển tab khi người dùng bấm (Giai đoạn 1 giữ vững Antigravity)

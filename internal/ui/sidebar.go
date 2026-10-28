@@ -12,7 +12,8 @@ import (
 	"antigravity-switch/internal/i18n"
 )
 
-const SidebarWidth float32 = 170.0
+// SidebarWidth định nghĩa độ rộng chuẩn của thanh Sidebar (thu gọn xuống 80% còn 136px theo Phase 1A)
+const SidebarWidth float32 = 136.0
 
 // NavTab định danh các tab điều hướng trên Sidebar
 type NavTab int

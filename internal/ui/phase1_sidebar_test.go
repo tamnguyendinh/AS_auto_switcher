@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"antigravity-switch/internal/i18n"
+	"antigravity-switch/internal/manager"
 	"antigravity-switch/internal/version"
 )
 
@@ -48,10 +50,10 @@ func TestPhase1_AppTitleAndLocales(t *testing.T) {
 }
 
 // TestPhase1_WindowDimensions verifies the expanded window dimensions:
-// 980x630 default, 640x360 minimum.
+// 1100x630 default, 640x360 minimum, and 136.0px sidebar width.
 func TestPhase1_WindowDimensions(t *testing.T) {
-	if DefaultWindowWidth != 980.0 {
-		t.Errorf("expected DefaultWindowWidth 980.0, got %f", DefaultWindowWidth)
+	if DefaultWindowWidth != 1100.0 {
+		t.Errorf("expected DefaultWindowWidth 1100.0, got %f", DefaultWindowWidth)
 	}
 	if DefaultWindowHeight != 630.0 {
 		t.Errorf("expected DefaultWindowHeight 630.0, got %f", DefaultWindowHeight)
@@ -61,6 +63,9 @@ func TestPhase1_WindowDimensions(t *testing.T) {
 	}
 	if MinWindowHeight != 360.0 {
 		t.Errorf("expected MinWindowHeight 360.0, got %f", MinWindowHeight)
+	}
+	if SidebarWidth != 136.0 {
+		t.Errorf("expected SidebarWidth 136.0 (80%% of 170.0), got %f", SidebarWidth)
 	}
 }
 
@@ -79,9 +84,10 @@ func TestPhase1_AntigravityLogoResource(t *testing.T) {
 }
 
 // TestPhase1_SidebarStructureAndCodexAbsence verifies:
-// 1. Sidebar is initialized and placed on the left with width 170px.
+// 1. Sidebar is initialized and placed on the left with width 136px (80% of 170px).
 // 2. ONLY Tab "Antigravity" is present and Active by default.
-// 3. Absolutely NO "Codex" text or tab appears anywhere on the GUI.
+// 3. Tab "Antigravity" text and icon fit cleanly within 136px without overflow.
+// 4. Absolutely NO "Codex" text or tab appears anywhere on the GUI.
 func TestPhase1_SidebarStructureAndCodexAbsence(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
@@ -98,10 +104,19 @@ func TestPhase1_SidebarStructureAndCodexAbsence(t *testing.T) {
 		t.Fatal("expected app.Sidebar() to be non-nil")
 	}
 
-	// Verify sidebar width
+	// Verify sidebar width is 136.0 (Phase 1A: 80% of 170.0)
 	minSize := sidebar.MinSize()
+	if minSize.Width != 136.0 {
+		t.Errorf("expected sidebar width 136.0, got %f", minSize.Width)
+	}
 	if minSize.Width != SidebarWidth {
 		t.Errorf("expected sidebar width %f, got %f", SidebarWidth, minSize.Width)
+	}
+
+	// Verify Antigravity tab fits comfortably inside 136px
+	itemMin := sidebar.AntigravityItem().MinSize()
+	if itemMin.Width > SidebarWidth {
+		t.Errorf("Antigravity tab MinSize.Width %f exceeds SidebarWidth %f", itemMin.Width, SidebarWidth)
 	}
 
 	// Verify Antigravity tab is active
@@ -272,5 +287,66 @@ func TestPhase1_ContentAreaZeroRegression(t *testing.T) {
 	}
 	if app.versionLabel == nil || app.versionLabel.Text != version.GetFullVersion() {
 		t.Errorf("expected version label %q, got %q", version.GetFullVersion(), app.versionLabel.Text)
+	}
+}
+
+// TestPhase1A_CardGrid3ColumnsReflowAt1100px verifies Phase 1A UX Invariants:
+// 1. DefaultWindowWidth is 1100.0 and SidebarWidth is 136.0.
+// 2. The account list container reflows into a 3-column card grid at 1100px width.
+func TestPhase1A_CardGrid3ColumnsReflowAt1100px(t *testing.T) {
+	testApp := test.NewApp()
+	defer testApp.Quit()
+
+	mgr := createTestManager(t)
+	app := newIsolatedApp(testApp, mgr)
+	defer app.Close()
+
+	app.Init()
+	waitForIdle(app, 2*time.Second)
+
+	win := app.Window()
+	if win == nil {
+		t.Fatal("expected non-nil window")
+	}
+
+	sz := win.Canvas().Size()
+	if sz.Width != 1100.0 || sz.Height != 630.0 {
+		t.Fatalf("expected canvas size 1100x630, got %fx%f", sz.Width, sz.Height)
+	}
+
+	// Add 6 test cards to accountListContainer
+	palette := DarkPalette
+	for i := 1; i <= 6; i++ {
+		item := manager.AccountDisplayItem{Email: fmt.Sprintf("phase1a_user%d@example.com", i), HasToken: true}
+		card := NewAccountCardWithQuota(item, nil, palette, nil, nil)
+		app.accountListContainer.Add(card)
+	}
+	app.accountListContainer.Refresh()
+
+	// Wait for layout pass
+	waitForIdle(app, 500*time.Millisecond)
+
+	// In a 3-column layout:
+	// Card 0, 1, 2 must be on Row 0 (same Y coordinate)
+	// Card 3 must start on Row 1 (greater Y coordinate)
+	c0 := app.accountListContainer.Objects[0]
+	c1 := app.accountListContainer.Objects[1]
+	c2 := app.accountListContainer.Objects[2]
+	c3 := app.accountListContainer.Objects[3]
+
+	if c0.Position().Y != c1.Position().Y || c0.Position().Y != c2.Position().Y {
+		t.Errorf("expected Card 0, 1, 2 to be in the first row (same Y), got Y0=%f, Y1=%f, Y2=%f",
+			c0.Position().Y, c1.Position().Y, c2.Position().Y)
+	}
+
+	if c3.Position().Y <= c0.Position().Y {
+		t.Errorf("expected Card 3 to be in the second row (Y > %f), got %f",
+			c0.Position().Y, c3.Position().Y)
+	}
+
+	// Check that columns have distinct X positions
+	if c0.Position().X >= c1.Position().X || c1.Position().X >= c2.Position().X {
+		t.Errorf("expected 3 distinct columns, got X0=%f, X1=%f, X2=%f",
+			c0.Position().X, c1.Position().X, c2.Position().X)
 	}
 }

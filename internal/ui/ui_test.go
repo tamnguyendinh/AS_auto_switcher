@@ -2531,9 +2531,9 @@ func TestArchitectSpec_RemoveVerticalSeparatorsQuotaMatrix_FullConformance(t *te
 		t.Errorf("AC-2 VIOLATION: expected hSep width %f, got %f", expectedW, hSep.Size().Width)
 	}
 
-	// AC-4: Card Dimensions 280x130, Window 980x630
-	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-4 VIOLATION: expected window 980x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-4: Card Dimensions 280x130, Window 1100x630
+	if DefaultWindowWidth != 1100.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected window 1100x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 
 	// AC-5: In-place reactive update zero jank
@@ -2566,9 +2566,9 @@ func TestArchitectSpec_CompactWindowWidth920px_FullConformance(t *testing.T) {
 	app.Init()
 	waitForIdle(app, 3*time.Second)
 
-	// AC-1: Default window width 980.0, height 630.0
-	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
-		t.Fatalf("AC-1 VIOLATION: expected DefaultWindowWidth=980.0, DefaultWindowHeight=630.0, got %f x %f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-1: Default window width 1100.0, height 630.0
+	if DefaultWindowWidth != 1100.0 || DefaultWindowHeight != 630.0 {
+		t.Fatalf("AC-1 VIOLATION: expected DefaultWindowWidth=1100.0, DefaultWindowHeight=630.0, got %f x %f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 
 	win := app.Window()
@@ -2935,9 +2935,9 @@ func TestArchitectSpec_MergeToolbarWithServerStatusRow_FullConformance(t *testin
 		t.Errorf("expected alwaysOnTopBtn text '📌', got '%s'", app.alwaysOnTopBtn.Text)
 	}
 
-	// AC-4: Dimension preservation: window 980x630, card 280x130
-	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 980 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-4: Dimension preservation: window 1100x630, card 280x130
+	if DefaultWindowWidth != 1100.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 1100 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 	if app.accountListContainer == nil {
 		t.Fatal("expected non-nil accountListContainer")
@@ -3292,9 +3292,9 @@ func TestArchitectSpec_AutoSwitchToggle_CapsuleWidget_FullConformance(t *testing
 	// Restore Dark Theme
 	app.SetTheme(ThemeDark)
 
-	// AC-5: Dimension preservation: window 980x630, card 280x130
-	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-5 VIOLATION: expected DefaultWindowWidth 980 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-5: Dimension preservation: window 1100x630, card 280x130
+	if DefaultWindowWidth != 1100.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-5 VIOLATION: expected DefaultWindowWidth 1100 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 }
 
@@ -3379,9 +3379,9 @@ func TestArchitectSpec_CompactThemeSelect60Pct_FullConformance(t *testing.T) {
 		t.Errorf("AC-3 VIOLATION: expected currentTheme ThemeDark, got %s", app.currentTheme)
 	}
 
-	// AC-4: Dimension preservation: window 980x630, card 280x130
-	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
-		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 980 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	// AC-4: Dimension preservation: window 1100x630, card 280x130
+	if DefaultWindowWidth != 1100.0 || DefaultWindowHeight != 630.0 {
+		t.Errorf("AC-4 VIOLATION: expected DefaultWindowWidth 1100 and DefaultWindowHeight 630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 	item := manager.AccountDisplayItem{Email: "compact_theme_test@example.com", HasToken: true}
 	card := NewAccountCardWithQuota(item, nil, DarkPalette, nil, nil)
@@ -3500,8 +3500,8 @@ func TestHeaderRow2_VerticalAlignment(t *testing.T) {
 	}
 
 	// AC-4: Dimension preservation
-	if DefaultWindowWidth != 980.0 || DefaultWindowHeight != 630.0 {
-		t.Fatalf("AC-4 VIOLATION: expected window 980x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
+	if DefaultWindowWidth != 1100.0 || DefaultWindowHeight != 630.0 {
+		t.Fatalf("AC-4 VIOLATION: expected window 1100x630, got %fx%f", DefaultWindowWidth, DefaultWindowHeight)
 	}
 }
 
