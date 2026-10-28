@@ -36,7 +36,7 @@ var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 const DefaultHistoryKeepCount = 2
 
 // DefaultActiveThreadsWindow defines the time window for detecting active conversation threads.
-const DefaultActiveThreadsWindow = 5 * time.Minute
+const DefaultActiveThreadsWindow = 2 * time.Hour
 
 
 // GetDefaultThreadsHistoryDir returns the canonical logs/active_threads_history directory.
@@ -56,7 +56,7 @@ type threadCandidate struct {
 }
 
 // ScanActiveConversations scans %USERPROFILE%/.gemini/antigravity/conversations/
-// for all threads with MAX(mtime(.db), mtime(.db-wal)) >= startTime - DefaultActiveThreadsWindow.
+// for all threads with MAX(mtime(.db), mtime(.db-wal)) >= startTime - DefaultActiveThreadsWindow (2h).
 // It strictly requires basenames to be valid UUIDs (F3).
 func ScanActiveConversations(conversationsDir string, summariesDbPath string, startTime time.Time) ([]ActiveThread, error) {
 	cDir := conversationsDir
@@ -200,7 +200,7 @@ func resolveProjectFromSummaries(summariesDbPath, threadID string) string {
 }
 
 // defaultCaptureActiveThreadsSnapshot extracts active conversation threads from
-// conversations/*.db and *.db-wal with MAX(mtime) >= start - DefaultActiveThreadsWindow, resolves projects,
+// conversations/*.db and *.db-wal with MAX(mtime) >= start - DefaultActiveThreadsWindow (2h), resolves projects,
 // and saves an atomic snapshot JSON to outputDir.
 func defaultCaptureActiveThreadsSnapshot(conversationsDir, summariesDbPath, outputDir string) (string, []ActiveThread, error) {
 	start := time.Now()

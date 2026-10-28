@@ -709,7 +709,7 @@ func (m *AccountManager) SwitchAccount(ctx context.Context, targetEmail string, 
 	}
 
 	// =========================================================================
-	// BƯỚC 1: Chốt danh sách trước khi chuyển tài khoản (Snapshot SQLite 5 Phút)
+	// BƯỚC 1: Chốt danh sách trước khi chuyển tài khoản (Snapshot SQLite 2 Giờ)
 	// =========================================================================
 	var snapshotPath string
 	var activeThreads []reloader.ActiveThread

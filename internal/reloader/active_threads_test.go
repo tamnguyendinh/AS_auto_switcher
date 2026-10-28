@@ -16,7 +16,7 @@ func TestScanActiveConversations_ThresholdFiltering(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now()
 
-	// Thread A: valid UUID, mtime = now - 1m -> should be included (< 5m)
+	// Thread A: valid UUID, mtime = now - 1m -> should be included (< 2h)
 	idA := "11111111-1111-4111-8111-111111111111"
 	fileA := filepath.Join(tmpDir, idA+".db")
 	if err := os.WriteFile(fileA, []byte("data-a"), 0644); err != nil {
@@ -24,7 +24,7 @@ func TestScanActiveConversations_ThresholdFiltering(t *testing.T) {
 	}
 	_ = os.Chtimes(fileA, now.Add(-1*time.Minute), now.Add(-1*time.Minute))
 
-	// Thread B: valid UUID, mtime = now - 3m -> should be included (< 5m)
+	// Thread B: valid UUID, mtime = now - 3m -> should be included (< 2h)
 	idB := "22222222-2222-4222-8222-222222222222"
 	fileB := filepath.Join(tmpDir, idB+".db")
 	if err := os.WriteFile(fileB, []byte("data-b"), 0644); err != nil {
@@ -45,13 +45,13 @@ func TestScanActiveConversations_ThresholdFiltering(t *testing.T) {
 	}
 	_ = os.Chtimes(fileCWal, now.Add(-30*time.Second), now.Add(-30*time.Second))
 
-	// Thread D: valid UUID, mtime = now - 6m -> should be excluded (> 5m)
+	// Thread D: valid UUID, mtime = now - 130m -> should be excluded (> 2h)
 	idD := "44444444-4444-4444-8444-444444444444"
 	fileD := filepath.Join(tmpDir, idD+".db")
 	if err := os.WriteFile(fileD, []byte("data-d"), 0644); err != nil {
 		t.Fatalf("failed writing fileD: %v", err)
 	}
-	_ = os.Chtimes(fileD, now.Add(-6*time.Minute), now.Add(-6*time.Minute))
+	_ = os.Chtimes(fileD, now.Add(-130*time.Minute), now.Add(-130*time.Minute))
 
 	// F3: Non-UUID databases must be strictly rejected
 	fileIndex := filepath.Join(tmpDir, "index.db")
