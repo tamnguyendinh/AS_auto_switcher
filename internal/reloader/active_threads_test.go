@@ -12,46 +12,46 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestScanActiveConversations2h_ThresholdFiltering(t *testing.T) {
+func TestScanActiveConversations_ThresholdFiltering(t *testing.T) {
 	tmpDir := t.TempDir()
 	now := time.Now()
 
-	// Thread A: valid UUID, mtime = now - 30m -> should be included
+	// Thread A: valid UUID, mtime = now - 1m -> should be included (< 5m)
 	idA := "11111111-1111-4111-8111-111111111111"
 	fileA := filepath.Join(tmpDir, idA+".db")
 	if err := os.WriteFile(fileA, []byte("data-a"), 0644); err != nil {
 		t.Fatalf("failed writing fileA: %v", err)
 	}
-	_ = os.Chtimes(fileA, now.Add(-30*time.Minute), now.Add(-30*time.Minute))
+	_ = os.Chtimes(fileA, now.Add(-1*time.Minute), now.Add(-1*time.Minute))
 
-	// Thread B: valid UUID, mtime = now - 1h50m -> should be included
+	// Thread B: valid UUID, mtime = now - 3m -> should be included (< 5m)
 	idB := "22222222-2222-4222-8222-222222222222"
 	fileB := filepath.Join(tmpDir, idB+".db")
 	if err := os.WriteFile(fileB, []byte("data-b"), 0644); err != nil {
 		t.Fatalf("failed writing fileB: %v", err)
 	}
-	_ = os.Chtimes(fileB, now.Add(-110*time.Minute), now.Add(-110*time.Minute))
+	_ = os.Chtimes(fileB, now.Add(-3*time.Minute), now.Add(-3*time.Minute))
 
-	// Thread C: valid UUID, .db mtime = now - 3h, but .db-wal mtime = now - 10m -> should be included (MAX logic)
+	// Thread C: valid UUID, .db mtime = now - 10m, but .db-wal mtime = now - 30s -> should be included (MAX logic, newest)
 	idC := "33333333-3333-4333-8333-333333333333"
 	fileC := filepath.Join(tmpDir, idC+".db")
 	fileCWal := filepath.Join(tmpDir, idC+".db-wal")
 	if err := os.WriteFile(fileC, []byte("data-c"), 0644); err != nil {
 		t.Fatalf("failed writing fileC: %v", err)
 	}
-	_ = os.Chtimes(fileC, now.Add(-3*time.Hour), now.Add(-3*time.Hour))
+	_ = os.Chtimes(fileC, now.Add(-10*time.Minute), now.Add(-10*time.Minute))
 	if err := os.WriteFile(fileCWal, []byte("wal-c"), 0644); err != nil {
 		t.Fatalf("failed writing fileCWal: %v", err)
 	}
-	_ = os.Chtimes(fileCWal, now.Add(-10*time.Minute), now.Add(-10*time.Minute))
+	_ = os.Chtimes(fileCWal, now.Add(-30*time.Second), now.Add(-30*time.Second))
 
-	// Thread D: valid UUID, mtime = now - 2h10m -> should be excluded
+	// Thread D: valid UUID, mtime = now - 6m -> should be excluded (> 5m)
 	idD := "44444444-4444-4444-8444-444444444444"
 	fileD := filepath.Join(tmpDir, idD+".db")
 	if err := os.WriteFile(fileD, []byte("data-d"), 0644); err != nil {
 		t.Fatalf("failed writing fileD: %v", err)
 	}
-	_ = os.Chtimes(fileD, now.Add(-130*time.Minute), now.Add(-130*time.Minute))
+	_ = os.Chtimes(fileD, now.Add(-6*time.Minute), now.Add(-6*time.Minute))
 
 	// F3: Non-UUID databases must be strictly rejected
 	fileIndex := filepath.Join(tmpDir, "index.db")
@@ -66,9 +66,9 @@ func TestScanActiveConversations2h_ThresholdFiltering(t *testing.T) {
 	_ = os.WriteFile(fileSummaries, []byte("summary"), 0644)
 	_ = os.Chtimes(fileSummaries, now, now)
 
-	activeThreads, err := ScanActiveConversations2h(tmpDir, "", now)
+	activeThreads, err := ScanActiveConversations(tmpDir, "", now)
 	if err != nil {
-		t.Fatalf("ScanActiveConversations2h failed: %v", err)
+		t.Fatalf("ScanActiveConversations failed: %v", err)
 	}
 
 	if len(activeThreads) != 3 {
@@ -76,9 +76,9 @@ func TestScanActiveConversations2h_ThresholdFiltering(t *testing.T) {
 	}
 
 	// Ordering must be descending by effectiveMtime:
-	// 1st: thread-c (effective = now - 10m)
-	// 2nd: thread-a (effective = now - 30m)
-	// 3rd: thread-b (effective = now - 1h50m)
+	// 1st: thread-c (effective = now - 30s)
+	// 2nd: thread-a (effective = now - 1m)
+	// 3rd: thread-b (effective = now - 3m)
 	if activeThreads[0].ThreadID != idC {
 		t.Errorf("Expected 1st thread to be %s, got %s", idC, activeThreads[0].ThreadID)
 	}
@@ -152,7 +152,7 @@ func TestCaptureActiveThreadsSnapshot_SQLite(t *testing.T) {
 	tID := "12345678-1234-4234-8234-123456789abc"
 	f1 := filepath.Join(convDir, tID+".db")
 	_ = os.WriteFile(f1, []byte("data1"), 0644)
-	_ = os.Chtimes(f1, now.Add(-5*time.Minute), now.Add(-5*time.Minute))
+	_ = os.Chtimes(f1, now.Add(-2*time.Minute), now.Add(-2*time.Minute))
 
 	snapshotPath, activeThreads, err := CaptureActiveThreadsSnapshot(convDir, "", historyDir)
 	if err != nil {

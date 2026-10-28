@@ -67,7 +67,7 @@ func (rc *RetryCoordinator) defaultScanConversations(ctx context.Context) ([]str
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	threads, err := reloader.ScanActiveConversations2h("", "", time.Now())
+	threads, err := reloader.ScanActiveConversations("", "", time.Now())
 	if err != nil {
 		return nil, err
 	}

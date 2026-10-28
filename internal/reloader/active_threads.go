@@ -35,6 +35,9 @@ var reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 // DefaultHistoryKeepCount defines the maximum number of active threads snapshot files retained.
 const DefaultHistoryKeepCount = 2
 
+// DefaultActiveThreadsWindow defines the time window for detecting active conversation threads.
+const DefaultActiveThreadsWindow = 5 * time.Minute
+
 
 // GetDefaultThreadsHistoryDir returns the canonical logs/active_threads_history directory.
 func GetDefaultThreadsHistoryDir() string {
@@ -52,10 +55,10 @@ type threadCandidate struct {
 	effectiveMtime time.Time
 }
 
-// ScanActiveConversations2h scans %USERPROFILE%/.gemini/antigravity/conversations/
-// for all threads with MAX(mtime(.db), mtime(.db-wal)) >= startTime - 2h.
+// ScanActiveConversations scans %USERPROFILE%/.gemini/antigravity/conversations/
+// for all threads with MAX(mtime(.db), mtime(.db-wal)) >= startTime - DefaultActiveThreadsWindow.
 // It strictly requires basenames to be valid UUIDs (F3).
-func ScanActiveConversations2h(conversationsDir string, summariesDbPath string, startTime time.Time) ([]ActiveThread, error) {
+func ScanActiveConversations(conversationsDir string, summariesDbPath string, startTime time.Time) ([]ActiveThread, error) {
 	cDir := conversationsDir
 	if cDir == "" {
 		home, _ := os.UserHomeDir()
@@ -67,7 +70,7 @@ func ScanActiveConversations2h(conversationsDir string, summariesDbPath string, 
 		}
 	}
 
-	threshold := startTime.Add(-2 * time.Hour)
+	threshold := startTime.Add(-DefaultActiveThreadsWindow)
 
 	entries, err := os.ReadDir(cDir)
 	if err != nil {
@@ -197,11 +200,11 @@ func resolveProjectFromSummaries(summariesDbPath, threadID string) string {
 }
 
 // defaultCaptureActiveThreadsSnapshot extracts active conversation threads from
-// conversations/*.db and *.db-wal with MAX(mtime) >= start - 2h, resolves projects,
+// conversations/*.db and *.db-wal with MAX(mtime) >= start - DefaultActiveThreadsWindow, resolves projects,
 // and saves an atomic snapshot JSON to outputDir.
 func defaultCaptureActiveThreadsSnapshot(conversationsDir, summariesDbPath, outputDir string) (string, []ActiveThread, error) {
 	start := time.Now()
-	activeThreads, err := ScanActiveConversations2h(conversationsDir, summariesDbPath, start)
+	activeThreads, err := ScanActiveConversations(conversationsDir, summariesDbPath, start)
 	if err != nil {
 		return "", nil, err
 	}

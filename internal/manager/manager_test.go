@@ -49,11 +49,11 @@ func TestSwitchAccount_8SecondWaitAnd4StepWorkflow(t *testing.T) {
 	now := time.Now()
 	f1 := filepath.Join(convDir, "11111111-1111-4111-8111-111111111111.db")
 	_ = os.WriteFile(f1, []byte("data"), 0644)
-	_ = os.Chtimes(f1, now.Add(-10*time.Minute), now.Add(-10*time.Minute))
+	_ = os.Chtimes(f1, now.Add(-1*time.Minute), now.Add(-1*time.Minute))
 
 	f2 := filepath.Join(convDir, "22222222-2222-4222-8222-222222222222.db")
 	_ = os.WriteFile(f2, []byte("data"), 0644)
-	_ = os.Chtimes(f2, now.Add(-20*time.Minute), now.Add(-20*time.Minute))
+	_ = os.Chtimes(f2, now.Add(-2*time.Minute), now.Add(-2*time.Minute))
 
 	var killed atomic.Bool
 	var eightSecSleepCalled atomic.Bool
