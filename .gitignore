@@ -13,3 +13,5 @@ bin/
 *.syso
 .tmp/
 .playwright-mcp/
+AGENTS.md
+CLAUDE.md
