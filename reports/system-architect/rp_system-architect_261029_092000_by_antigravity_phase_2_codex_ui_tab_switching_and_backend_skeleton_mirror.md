@@ -22,7 +22,7 @@ Chủ tịch đã chỉ đạo rõ ràng:
 > *"Về cơ bản thì UX sử dụng Codex hay Antigravity đều giống nhau. Vì thế, tổ chức thư mục và file cũng sẽ giống nhau. Cần tạo hệ thống thư mục và file giống y hệt Antigravity (nhưng nội dung rỗng trước). Phase tiếp theo mới cho code từng phần vào các file, code nào tận dụng được thì copy nguyên từ Antigravity sang, code nào tận dụng 1 phần copy 1 phần."*
 
 Do đó, tại Giai đoạn 2 này:
-1. **Dưới Backend**: Tạo đầy đủ toàn bộ hệ thống thư mục và **đúng 50 file khung rỗng (skeleton files)** của Codex tại `internal/engines/codex/`, phản chiếu 1-1 với 50 file của `internal/engines/antigravity/`. Mỗi file chỉ chứa dòng khai báo `package <name>` hợp lệ của Go, hoàn toàn chưa có bất kỳ dòng code logic thực thi nào.
+1. **Dưới Backend**: Tạo đầy đủ toàn bộ hệ thống thư mục và **đúng 53 file khung rỗng (skeleton files) thuộc 9 phân hệ** của Codex tại `internal/engines/codex/`, phản chiếu 1-1 với 53 file của `internal/engines/antigravity/`. Mỗi file chỉ chứa dòng khai báo `package <name>` hợp lệ của Go, hoàn toàn chưa có bất kỳ dòng code logic thực thi nào.
 2. **Trên Giao diện UI**:
    - Thêm Tab **Codex** lên thanh Sidebar bên trái (sử dụng **Logo thật chính thức của OpenAI Codex / Codex IDE**).
    - Xây dựng cơ chế chuyển đổi View động (Stack Show/Hide) giữa Antigravity và Codex.
@@ -55,9 +55,9 @@ Do đó, tại Giai đoạn 2 này:
 
 ---
 
-# PHẦN 3: BẢN ĐỒ CHI TIẾT 1-1 TOÀN BỘ 50 FILE KHUNG RỖNG CỦA CODEX BACKEND
+# PHẦN 3: BẢN ĐỒ CHI TIẾT 1-1 TOÀN BỘ 53 FILE KHUNG RỖNG CỦA CODEX BACKEND (9 PHÂN HỆ)
 
-*Tất cả 50 file dưới đây sẽ được khởi tạo trong `internal/engines/codex/`, cấu trúc soi gương 1-1 với Antigravity. Mỗi file chỉ chứa 1 dòng khai báo `package <name>` hợp lệ, hoàn toàn không có code logic bên trong*:
+*Tất cả 53 file dưới đây sẽ được khởi tạo trong `internal/engines/codex/`, cấu trúc soi gương 1-1 với 9 phân hệ của Antigravity. Mỗi file chỉ chứa 1 dòng khai báo `package <name>` hợp lệ, hoàn toàn không có code logic bên trong*:
 
 ### 1. Phân hệ Scanner (`internal/engines/codex/scanner/` — 2 files rỗng)
 | STT | Tên file khung của Codex | Dòng khai báo package |
@@ -142,6 +142,12 @@ Do đó, tại Giai đoạn 2 này:
 | 50 | `internal/engines/codex/automation/automation_e2e_test.go` | `package automation` |
 | 51 | `internal/engines/codex/automation/runtime_regression_test.go` | `package automation` |
 
+### 9. Phân hệ Windows Credential (`internal/engines/codex/wincred/` — 2 files rỗng)
+| STT | Tên file khung của Codex | Dòng khai báo package |
+|:---:|---|---|
+| 52 | `internal/engines/codex/wincred/cred.go` | `package wincred` |
+| 53 | `internal/engines/codex/wincred/cred_test.go` | `package wincred` |
+
 ---
 
 # PHẦN 4: THIẾT KẾ CHI TIẾT TẦNG GIAO DIỆN (UI IMPLEMENTATION)
@@ -199,9 +205,9 @@ Do đó, tại Giai đoạn 2 này:
 # PHẦN 5: NGUYÊN TẮC BẤT BIẾN KIẾN TRÚC CHO GIAI ĐOẠN 2
 
 1. **Official Brand Logo Invariant:** Tuyệt đối không dùng emoji `🤖` cho Tab Codex. Bắt buộc dùng file ảnh logo chính thức của OpenAI Codex / Codex IDE.
-2. **Empty Skeleton Invariant:** Toàn bộ 50 file trong `internal/engines/codex/` là file khung rỗng (chỉ có dòng khai báo package), tuyệt đối chưa nhét code logic backend vào trong giai đoạn này.
+2. **Empty Skeleton Invariant:** Toàn bộ 53 file trong `internal/engines/codex/` là file khung rỗng (chỉ có dòng khai báo package), tuyệt đối chưa nhét code logic backend vào trong giai đoạn này.
 3. **Zero-Interruption Invariant:** Khi người dùng chuyển sang xem Tab Codex, toàn bộ các tiến trình chạy ngầm của Antigravity (quét quota, tự động switch tài khoản, liveness check) vẫn duy trì hoạt động ngầm liên tục 100%, không bị hủy hay khởi động lại.
-4. **Build & Test Parity Invariant:** Toàn bộ 50 file rỗng của Codex và giao diện mới phải được `go test ./...` và script `.\scripts\build_windows.ps1` biên dịch đạt `PASS 100%`.
+4. **Build & Test Parity Invariant:** Toàn bộ 53 file rỗng của Codex và giao diện mới phải được `go test ./...` và script `.\scripts\build_windows.ps1` biên dịch đạt `PASS 100%`.
 
 ---
 
