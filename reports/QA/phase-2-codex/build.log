@@ -1,0 +1,49 @@
+================================================================================
+⚡ Antigravity Multi-Account Switcher - Windows Build System
+   OutDir: bin | SkipTests: False | Clean: False | SyncOnly: False
+================================================================================
+[0/4] Checking and synchronizing application version...
+  -> Single Source of Truth detected: Version 1.0.3.0 (from internal\core\version\version.go)
+  [OK] README.md version is already in sync (1.0.3.0)
+  [OK] README_VN.md version is already in sync (1.0.3.0)
+  [OK] README_EN.md version is already in sync (1.0.3.0)
+  [OK] cmd\switcher\app.rc is already in sync (1.0.3.0)
+[2/4] Running pre-flight tests & vet...
+ok  	antigravity-switch/cmd/switcher	3.289s
+ok  	antigravity-switch/internal/core/i18n	1.134s
+ok  	antigravity-switch/internal/core/preferences	(cached)
+ok  	antigravity-switch/internal/core/version	(cached)
+ok  	antigravity-switch/internal/core/wincred	(cached)
+ok  	antigravity-switch/internal/engines/antigravity/automation	(cached)
+ok  	antigravity-switch/internal/engines/antigravity/connector	2.724s
+ok  	antigravity-switch/internal/engines/antigravity/manager	(cached)
+ok  	antigravity-switch/internal/engines/antigravity/model	(cached)
+ok  	antigravity-switch/internal/engines/antigravity/reloader	(cached)
+ok  	antigravity-switch/internal/engines/antigravity/scanner	(cached)
+ok  	antigravity-switch/internal/engines/antigravity/store	5.542s
+ok  	antigravity-switch/internal/engines/antigravity/telemetry	(cached)
+ok  	antigravity-switch/internal/engines/antigravity/wincred	(cached)
+ok  	antigravity-switch/internal/engines/codex/automation	1.063s [no tests to run]
+ok  	antigravity-switch/internal/engines/codex/connector	1.038s [no tests to run]
+ok  	antigravity-switch/internal/engines/codex/manager	1.164s [no tests to run]
+ok  	antigravity-switch/internal/engines/codex/model	0.963s [no tests to run]
+ok  	antigravity-switch/internal/engines/codex/reloader	0.848s [no tests to run]
+ok  	antigravity-switch/internal/engines/codex/scanner	0.864s [no tests to run]
+ok  	antigravity-switch/internal/engines/codex/store	0.850s [no tests to run]
+ok  	antigravity-switch/internal/engines/codex/telemetry	0.817s [no tests to run]
+ok  	antigravity-switch/internal/engines/codex/wincred	1.137s [no tests to run]
+ok  	antigravity-switch/internal/ui	35.442s
+  [PASS] Verification succeeded.
+[3/4] Compiling target binaries...
+  -> Checking Windows application icon and resource...
+  -> Compiling resource with windres: cmd\switcher\app.rc -> cmd\switcher\rsrc_windows_amd64.syso
+  [SUCCESS] Compiled PE resource object: cmd\switcher\rsrc_windows_amd64.syso (13490 bytes)
+  -> Building Standalone GUI Binary (Fyne, CGO_ENABLED=1)...
+  [SUCCESS] Created: bin\antigravity-switch.exe
+  Compile Duration: 7324 ms | Size: 27.96 MB (29313024 bytes)
+[4/4] Executing quick verification...
+  [PASS] Embedded PE application icon verified on bin\antigravity-switch.exe (32x32)
+  [INFO] GUI binary built at bin\antigravity-switch.exe.
+================================================================================
+⚡ BUILD SUCCESSFUL
+================================================================================

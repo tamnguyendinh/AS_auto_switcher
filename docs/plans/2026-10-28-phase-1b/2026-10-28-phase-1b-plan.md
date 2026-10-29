@@ -77,3 +77,9 @@ Latest Owner instruction: focus on implementation; tests deferred. Execute R2 so
 
 ## Current handoff
 Source actions P1-A through P5-A implemented. Checklist acceptance boxes intentionally remain unchecked until deferred verification. No agents, no post-refactor build/test and no acceptance commit. Next work is deferred validation and any proven repairs, not more feature development.
+
+## Automation failure repair — current Owner request
+Claim: determine whether EdgeCase7 failure is refactor regression or timing/isolation, fix root cause, rerun full standard build. Source comparison confirms controller.go, retry.go, switch_gate_windows.go and automation_e2e_test.go are identical to f1a05ca except moved import paths. Repeated isolated EdgeCase7 runs reproduce both missing final switch and missing retry dispatch.
+Hypothesis to prove: the server increments retry-received before client releases the shared SwitchGate; a following retry/switch calls TryExecute and is dropped as busy. Restrict repair to controller.go retry-send serialization/draining and runtime_regression_test.go deterministic gate handoff tests. Preserve cross-process TryExecute rejection and retry policy. Verify cancellation/OFF/manual boundaries, repeated EdgeCase7, automation suite, then scripts/build_windows.ps1 with explicit Clang CC. No agents, no global toolchain change, no commit/whole-refactor acceptance implied.
+
+Reproduction also exposed a separate harness teardown race: EdgeCase7 exits once the credential email changes while the switch still writes timeline files. Extend the existing case's completion predicate to require IsSwitching=false and assert exactly one StatusSwitched with exactly three retries. Scope additionally includes automation_e2e_test.go, retaining its existing two-second limit.

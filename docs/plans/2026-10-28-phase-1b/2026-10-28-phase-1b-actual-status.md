@@ -1,7 +1,7 @@
 # Phase 1B Actual Status
 
 Date: 2026-10-28
-Status: IMPLEMENTED — verification deferred by Owner
+Status: IMPLEMENTED — full build attempted; automation test gate FAILED
 Companion plan: 2026-10-28-phase-1b-plan.md
 
 ## Current Status Matrix
@@ -30,3 +30,5 @@ Owner prohibited agents and then explicitly deferred tests until after implement
 
 ## Remaining validation
 Post-refactor standard build, no-cache unit suite, raw/token boundary tests, dependency checks, native GUI suite, release smoke and final source review. Prior baseline native failure: TestNativeTwoStoreRefreshAndResize waits for three cards and times out; an earlier resize drag failure did not recur in the isolated rerun. These are pre-move findings, not proof of refactor regression.
+## Latest build attempt
+E6-P6A-BUILD1: standard script failed on automation EdgeCase7; all other package tests including core and UI passed. No new executable. Next action: diagnose this failure, rebuild, then complete native/release smoke. This supersedes the earlier post-refactor-build-deferred status; broader acceptance remains pending.

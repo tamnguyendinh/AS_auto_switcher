@@ -156,6 +156,7 @@ func (s *sidebarItem) Tapped(*fyne.PointEvent) {
 type SidebarContainer struct {
 	widget.BaseWidget
 	antigravityItem *sidebarItem
+	codexItem       *sidebarItem
 	divider         *canvas.Rectangle
 	palette         ThemePalette
 	container       *fyne.Container
@@ -177,20 +178,27 @@ func newSidebarContainer(palette ThemePalette, onTabSelected func(NavTab)) *Side
 		true, // Active
 		palette,
 		func(tab NavTab) {
-			sb.activeTab = tab
+			sb.SwitchTab(tab)
 			if onTabSelected != nil {
 				onTabSelected(tab)
 			}
 		},
 	)
+	sb.codexItem = newSidebarItem(NavTabCodex, CodexLogoResource, d.NavCodex, false, palette, func(tab NavTab) {
+		sb.SwitchTab(tab)
+		if onTabSelected != nil {
+			onTabSelected(tab)
+		}
+	})
 
 	// Đường viền ngăn cách bên phải (1px)
 	sb.divider = canvas.NewRectangle(palette.BorderSubtle)
 	sb.divider.SetMinSize(fyne.NewSize(1, 0))
 
-	// Danh sách các tab (Giai đoạn 1 chỉ có Antigravity)
+	// Persistent navigation items share one active selection.
 	itemsBox := container.NewVBox(
 		container.NewPadded(sb.antigravityItem),
+		container.NewPadded(sb.codexItem),
 	)
 
 	sb.container = container.NewBorder(
@@ -209,6 +217,19 @@ func (sb *SidebarContainer) ApplyTheme(palette ThemePalette) {
 	if sb.antigravityItem != nil {
 		sb.antigravityItem.applyTheme(palette)
 	}
+	if sb.codexItem != nil {
+		sb.codexItem.applyTheme(palette)
+	}
+}
+
+// SwitchTab changes selection only; application routing owns view visibility.
+func (sb *SidebarContainer) SwitchTab(target NavTab) {
+	if target != NavTabAntigravity && target != NavTabCodex {
+		return
+	}
+	sb.activeTab = target
+	sb.antigravityItem.SetActive(target == NavTabAntigravity)
+	sb.codexItem.SetActive(target == NavTabCodex)
 }
 
 func (sb *SidebarContainer) CreateRenderer() fyne.WidgetRenderer {

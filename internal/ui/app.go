@@ -50,6 +50,12 @@ type App struct {
 	// Dynamic UI Widgets
 	serverStatusLabel    *widget.Label
 	versionLabel         *widget.Label
+	codexStatusLabel     *widget.Label
+	codexVersionLabel    *widget.Label
+	leftFooter           *fyne.Container
+	rightFooter          *fyne.Container
+	antigravityContent   *fyne.Container
+	codex                *codexView
 	accountListContainer *fyne.Container
 	addAccountBtn        *widget.Button
 	refreshBtn           *widget.Button
@@ -351,6 +357,9 @@ func (a *App) SetTheme(themeName string) {
 	if a.sidebar != nil {
 		a.sidebar.ApplyTheme(palette)
 	}
+	if a.codex != nil {
+		a.codex.applyTheme(palette)
+	}
 
 	a.mu.RLock()
 	overview := a.overview
@@ -401,6 +410,11 @@ func (a *App) SetLanguage(locale string) {
 		if a.sidebar != nil && a.sidebar.antigravityItem != nil {
 			a.sidebar.antigravityItem.textLabel.Text = d.NavAntigravity
 			a.sidebar.antigravityItem.textLabel.Refresh()
+		}
+		if a.codex != nil {
+			a.codex.setLanguage(d)
+			a.codexStatusLabel.SetText(d.CodexStatus)
+			a.codexVersionLabel.SetText(d.CodexVersion)
 		}
 		if a.addAccountBtn != nil {
 			a.addAccountBtn.SetText(d.BtnAddAccount)
@@ -1572,16 +1586,21 @@ func (a *App) ToggleAlwaysOnTop() {
 
 // syncAlwaysOnTopBtn updates the pin button text and importance to match the given state.
 func (a *App) syncAlwaysOnTopBtn(enabled bool) {
-	if a.alwaysOnTopBtn == nil {
-		return
+	buttons := []*widget.Button{a.alwaysOnTopBtn}
+	if a.codex != nil {
+		buttons = append(buttons, a.codex.pin)
 	}
-	a.alwaysOnTopBtn.SetText("📌")
-	if enabled {
-		a.alwaysOnTopBtn.Importance = widget.HighImportance
-	} else {
-		a.alwaysOnTopBtn.Importance = widget.MediumImportance
+	for _, button := range buttons {
+		if button == nil {
+			continue
+		}
+		if enabled {
+			button.Importance = widget.HighImportance
+		} else {
+			button.Importance = widget.MediumImportance
+		}
+		button.Refresh()
 	}
-	a.alwaysOnTopBtn.Refresh()
 }
 
 // SetAlwaysOnTop explicitly sets the Always-on-Top state and persists the preference.
@@ -1850,17 +1869,8 @@ func (a *App) showStatusBar(msg string) {
 		a.statusBarHideTimer = nil
 	}
 
-	// 1. Tạm ẩn text hai bên mép để nhường 100% không gian cho thông báo
-	if a.serverStatusLabel != nil {
-		a.serverStatusLabel.Hide()
-	}
-	if a.versionLabel != nil {
-		a.versionLabel.Hide()
-	}
-
-	// 2. Cài đặt nội dung và hiển thị thông báo
 	a.statusBar.SetText(msg)
-	a.statusBar.Show()
+	a.renderFooter()
 }
 
 // clearStatusBar hides the status bar and restores normal left/right footer labels.
@@ -1869,15 +1879,7 @@ func (a *App) clearStatusBar() {
 		return
 	}
 	a.statusBar.SetText("")
-	a.statusBar.Hide()
-
-	// Khôi phục lại trạng thái bình thường cho thanh đáy
-	if a.serverStatusLabel != nil {
-		a.serverStatusLabel.Show()
-	}
-	if a.versionLabel != nil {
-		a.versionLabel.Show()
-	}
+	a.renderFooter()
 }
 
 // autoHideStatusBar schedules the status bar to be hidden after the given duration.

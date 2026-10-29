@@ -2,12 +2,9 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
@@ -83,12 +80,8 @@ func TestPhase1_AntigravityLogoResource(t *testing.T) {
 	}
 }
 
-// TestPhase1_SidebarStructureAndCodexAbsence verifies:
-// 1. Sidebar is initialized and placed on the left with width 136px (80% of 170px).
-// 2. ONLY Tab "Antigravity" is present and Active by default.
-// 3. Tab "Antigravity" text and icon fit cleanly within 136px without overflow.
-// 4. Absolutely NO "Codex" text or tab appears anywhere on the GUI.
-func TestPhase1_SidebarStructureAndCodexAbsence(t *testing.T) {
+// TestSidebarDefaultSelection preserves Antigravity as the initial active tab.
+func TestSidebarDefaultSelection(t *testing.T) {
 	testApp := test.NewApp()
 	defer testApp.Quit()
 
@@ -133,31 +126,10 @@ func TestPhase1_SidebarStructureAndCodexAbsence(t *testing.T) {
 		t.Errorf("expected tab label 'Antigravity', got %q", sidebar.AntigravityItem().label)
 	}
 
-	// Verify Phased Isolation Invariant: Codex must NOT exist in the sidebar or window
-	win := app.Window()
-	var searchCodexInCanvas func(obj fyne.CanvasObject) bool
-	searchCodexInCanvas = func(obj fyne.CanvasObject) bool {
-		if text, ok := obj.(*canvas.Text); ok {
-			if strings.Contains(strings.ToLower(text.Text), "codex") {
-				return true
-			}
-		}
-		if c, ok := obj.(*fyne.Container); ok {
-			for _, child := range c.Objects {
-				if searchCodexInCanvas(child) {
-					return true
-				}
-			}
-		}
-		return false
+	if sidebar.codexItem == nil || sidebar.codexItem.isActive || app.codex.content.Visible() {
+		t.Fatal("Codex must be available but inactive on startup")
 	}
 
-	if searchCodexInCanvas(sidebar) {
-		t.Fatal("PHASE 1 VIOLATION: Codex must NOT appear in sidebar in Phase 1")
-	}
-	if searchCodexInCanvas(win.Content()) {
-		t.Fatal("PHASE 1 VIOLATION: Codex must NOT appear anywhere in the UI in Phase 1")
-	}
 }
 
 // TestPhase1_ThemeParity verifies that the Sidebar and Top Bar update dynamically

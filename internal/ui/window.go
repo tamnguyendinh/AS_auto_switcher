@@ -247,7 +247,7 @@ func (a *App) setupLayout() {
 	// Sidebar (136px - 80%) bên trái (Giai đoạn 1A: Duy nhất tab Antigravity)
 	// -------------------------------------------------------------------------
 	a.sidebar = newSidebarContainer(palette, func(selectedTab NavTab) {
-		// Xử lý chuyển tab khi người dùng bấm (Giai đoạn 1 giữ vững Antigravity)
+		a.SwitchTab(selectedTab)
 	})
 
 	// -------------------------------------------------------------------------
@@ -258,13 +258,17 @@ func (a *App) setupLayout() {
 	a.accountScroll = scrollList
 
 	// Khung làm việc Content Area của Antigravity (Toolbar hàng 2 + Lưới Card cuộn dọc)
-	antigravityContent := container.NewBorder(
+	a.antigravityContent = container.NewBorder(
 		row2Combined,
 		nil,
 		nil,
 		nil,
 		scrollList,
 	)
+	a.codex = newCodexView(palette, a.ToggleAlwaysOnTop)
+	a.codex.content.Hide()
+	a.syncAlwaysOnTopBtn(a.alwaysOnTop)
+	contentStack := container.NewStack(a.antigravityContent, a.codex.content)
 
 	// Thân app: Sidebar bên trái + Content Area bên phải
 	bodyLayout := container.NewBorder(
@@ -272,7 +276,7 @@ func (a *App) setupLayout() {
 		nil,
 		a.sidebar,
 		nil,
-		antigravityContent,
+		contentStack,
 	)
 
 	// Status Bar: transient feedback for loading/success/error
@@ -283,13 +287,18 @@ func (a *App) setupLayout() {
 
 	// Version Label: Mép phải thanh đáy
 	a.versionLabel = widget.NewLabelWithStyle(version.GetFullVersion(), fyne.TextAlignTrailing, fyne.TextStyle{})
+	a.codexStatusLabel = widget.NewLabelWithStyle(d.CodexStatus, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	a.codexVersionLabel = widget.NewLabelWithStyle(d.CodexVersion, fyne.TextAlignTrailing, fyne.TextStyle{})
+	a.leftFooter = container.NewStack(a.serverStatusLabel, a.codexStatusLabel)
+	a.rightFooter = container.NewStack(a.versionLabel, a.codexVersionLabel)
+	a.renderFooter()
 
 	// Khung chứa nội dung thanh đáy: Left (Server Status), Center (Status Bar), Right (Version Label)
 	footerContent := container.NewBorder(
 		nil, nil,
-		a.serverStatusLabel, // Mép trái thanh đáy
-		a.versionLabel,      // Mép phải thanh đáy
-		a.statusBar,         // Trung tâm
+		a.leftFooter,  // Contextual left edge
+		a.rightFooter, // Contextual right edge
+		a.statusBar,   // Trung tâm
 	)
 
 	// SPEC-ARCH-20261024-FOOTER-HEIGHT-REDUCTION: Compact Footer Bar (giảm 50% độ cao xuống chuẩn ~21-22px)

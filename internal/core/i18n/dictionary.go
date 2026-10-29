@@ -19,6 +19,13 @@ type Dictionary struct {
 	AppTitle          string `json:"app_title"`
 	NavAntigravity    string `json:"nav_antigravity"`
 	NavCodex          string `json:"nav_codex"`
+	CodexAddAccount   string `json:"codex_add_account"`
+	CodexRefresh      string `json:"codex_refresh"`
+	CodexPin          string `json:"codex_pin"`
+	CodexTitle        string `json:"codex_title"`
+	CodexDescription  string `json:"codex_description"`
+	CodexStatus       string `json:"codex_status"`
+	CodexVersion      string `json:"codex_version"`
 	LangDropdownLabel string `json:"lang_dropdown_label"`
 
 	// Toolbar Buttons & Controls

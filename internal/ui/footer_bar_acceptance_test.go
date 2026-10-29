@@ -129,7 +129,7 @@ func TestAcceptance_TC02_FooterPlacementAndPrefix(t *testing.T) {
 					for _, deep := range innerPadded.Objects {
 						if deepC, ok := deep.(*fyne.Container); ok {
 							for _, footerObj := range deepC.Objects {
-								if footerObj == app.serverStatusLabel {
+								if footerContains(footerObj, app.serverStatusLabel) {
 									bottomSection = c
 									footerContent = deepC
 									break
@@ -160,10 +160,10 @@ func TestAcceptance_TC02_FooterPlacementAndPrefix(t *testing.T) {
 	// footerContent chứa: serverStatusLabel (Left), versionLabel (Right), statusBar (Center)
 	var foundServerStatus, foundVersion, foundStatusBar bool
 	for _, obj := range footerContent.Objects {
-		if obj == app.serverStatusLabel {
+		if footerContains(obj, app.serverStatusLabel) {
 			foundServerStatus = true
 		}
-		if obj == app.versionLabel {
+		if footerContains(obj, app.versionLabel) {
 			foundVersion = true
 		}
 		if obj == app.statusBar {
@@ -353,7 +353,7 @@ func TestAcceptance_TC05_FooterCompactHeight(t *testing.T) {
 					for _, deep := range innerWrapper.Objects {
 						if deepC, ok := deep.(*fyne.Container); ok {
 							for _, footerObj := range deepC.Objects {
-								if footerObj == app.serverStatusLabel {
+								if footerContains(footerObj, app.serverStatusLabel) {
 									bottomSection = c
 									break
 								}
@@ -374,4 +374,19 @@ func TestAcceptance_TC05_FooterCompactHeight(t *testing.T) {
 	if h > 25.0 {
 		t.Errorf("TC-05 VIOLATION: expected bottomSection height <= 25px (50%% reduced), got %f px", h)
 	}
+}
+
+// Footer labels can be nested in contextual stacks; placement remains at the edges.
+func footerContains(root, target fyne.CanvasObject) bool {
+	if root == target {
+		return true
+	}
+	if c, ok := root.(*fyne.Container); ok {
+		for _, child := range c.Objects {
+			if footerContains(child, target) {
+				return true
+			}
+		}
+	}
+	return false
 }

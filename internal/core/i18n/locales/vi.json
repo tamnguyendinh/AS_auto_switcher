@@ -2,6 +2,13 @@
   "app_title": "Auto Switcher",
   "nav_antigravity": "Antigravity",
   "nav_codex": "Codex",
+  "codex_add_account": "Thêm tài khoản Codex",
+  "codex_refresh": "Làm mới",
+  "codex_pin": "Ghim",
+  "codex_title": "Codex Account Switcher",
+  "codex_description": "Quản lý tài khoản Codex đang được chuẩn bị tích hợp. Các thao tác tài khoản sẽ mở ở bản cập nhật tiếp theo.",
+  "codex_status": "Codex: Chưa tích hợp",
+  "codex_version": "Phiên bản Codex: —",
   "lang_dropdown_label": "VN",
 
   "btn_add": "Thêm",

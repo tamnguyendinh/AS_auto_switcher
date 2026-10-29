@@ -2,6 +2,13 @@
   "app_title": "Auto Switcher",
   "nav_antigravity": "Antigravity",
   "nav_codex": "Codex",
+  "codex_add_account": "Add Codex account",
+  "codex_refresh": "Refresh",
+  "codex_pin": "Pin",
+  "codex_title": "Codex Account Switcher",
+  "codex_description": "Codex account management is coming soon. Account actions will be available in a future update.",
+  "codex_status": "Codex: Not integrated",
+  "codex_version": "Codex version: —",
   "lang_dropdown_label": "EN",
 
   "btn_add": "Add",

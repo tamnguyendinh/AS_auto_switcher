@@ -888,11 +888,12 @@ func TestEdgeCases1To7(t *testing.T) {
 			t.Fatalf("expected ErrMaxRetriesExceeded, got %v", err)
 		}
 
-		// Wait up to 2 seconds for asynchronous switch to finish
+		// Credential mutation precedes timeline/continuation completion. Wait
+		// for the whole operation before closing fixtures and deleting TempDir.
 		deadline := time.Now().Add(2 * time.Second)
 		switched := false
 		for time.Now().Before(deadline) {
-			if harness.GetActiveEmail() == "cand1@example.com" {
+			if harness.GetActiveEmail() == "cand1@example.com" && !harness.Controller.IsSwitching() {
 				switched = true
 				break
 			}
@@ -900,6 +901,15 @@ func TestEdgeCases1To7(t *testing.T) {
 		}
 		if !switched {
 			t.Fatalf("expected account to switch to cand1@example.com after 3 recovery failures, current: %s", harness.GetActiveEmail())
+		}
+		switches := 0
+		for len(harness.Controller.statusChan) > 0 {
+			if (<-harness.Controller.statusChan).Code == StatusSwitched {
+				switches++
+			}
+		}
+		if switches != 1 || harness.LangServer.GetRetryCalls() != MaxRecoveryAttempts {
+			t.Fatalf("expected three retries and one completed switch, got retries=%d switches=%d", harness.LangServer.GetRetryCalls(), switches)
 		}
 	})
 }

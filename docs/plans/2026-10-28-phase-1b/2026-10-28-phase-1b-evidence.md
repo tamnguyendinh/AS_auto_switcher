@@ -29,3 +29,10 @@ Pending actual implementation and verification.
 
 ## Deferred by latest Owner instruction
 No build/test/runtime suite run after moving source. New raw credential tests are authored but unexecuted. Additional adapter error-identity/invalid JSON/empty-blob coverage belongs to deferred QA work. Implementation remains uncommitted; no overall PASS or clean-worktree claim.
+## E6-P6A-BUILD1 — Owner-requested full build after refactor
+Command: scripts/build_windows.ps1 (no SkipTests), process-local CC=C:\msys64\ucrt64\bin\clang.exe, CGO_ENABLED=1.
+Result: FAIL, exit 1 at preflight test gate; vet completed and all packages except automation passed, including cmd/switcher, internal/core packages and internal/ui.
+Failure: TestEdgeCases1To7/EdgeCase7_ThreeRecoveryFailures_TriggersOneSwitch, internal/engines/antigravity/automation/automation_e2e_test.go:902. Three recovery failures did not result in the expected candidate switch before assertion.
+Log: .tmp/phase-1b/post-refactor-full-build.log.
+No new executable produced: script stopped before resource/GUI compilation. Existing bin/antigravity-switch.exe remains the pre-refactor build (29,273,088 bytes; last write 2026-10-28 22:46:57 Asia/Bangkok).
+Next: reproduce the failing automation case and determine regression versus timing/isolation issue, repair the proven cause, rerun the standard full build, then native/release smoke and acceptance. No source fix made in this build-only request.

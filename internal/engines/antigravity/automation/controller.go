@@ -72,6 +72,7 @@ type AutomationController struct {
 	evaluating     atomic.Bool
 	manualSwitch   atomic.Bool
 	monitorMu      sync.Mutex
+	retrySendMu    sync.Mutex // Serialize local retry RPCs and drain them before switching.
 	refreshNow     func()
 
 	ctx     context.Context
@@ -114,7 +115,9 @@ func NewAutomationController(
 	)
 
 	c.retryCoord.SetSendGuard(func(ctx context.Context, action func() error) error {
-		if !c.enabled.Load() || c.isSwitching.Load() || c.manualSwitch.Load() {
+		c.retrySendMu.Lock()
+		defer c.retrySendMu.Unlock()
+		if !c.enabled.Load() || c.isSwitching.Load() || c.manualSwitch.Load() || ctx.Err() != nil {
 			return ErrAutomationDisabled
 		}
 		_, err := c.gate.TryExecute(func(bool) error {
@@ -209,7 +212,13 @@ func (c *AutomationController) syncMonitoring() {
 }
 
 // Manual callers pause recovery before entering the same credential gate.
-func (c *AutomationController) BeginManualSwitch() { c.manualSwitch.Store(true); c.syncMonitoring() }
+func (c *AutomationController) BeginManualSwitch() {
+	c.manualSwitch.Store(true)
+	c.syncMonitoring()
+	// Cancellation does not synchronously release an in-flight RPC's gate.
+	c.retrySendMu.Lock()
+	c.retrySendMu.Unlock()
+}
 func (c *AutomationController) EndManualSwitch() {
 	c.manualSwitch.Store(false)
 	c.retryCoord.InvalidateSession()
@@ -440,6 +449,11 @@ func (c *AutomationController) triggerSwitch(ctx context.Context, reason string,
 	}
 	c.syncMonitoring()
 	defer func() { c.isSwitching.Store(false); c.syncMonitoring() }()
+	// A terminal stream update can precede the retry HTTP response. Stop above
+	// cancels that RPC; wait for its guard to release before trying the switch
+	// gate. Keep TryExecute semantics for unrelated callers/processes.
+	c.retrySendMu.Lock()
+	defer c.retrySendMu.Unlock()
 
 	c.EmitStatus(StatusSwitching, fmt.Sprintf("Kích hoạt chuyển tài khoản: %s", reason), nil)
 

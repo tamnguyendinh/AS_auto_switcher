@@ -18,3 +18,9 @@ var antigravityLogoBytes []byte
 
 // AntigravityLogoResource cung cấp logo chính thức của Google Antigravity IDE cho thanh Sidebar.
 var AntigravityLogoResource = fyne.NewStaticResource("antigravity_logo.png", antigravityLogoBytes)
+
+//go:embed assets/codex_logo.png
+var codexLogoBytes []byte
+
+// CodexLogoResource is the official OpenAI Codex extension icon (see assets/README.md).
+var CodexLogoResource = fyne.NewStaticResource("codex_logo.png", codexLogoBytes)
