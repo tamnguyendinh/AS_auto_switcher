@@ -1,4 +1,4 @@
-# ⚡ Antigravity Multi-Account Switcher - **Version 1.0.3.0**
+# ⚡ AS Auto Switcher - **Version 1.0.3.1**
 
 [🇻🇳 Tiếng Việt](README_VN.md) | [🇬🇧 English](README_EN.md)
 

@@ -64,7 +64,7 @@ function Sync-ReadmeVersion {
         }
 
         $content = Get-Content $ReadmePath -Raw -Encoding UTF8
-        $pattern = '(?m)^(#.*?\bAntigravity Multi-Account Switcher\s*-\s*\*\*Version\s*)([0-9]+(?:\.[0-9]+){2,3})(\*\*.*)$'
+        $pattern = '(?m)^(#.*?\b(?:AS Auto Switcher|Antigravity Multi-Account Switcher)\s*-\s*\*\*Version\s*)([0-9]+(?:\.[0-9]+){2,3})(\*\*.*)$'
 
         if ($content -match $pattern) {
             $currentVersion = $Matches[2]

@@ -15,3 +15,5 @@ bin/
 .playwright-mcp/
 AGENTS.md
 CLAUDE.md
+docs/
+reports/
