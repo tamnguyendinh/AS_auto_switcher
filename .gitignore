@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.enc
+accounts_store/
+logs/
+discovered_accounts/
+.idea/
+.vscode/
+.agents/
+bin/
+*.exe
+*.syso
+.tmp/
+.playwright-mcp/
+AGENTS.md
+CLAUDE.md
